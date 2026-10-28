@@ -1,6 +1,6 @@
 # Orsia
 
-Orsia provides six independently installable scientific libraries for explicit numerical execution, uncertainty propagation, radiative transfer, scientific data access, instrument simulation and numerical inversion.
+Orsia is a work in progress. Its six independently installable scientific libraries support explicit numerical execution, uncertainty propagation, radiative transfer, scientific data access, instrument simulation and numerical inversion. The repository provides software components and synthetic examples; scientific validation of instrument-space agreement, retrieval performance and engineering feasibility is a separate activity.
 
 ## Libraries
 
@@ -24,10 +24,10 @@ devbox run -- just setup
 devbox run -- just check
 ```
 
-`setup` provisions the locked CPython 3.14 free-threaded workspace in a local `.venv`. `check` runs formatting, Ruff, Pyrefly, dependency boundaries, free-threaded runtime checks and the software test suite with a 90% combined statement-and-branch coverage threshold for the workspace and each library. `devbox run -- just build` builds the six wheels. `devbox run -- just clean-install` checks installation outside workspace resolution. Native libraries, external providers and scientific performance require their own qualification beyond these software checks.
+`setup` provisions the locked CPython 3.14 free-threaded workspace in a local `.venv`. `check` runs formatting, Ruff, Pyrefly, dependency boundaries, free-threaded runtime checks and the software test suite with a 90% combined statement-and-branch coverage threshold for the workspace and each library. `devbox run -- just build` builds the six wheels. `devbox run -- just clean-install` checks installation outside workspace resolution.
 
 The [radiative composition guide](docs/atmosphere-to-radiance.md), [thermal composition guide](docs/atmosphere-to-thermal-radiance.md), [data acquisition guide](docs/atmospheric-data.md), [data products guide](docs/data-products.md), [data services guide](docs/data-services.md), [solar spectrum guide](docs/hsrs.md) and [MIPAS reference guide](docs/mipas-reference-atmospheres.md) explain the library boundaries and examples.
 
-## Candidate scope and licensing
+## License
 
-This directory is an isolated source candidate assembled from tracked repository content. [CANDIDATE-MANIFEST.md](CANDIDATE-MANIFEST.md) records its selection and the outstanding owner review. The root [LICENSE](LICENSE) contains the official Apache License, Version 2.0 text; package metadata declares `Apache-2.0` as the proposed license. The owner must confirm authority to apply this license to every included contribution and generated diagram before distribution.
+Orsia source, tests, synthetic fixtures, documentation and diagrams, including their SVG/PNG exports, are licensed under Apache-2.0. See the root [LICENSE](LICENSE) and each library's `LICENSE`.
