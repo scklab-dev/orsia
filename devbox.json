@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.5/.devbox/devbox.schema.json",
+  "packages": {
+    "git":           "2.55.0",
+    "just":          "1.57.0",
+    "ripgrep":       "15.2.0",
+    "uv":            "0.11.28",
+    "gfortran":      "15.2.0",
+    "netcdffortran": "4.4.5",
+    "eccodes":       "2.48.0"
+  },
+  "env": {
+    "UV_PYTHON_PREFERENCE": "only-managed",
+    "CXXFLAGS":             "-mtls-dialect=gnu",
+    "OMP_NUM_THREADS":      "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS":      "1"
+  }
+}

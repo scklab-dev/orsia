@@ -1,0 +1,18 @@
+[project]
+name = "orsia-radiative"
+version = "0.1.0"
+description = "Validated atmospheric, surface and observation states for Orsia radiative models"
+license = "Apache-2.0"
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = ["numpy>=2.3,<3", "scipy>=1.16,<2", "orsia-numerics==0.1.0"]
+
+[build-system]
+requires = ["setuptools>=80,<83", "pybind11==3.0.2"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"orsia_radiative.transfer.native" = ["*.cpp", "*.h", "*.pyi"]

@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="Electron" version="32.5.5" type="device" compressed="false">
+  <diagram id="orsia-instruments-architecture" name="Two observation representations, shared physics">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Inside orsia_instruments" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=32;fontStyle=1;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="55" y="24" width="1490" height="46" />
+        </mxCell>
+        <mxCell id="subtitle" value="Local angular images and Earth-frame lines of sight: distinct scene inputs, shared photon and detector physics" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontStyle=0;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="55" y="75" width="1490" height="34" />
+        </mxCell>
+        <mxCell id="image-lane" value="" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;fontColor=#253750;fillColor=#F8FAFD;strokeColor=#CAD7E5;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="138" width="1520" height="293" />
+        </mxCell>
+        <mxCell id="ray-lane" value="" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;fontColor=#253750;fillColor=#F8FAFD;strokeColor=#CAD7E5;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="552" width="1520" height="252" />
+        </mxCell>
+        <mxCell id="shared-band" value="" style="rounded=1;absoluteArcSize=1;arcSize=16;html=0;fontColor=#253750;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="447" width="1520" height="89" />
+        </mxCell>
+        <mxCell id="image-lane-title" value="A  ·  LOCAL ANGULAR IMAGE  ·  image exposures and pixel grid" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="150" width="1400" height="39" />
+        </mxCell>
+        <mxCell id="ray-lane-title" value="B  ·  EARTH-FRAME LINES OF SIGHT  ·  timed sensor reads" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=1;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="560" width="910" height="35" />
+        </mxCell>
+        <mxCell id="image-scene" value="&lt;b&gt;Local sky radiance&lt;/b&gt;&lt;br/&gt;Time, angular u/v and spectrum&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;scene.RadianceField&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=18;fontColor=#253750;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="211" width="250" height="90" />
+        </mxCell>
+        <mxCell id="image-acquisition" value="&lt;b&gt;Image exposures&lt;/b&gt;&lt;br/&gt;Pixels, time bounds and pointing&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;imaging.acquisition&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=18;fontColor=#253750;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="385" y="211" width="260" height="90" />
+        </mxCell>
+        <mxCell id="image-optics" value="&lt;b&gt;Image optics&lt;/b&gt;&lt;br/&gt;PSF, pixel, spectral selection&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;optics/&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=18;fontColor=#253750;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="710" y="211" width="250" height="90" />
+        </mxCell>
+        <mxCell id="external-charge" value="&lt;b&gt;Optional aligned charge&lt;/b&gt;&lt;br/&gt;Additional source contributions&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;imaging.charge · composable API&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=18;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1155" y="211" width="365" height="90" />
+        </mxCell>
+        <mxCell id="image-integrate" value="&lt;b&gt;Photoelectrons / image&lt;/b&gt; · source-resolved, pre-dark&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:15px&quot;&gt;image_photoelectrons · combine_image_source_paths for aligned sources&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=14;fontFamily=Helvetica;fontSize=19;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="120" y="344" width="940" height="76" />
+        </mxCell>
+        <mxCell id="image-readout" value="&lt;b&gt;Image readout&lt;/b&gt;&lt;br/&gt;Charge; RNG → DN + flags&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;ImageMeasurements · image_readout&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontSize=17;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1155" y="344" width="365" height="76" />
+        </mxCell>
+        <mxCell id="image-scene-to-charge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.08;entryY=0;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="image-scene" target="image-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="image-geometry-to-charge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.42;entryY=0;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="image-acquisition" target="image-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="image-optics-to-charge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.76;entryY=0;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="image-optics" target="image-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="image-charge-to-readout" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="image-integrate" target="image-readout">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="image-external-to-charge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.95;entryY=0;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=1;" edge="1" parent="1" source="external-charge" target="image-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="native-reads" value="&lt;b&gt;Exposure &amp; read schedule&lt;/b&gt;&lt;br/&gt;Read identities, time bounds&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;acquisition.ReadSchedule&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=18;fontColor=#253750;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="607" width="280" height="90" />
+        </mxCell>
+        <mxCell id="native-rays" value="&lt;b&gt;Time-dependent line of sight&lt;/b&gt;&lt;br/&gt;Orbital position + attitude + optical alignment&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;line_of_sight · sensor / Earth-frame samples&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=17;fontColor=#253750;fillColor=#EBF8F7;strokeColor=#79ACA9;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="390" y="607" width="315" height="90" />
+        </mxCell>
+        <mxCell id="native-scene" value="&lt;b&gt;Radiance on sight lines&lt;/b&gt;&lt;br/&gt;Time/FOV/spectral coverage&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;line_of_sight_radiance&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=17;fontColor=#253750;fillColor=#EBF8F7;strokeColor=#79ACA9;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="745" y="607" width="280" height="90" />
+        </mxCell>
+        <mxCell id="native-integrate" value="&lt;b&gt;Photoelectrons / read&lt;/b&gt;&lt;br/&gt;ExpectedElectrons&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:12px&quot;&gt;line_of_sight_expected_electrons&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=17;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1050" y="607" width="250" height="90" />
+        </mxCell>
+        <mxCell id="native-detector" value="&lt;b&gt;Readout / read&lt;/b&gt;&lt;br/&gt;DetectorReadings (DN)&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;sample_readout · RNG&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=12;fontFamily=Helvetica;fontSize=17;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1320" y="607" width="210" height="90" />
+        </mxCell>
+        <mxCell id="native-optics" value="&lt;b&gt;Optical acceptance&lt;/b&gt;&lt;br/&gt;On sensor-frame samples&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;optics.response callback&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontSize=17;fontColor=#253750;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1040" y="723" width="250" height="70" />
+        </mxCell>
+        <mxCell id="native-support" value="Caller supplies orbital state, attitude, mount, FOV, TAI/Earth-frame conventions and full scene coverage." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=0;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="724" width="925" height="32" />
+        </mxCell>
+        <mxCell id="native-composition" value="Named per-read source contributions join via charge.combine_source_paths before readout." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=0;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="764" width="925" height="28" />
+        </mxCell>
+        <mxCell id="reads-to-rays" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="native-reads" target="native-rays">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="rays-to-scene" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="native-rays" target="native-scene">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="scene-to-native-charge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="native-scene" target="native-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="native-charge-to-readout" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="native-integrate" target="native-detector">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="native-optics-to-charge" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=0;entryX=0.5;entryY=1;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#53647A;fontColor=#53647A;fillColor=none;dashed=0;" edge="1" parent="1" source="native-optics" target="native-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="shared-key" value="SHARED CALCULATIONS&lt;br/&gt;Each path calls the same kernels with its own geometry and scene.&lt;br/&gt;Arrows into A and B show reuse within each path." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=17;fontStyle=0;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="70" y="453" width="675" height="74" />
+        </mxCell>
+        <mxCell id="shared-photon" value="&lt;b&gt;Photon response&lt;/b&gt;&lt;br/&gt;Area · optics · throughput · QE · dΩdt&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;integration.photoelectron_response&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=8;fontFamily=Helvetica;fontSize=16;fontColor=#253750;fillColor=#FFFFFF;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="805" y="453" width="385" height="76" />
+        </mxCell>
+        <mxCell id="shared-detector" value="&lt;b&gt;Detector sampling&lt;/b&gt;&lt;br/&gt;Poisson charge · electronics · DN&lt;br/&gt;&lt;font color=&quot;#53647A&quot; style=&quot;font-size:14px&quot;&gt;detector.sample_readout (with RNG)&lt;/font&gt;" style="rounded=1;absoluteArcSize=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontSize=17;fontColor=#253750;fillColor=#FFFFFF;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1220" y="453" width="320" height="76" />
+        </mxCell>
+        <mxCell id="photon-to-image" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.32;exitY=0;entryX=0.86;entryY=1;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#8B6CAB;fontColor=#8B6CAB;fillColor=none;dashed=0;" edge="1" parent="1" source="shared-photon" target="image-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="photon-to-read" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.9;exitY=1;entryX=0.44;entryY=0;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#8B6CAB;fontColor=#8B6CAB;fillColor=none;dashed=0;" edge="1" parent="1" source="shared-photon" target="native-integrate">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="detector-to-image" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.45;exitY=0;entryX=0.573;entryY=1;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#8B6CAB;fontColor=#8B6CAB;fillColor=none;dashed=0;" edge="1" parent="1" source="shared-detector" target="image-readout">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="detector-to-read" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.7;exitY=1;entryX=0.59;entryY=0;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#8B6CAB;fontColor=#8B6CAB;fillColor=none;dashed=0;" edge="1" parent="1" source="shared-detector" target="native-detector">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="image-path-note" value="A: simulate_images for one scene, or composable image charge + readout." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=0;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="55" y="819" width="1490" height="27" />
+        </mxCell>
+        <mxCell id="other-modules" value="OTHER CONTRACTS  ·  quadrature.py: acquisition measure weights  ·  imaging.response: ground-grid response  ·  tolerances.py: native sensitivities and budgets" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=16;fontStyle=0;fontColor=#53647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="55" y="851" width="1490" height="28" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

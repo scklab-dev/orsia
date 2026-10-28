@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="Electron" version="31.7.0" type="device" compressed="false">
+  <diagram id="orsia-data-architecture" name="Orsia data architecture">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Inside orsia_data" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=32;fontStyle=1;fontColor=#172B4D;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="700" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Service access, reusable STAC and independent local readers" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="40" y="67" width="1200" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="application" value="&lt;b&gt;Application&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:19px&quot;&gt;Selections, paths and execution policy&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=18;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=25;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;spacing=14;" vertex="1" parent="1">
+          <mxGeometry x="555" y="120" width="520" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="data" value="orsia_data" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=0;align=left;verticalAlign=top;spacingLeft=24;spacingTop=14;fontFamily=Helvetica;fontSize=21;fontStyle=1;fontColor=#52647A;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="270" width="1520" height="480" as="geometry" />
+        </mxCell>
+        <mxCell id="services" value="&lt;b&gt;Named services&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:18px;color:#355A86&quot;&gt;services/&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:20px&quot;&gt;&lt;b&gt;CDSE&lt;/b&gt; · OData, STAC, auth&lt;br&gt;&lt;b&gt;Earthdata&lt;/b&gt; · CMR, auth&lt;br&gt;CDS · ADS · NOMADS · DEM&lt;br&gt;LISIRD · HITRAN&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=22;fontFamily=Helvetica;fontSize=25;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="data">
+          <mxGeometry x="30" y="65" width="420" height="225" as="geometry" />
+        </mxCell>
+        <mxCell id="stac" value="&lt;b&gt;Reusable STAC&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:18px;color:#65538B&quot;&gt;stac/&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:20px&quot;&gt;Local documents&lt;br&gt;Search and pagination&lt;br&gt;Asset inspection&lt;br&gt;No named-service dependency&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=22;fontFamily=Helvetica;fontSize=25;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="data">
+          <mxGeometry x="595" y="65" width="370" height="225" as="geometry" />
+        </mxCell>
+        <mxCell id="readers" value="&lt;b&gt;Local readers&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:20px&quot;&gt;and scientific preparation&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:20px&quot;&gt;atmosphere · surface&lt;br&gt;terrain · aerosols&lt;br&gt;solar · spectroscopy&lt;br&gt;geospatial&lt;/span&gt;&lt;br&gt;&lt;span style=&quot;font-size:20px&quot;&gt;Local files → scientific values&lt;/span&gt;&lt;br&gt;&lt;br&gt;&lt;span style=&quot;font-size:19px;color:#31685B&quot;&gt;No service session required&lt;br&gt;No implicit download&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=24;fontFamily=Helvetica;fontSize=25;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="data">
+          <mxGeometry x="1040" y="65" width="450" height="385" as="geometry" />
+        </mxCell>
+        <mxCell id="acquisition" value="&lt;b&gt;acquisition.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:19px&quot;&gt;Native-file transfer and publication&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=23;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="data">
+          <mxGeometry x="30" y="365" width="420" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="http" value="&lt;b&gt;http.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:19px&quot;&gt;Bounded JSON requests&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=23;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="data">
+          <mxGeometry x="595" y="365" width="370" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="radiative" value="&lt;b&gt;orsia-radiative&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:19px&quot;&gt;Physical contracts and computation&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=23;fontColor=#205547;fillColor=#FFFFFF;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="800" width="450" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="junction" value="" style="ellipse;html=0;fillColor=#52647A;strokeColor=#52647A;fontColor=#52647A;" vertex="1" parent="1">
+          <mxGeometry x="811" y="236" width="8" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="application-choice" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;" edge="1" parent="1" source="application" target="junction">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="application-services" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0;exitY=0.5;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;" edge="1" parent="1" source="junction" target="services">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="280" y="240" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="application-stac" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.486486;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;" edge="1" parent="1" source="junction" target="stac">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="application-readers" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;" edge="1" parent="1" source="junction" target="readers">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1305" y="240" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="cdse-stac" value="CDSE" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.42;entryX=0;entryY=0.42;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#789AC4;fontFamily=Helvetica;fontSize=18;fontColor=#355A86;fillColor=none;" edge="1" parent="data" source="services" target="stac">
+          <mxGeometry relative="1" y="16" as="geometry" />
+        </mxCell>
+        <mxCell id="services-acquisition" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#789AC4;fontColor=#355A86;fillColor=none;" edge="1" parent="data" source="services" target="acquisition">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="services-http" value="CDSE / Earthdata" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.833333;exitY=1;entryX=0.2;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#789AC4;fontFamily=Helvetica;fontSize=17;fontColor=#355A86;fillColor=none;" edge="1" parent="data" source="services" target="http">
+          <mxGeometry relative="1" y="15" as="geometry"><Array as="points"><mxPoint x="380" y="331" /><mxPoint x="669" y="331" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="stac-http" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.7;exitY=1;entryX=0.7;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#A490C4;fontColor=#65538B;fillColor=none;" edge="1" parent="data" source="stac" target="http">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="readers-radiative" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#79AB99;fontColor=#31685B;fillColor=none;" edge="1" parent="1" source="readers" target="radiative">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="key" value="Arrows: calls or dependencies" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=1;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="65" y="802" width="650" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="key-detail" value="Responsibility-level view, not an automatic pipeline." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=19;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="65" y="839" width="860" height="30" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

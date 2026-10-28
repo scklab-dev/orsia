@@ -1,0 +1,64 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<mxfile host="Electron" version="31.7.0" type="device" compressed="false">
+  <diagram id="orsia-uncertainty-architecture" name="Orsia uncertainty architecture">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Inside orsia_uncertainty" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=32;fontStyle=1;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="20" width="1500" height="45" />
+        </mxCell>
+        <mxCell id="subtitle" value="Array-only uncertainty algebra; semantics belong to the caller" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="75" width="1500" height="35" />
+        </mxCell>
+        <mxCell id="application" value="&lt;b&gt;Application&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Owns ordering, units, error laws and RNG&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="430" y="140" width="740" height="80" />
+        </mxCell>
+        <mxCell id="package" value="orsia_uncertainty" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=0;align=left;verticalAlign=top;spacingLeft=24;spacingTop=16;fontFamily=Helvetica;fontSize=23;fontStyle=1;fontColor=#52647A;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="300" width="1520" height="400" />
+        </mxCell>
+        <mxCell id="operations" value="&lt;b&gt;operations.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Signed bias and source terms&lt;br&gt;Declared cross-covariances&lt;br&gt;Gaussian ensembles&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="100" y="80" width="560" height="230" />
+        </mxCell>
+        <mxCell id="covariance" value="&lt;b&gt;covariance.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Variance vectors / dense matrices&lt;br&gt;Transport, solve, whitening&lt;br&gt;Numerical validation and factors&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="860" y="80" width="560" height="230" />
+        </mxCell>
+        <mxCell id="operations-covariance" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="package" source="operations" target="covariance">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="choice" value="" style="ellipse;html=0;fillColor=#52647A;strokeColor=#52647A;fontColor=#52647A;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="796" y="256" width="8" height="8" />
+        </mxCell>
+        <mxCell id="application-choice" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="application" target="choice">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="choose-operations" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="operations">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="420" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="choose-covariance" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="covariance">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1180" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="storage" value="&lt;b&gt;NumPy&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Direct array copies&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="350" y="765" width="900" height="75" />
+        </mxCell>
+        <mxCell id="covariance-storage" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.9222222222222222;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="covariance" target="storage">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="operations-storage" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.07777777777777778;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="operations" target="storage">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="key" value="Arrows: selected calls or dependencies. The application supplies physical error laws." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="65" y="860" width="1460" height="30" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

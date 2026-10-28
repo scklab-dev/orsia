@@ -1,0 +1,378 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "eccodes@2.48.0": {
+      "last_modified": "2026-08-27T07:16:00Z",
+      "resolved": "github:NixOS/nixpkgs/c27cdad491a991b11ed731760aa2ef8db0cb0410#eccodes",
+      "source": "devbox-search",
+      "version": "2.48.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ay7v1cfdmffxqp5j8zmmp0lzi6fr4w88-eccodes-2.48.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ay7v1cfdmffxqp5j8zmmp0lzi6fr4w88-eccodes-2.48.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/ngmzbwi0dfgah8v98pavzv07d77j6bfk-eccodes-2.48.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/ngmzbwi0dfgah8v98pavzv07d77j6bfk-eccodes-2.48.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/73li19iz7aaf6zvklaa9hygl0vg5hq6f-eccodes-2.48.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/73li19iz7aaf6zvklaa9hygl0vg5hq6f-eccodes-2.48.0"
+        }
+      }
+    },
+    "gfortran@15.2.0": {
+      "last_modified": "2026-07-08T21:13:06Z",
+      "resolved": "github:NixOS/nixpkgs/389ed85304b281ca7f306cf8a1eb4378651ca44e#gfortran",
+      "source": "devbox-search",
+      "version": "15.2.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/jybckfy6b409ry9hsraqadym7v10ah4w-gfortran-wrapper-15.2.0",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/bv7n2vy45sh3h952gbnhr9h0v9dpidia-gfortran-wrapper-15.2.0-man",
+              "default": true
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/bnypmkxp81y2x9bqh9q8632jmzqsk174-gfortran-wrapper-15.2.0-info"
+            }
+          ],
+          "store_path": "/nix/store/jybckfy6b409ry9hsraqadym7v10ah4w-gfortran-wrapper-15.2.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/d2z6avvh9jl1gaifhbq385kgir5r1q6g-gfortran-wrapper-15.2.0",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/7i025pjaqr0i0jv08p92axirq6cskyxz-gfortran-wrapper-15.2.0-man",
+              "default": true
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/5al0z56y28f6dq3d8k5rz4hiwfvshr0b-gfortran-wrapper-15.2.0-info"
+            }
+          ],
+          "store_path": "/nix/store/d2z6avvh9jl1gaifhbq385kgir5r1q6g-gfortran-wrapper-15.2.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/m7xkwnvk53x51606m18qb89rb2k6hqps-gfortran-wrapper-15.2.0",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/zh0xwzii3p9g5a7rzbii5nkda057l1y4-gfortran-wrapper-15.2.0-man",
+              "default": true
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/ymig15vbsqd95n8xgsvz1l8jq0mm1mcs-gfortran-wrapper-15.2.0-info"
+            }
+          ],
+          "store_path": "/nix/store/m7xkwnvk53x51606m18qb89rb2k6hqps-gfortran-wrapper-15.2.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/kh3n7kj9micw6kxs1jl9kr2ak8mxfa3v-gfortran-wrapper-15.2.0",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/5wchwsz94y1q7rakz7s3vna3irkpw466-gfortran-wrapper-15.2.0-man",
+              "default": true
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/1v0ffrpbsl04s5psv6ivyd4b4ddfp9fx-gfortran-wrapper-15.2.0-info"
+            }
+          ],
+          "store_path": "/nix/store/kh3n7kj9micw6kxs1jl9kr2ak8mxfa3v-gfortran-wrapper-15.2.0"
+        }
+      }
+    },
+    "git@2.55.0": {
+      "last_modified": "2026-08-27T07:16:00Z",
+      "resolved": "github:NixOS/nixpkgs/c27cdad491a991b11ed731760aa2ef8db0cb0410#git",
+      "source": "devbox-search",
+      "version": "2.55.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/yqw09igi72yxpgy3d1b25vbh5l8rx227-git-2.55.0",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/i8y217wsan9w8l62m7w2a0rrnmviaqqk-git-2.55.0-doc"
+            }
+          ],
+          "store_path": "/nix/store/yqw09igi72yxpgy3d1b25vbh5l8rx227-git-2.55.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/clxhwm4v3gl0k3hazm0zpx14gz2w0clz-git-2.55.0",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/1asxbx6r55sylz2ljdzk6404i0w28iri-git-2.55.0-debug"
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/ryn8xbxi2i1d2dharz9r7kb2ymqfgkyw-git-2.55.0-doc"
+            }
+          ],
+          "store_path": "/nix/store/clxhwm4v3gl0k3hazm0zpx14gz2w0clz-git-2.55.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/8yjpgadavqdwphcd2kw4dfvxmgdp5sb3-git-2.55.0",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/xf0wk67lvyxg1bkwi2rf6iszxlvj0yxj-git-2.55.0-debug"
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/yvx5ayi3k6gh8xgk9yxc9gpy0jb7f14l-git-2.55.0-doc"
+            }
+          ],
+          "store_path": "/nix/store/8yjpgadavqdwphcd2kw4dfvxmgdp5sb3-git-2.55.0"
+        }
+      }
+    },
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2026-09-07T10:11:09Z",
+      "resolved": "github:NixOS/nixpkgs/58973d74f1893afe13f5902919803a0e99da0ca4?lastModified=1788775869&narHash=sha256-JRf1lSypbvKj6AzUZHpUA6YC1DirVuitZWOnRwcm%2BWw%3D"
+    },
+    "just@1.57.0": {
+      "last_modified": "2026-08-01T16:34:20Z",
+      "resolved": "github:NixOS/nixpkgs/a5cbcfe954791221bfffe2307f7d1a1bf61a871e#just",
+      "source": "devbox-search",
+      "version": "1.57.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/n6qxmipv7x0mhqhn8rh6wwy647darcfl-just-1.57.0",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/rxdkf2w10qg6i5s8f358wrh2frzznak4-just-1.57.0-man",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/l33bjpd0wihw69028c57bbv2xywbmx1w-just-1.57.0-doc"
+            }
+          ],
+          "store_path": "/nix/store/n6qxmipv7x0mhqhn8rh6wwy647darcfl-just-1.57.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/r6hjn3p91594n85ww9jxs9k230wmwqhh-just-1.57.0",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/pr0lp4gvzqzk0ay4ir8bfclxv0wqmrdc-just-1.57.0-man",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/y51bl4shczg8wwrys02r9s7b9x2xh7pn-just-1.57.0-doc"
+            }
+          ],
+          "store_path": "/nix/store/r6hjn3p91594n85ww9jxs9k230wmwqhh-just-1.57.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/gw651v4xdfs9zwicw5nbrlyaxph17rmd-just-1.57.0",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/zd6721rmmi01rqazz2a4hvfdv2aidy8d-just-1.57.0-man",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/xqx2hngsfb56w5gr3pgvamnygxkghzc2-just-1.57.0-doc"
+            }
+          ],
+          "store_path": "/nix/store/gw651v4xdfs9zwicw5nbrlyaxph17rmd-just-1.57.0"
+        }
+      }
+    },
+    "netcdffortran@4.4.5": {
+      "last_modified": "2026-08-27T07:16:00Z",
+      "resolved": "github:NixOS/nixpkgs/c27cdad491a991b11ed731760aa2ef8db0cb0410#netcdffortran",
+      "source": "devbox-search",
+      "version": "4.4.5",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/s7y8xgk4d135ydri2rrpw40i4xcankbf-netcdf-fortran-4.4.5",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/s7y8xgk4d135ydri2rrpw40i4xcankbf-netcdf-fortran-4.4.5"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/hwi3lssmh923ws6iq06c1ahsiprs18vz-netcdf-fortran-4.4.5",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/hwi3lssmh923ws6iq06c1ahsiprs18vz-netcdf-fortran-4.4.5"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/h89p445y4ypsabrffyghs8098m046pwq-netcdf-fortran-4.4.5",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/h89p445y4ypsabrffyghs8098m046pwq-netcdf-fortran-4.4.5"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/54kwb3zyg8jlczizn28rpia87plvgk2p-netcdf-fortran-4.4.5",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/54kwb3zyg8jlczizn28rpia87plvgk2p-netcdf-fortran-4.4.5"
+        }
+      }
+    },
+    "ripgrep@15.2.0": {
+      "last_modified": "2026-08-27T07:16:00Z",
+      "resolved": "github:NixOS/nixpkgs/c27cdad491a991b11ed731760aa2ef8db0cb0410#ripgrep",
+      "source": "devbox-search",
+      "version": "15.2.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lmrkq2dixahzmvb7gb9ivr8hdlj9w7cy-ripgrep-15.2.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lmrkq2dixahzmvb7gb9ivr8hdlj9w7cy-ripgrep-15.2.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/l02znzqak7gnap7jh95d794gxcwbc2il-ripgrep-15.2.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/l02znzqak7gnap7jh95d794gxcwbc2il-ripgrep-15.2.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zc6fy62c341aibk36p4ywff7rf9wn4wx-ripgrep-15.2.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zc6fy62c341aibk36p4ywff7rf9wn4wx-ripgrep-15.2.0"
+        }
+      }
+    },
+    "uv@0.11.28": {
+      "last_modified": "2026-07-23T05:10:05Z",
+      "resolved": "github:NixOS/nixpkgs/7525d999cd850b9a488817abc89c75dc733acf17#uv",
+      "source": "devbox-search",
+      "version": "0.11.28",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/yn36m1y6l2kmhx1dkqsmy3kf6acx77mz-uv-0.11.28",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/yn36m1y6l2kmhx1dkqsmy3kf6acx77mz-uv-0.11.28"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/lj1akylx79l52f6yp3j2a55gf7s7vhx1-uv-0.11.28",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/lj1akylx79l52f6yp3j2a55gf7s7vhx1-uv-0.11.28"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/zrq88ys031mx35ib1lb3xahcm4dsq71r-uv-0.11.28",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/zrq88ys031mx35ib1lb3xahcm4dsq71r-uv-0.11.28"
+        }
+      }
+    }
+  }
+}

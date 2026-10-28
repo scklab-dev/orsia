@@ -1,0 +1,101 @@
+"""Explicit acquisition and local scientific readers; imports never download."""
+
+from .acquisition import download_bearer_file, download_file
+from .aerosols import read_cams_aod
+from .atmosphere import (
+    download_cams,
+    download_era5,
+    download_gfs,
+    file_sha256,
+    gfs_valid_time,
+    read_gfs_profiles,
+    read_netcdf_profiles,
+    read_netcdf_surface_fields,
+    read_pressure_level_atmosphere,
+    read_rfm_atmosphere,
+)
+from .geospatial import (
+    RasterBand,
+    RasterGrid,
+    crop_raster,
+    iter_raster_windows,
+    mosaic_rasters,
+    read_raster_band,
+    read_raster_grid,
+    reproject_raster,
+    sample_raster,
+    window_from_bounds,
+    window_grid,
+)
+from .providers import (
+    download_cdse,
+    download_earthdata,
+    earthdata_links,
+    retrieve_file,
+    search_earthdata,
+    search_sentinel2_l2a,
+)
+from .services.mipas import download_mipas_profile
+from .solar import fetch_solar_spectrum, read_solar_spectrum_csv
+from .spectroscopy import (
+    download_mt_ckd_water,
+    fetch_hitran_lines,
+    fetch_mt_ckd_water,
+    read_aer_lines,
+    read_cross_section_table,
+    read_hitran_lines,
+    read_mt_ckd_water,
+    read_partition_table,
+)
+from .surface import read_aster_ged, read_ecostress_l2t, read_sentinel2_l2a, read_sentinel2_metadata
+from .terrain import download_copernicus_dem, read_copernicus_dem
+
+__all__ = [
+    "iter_raster_windows",
+    "read_raster_grid",
+    "window_from_bounds",
+    "download_bearer_file",
+    "RasterBand",
+    "RasterGrid",
+    "crop_raster",
+    "mosaic_rasters",
+    "read_raster_band",
+    "reproject_raster",
+    "sample_raster",
+    "window_grid",
+    "download_cdse",
+    "download_earthdata",
+    "earthdata_links",
+    "retrieve_file",
+    "search_earthdata",
+    "search_sentinel2_l2a",
+    "read_aster_ged",
+    "read_ecostress_l2t",
+    "read_sentinel2_l2a",
+    "read_sentinel2_metadata",
+    "download_copernicus_dem",
+    "read_copernicus_dem",
+    "read_cams_aod",
+    "download_cams",
+    "download_era5",
+    "download_gfs",
+    "file_sha256",
+    "gfs_valid_time",
+    "read_gfs_profiles",
+    "read_netcdf_profiles",
+    "read_netcdf_surface_fields",
+    "read_pressure_level_atmosphere",
+    "read_rfm_atmosphere",
+    "download_mipas_profile",
+    "download_mt_ckd_water",
+    "fetch_mt_ckd_water",
+    "fetch_solar_spectrum",
+    "fetch_hitran_lines",
+    "download_file",
+    "read_solar_spectrum_csv",
+    "read_aer_lines",
+    "read_hitran_lines",
+    "read_partition_table",
+    "read_mt_ckd_water",
+    "read_cross_section_table",
+]

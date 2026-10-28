@@ -1,0 +1,64 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<mxfile host="Electron" version="31.7.0" type="device" compressed="false">
+  <diagram id="orsia-numerics-architecture" name="Orsia numerics architecture">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="940" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Inside orsia_numerics" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=32;fontStyle=1;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="20" width="1500" height="45" />
+        </mxCell>
+        <mxCell id="subtitle" value="Array helpers and an explicit, application-owned CPU execution boundary" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="75" width="1500" height="35" />
+        </mxCell>
+        <mxCell id="application" value="&lt;b&gt;Caller&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Choose operations; own task decomposition and pool lifetime&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="400" y="135" width="800" height="90" />
+        </mxCell>
+        <mxCell id="package" value="orsia_numerics" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=0;align=left;verticalAlign=top;spacingLeft=24;spacingTop=16;fontFamily=Helvetica;fontSize=23;fontStyle=1;fontColor=#52647A;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="300" width="1520" height="400" />
+        </mxCell>
+        <mxCell id="arrays" value="&lt;b&gt;arrays.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Finite range validation&lt;br&gt;Exact array-record equality&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=26;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="40" y="80" width="900" height="280" />
+        </mxCell>
+        <mxCell id="execution" value="&lt;b&gt;execution.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;CpuThreadPoolExecutor&lt;br&gt;submit / map; explicit shutdown&lt;br&gt;Distinct pinned Linux CPUs&lt;br&gt;Pthreads OpenBLAS: 1 thread, process-wide&lt;br&gt;OpenMP: serialized within each worker&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=26;fontColor=#714A20;fillColor=#FFF4E5;strokeColor=#C49A60;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="990" y="80" width="490" height="280" />
+        </mxCell>
+        <mxCell id="backend" value="&lt;b&gt;NumPy&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Array operations&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="80" y="750" width="900" height="105" />
+        </mxCell>
+        <mxCell id="execution-backend" value="&lt;b&gt;Execution facilities&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;concurrent.futures / Linux affinity&lt;br&gt;threadpoolctl / native runtime controls&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=26;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1030" y="750" width="490" height="105" />
+        </mxCell>
+        <mxCell id="choice" value="" style="ellipse;html=0;fillColor=#52647A;strokeColor=#52647A;fontColor=#52647A;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="796" y="256" width="8" height="8" />
+        </mxCell>
+        <mxCell id="caller-choice" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="application" target="choice">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="choose-arrays" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="arrays">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+               <mxPoint x="530" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrays-backend" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="arrays" target="backend">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="choose-execution" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="execution">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1275" y="260" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="execution-facilities" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="execution" target="execution-backend">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="key" value="Arrows: calls or dependencies, not pipeline stages. Array helpers never schedule tasks implicitly." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="65" y="875" width="1460" height="30" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

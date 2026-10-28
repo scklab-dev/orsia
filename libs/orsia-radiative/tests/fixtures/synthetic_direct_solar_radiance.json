@@ -1,0 +1,23 @@
+{
+  "fixture_id": "orsia-synthetic-direct-solar-v1",
+  "origin": "original synthetic numbers and independently evaluated Beer-Lambert/Lambertian formula; no external data or code",
+  "license": "original project-authored test fixture; no third-party material",
+  "reference_kind": "analytic formula, not independent solver or observation",
+  "spectral_axis": {"name": "nu", "kind": "wavenumber", "unit": "cm-1", "sampling": "centres", "coordinates": [1000.0, 1001.0]},
+  "density": "per_wavenumber",
+  "layer_order": "bottom_to_top",
+  "absorption_source": "absorption-v1",
+  "absorption_optical_depth": [[0.1, 0.2]],
+  "scattering": "none (absorption only)",
+  "surface_reflectance": [0.2, 0.4],
+  "solar_zenith_deg": 30.0,
+  "view_zenith_deg": 10.0,
+  "relative_azimuth_deg": 20.0,
+  "irradiance_source": "solar-v1",
+  "irradiance_unit": "W m-2 per cm-1 normal to solar beam",
+  "irradiance": [10.0, 20.0],
+  "radiance_unit": "W m-2 sr-1 per cm-1",
+  "radiance": [0.4437755082156034, 1.4288146572934577],
+  "model_id": "direct_solar_lambertian_absorption_only_v1",
+  "validity": "one-layer synthetic, absorption-only, direct sun, opaque Lambertian surface; software regression only"
+}

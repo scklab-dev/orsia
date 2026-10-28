@@ -1,0 +1,13 @@
+[project]
+name = "orsia-instruments"
+version = "0.1.0"
+description = "Sampled acquisition, bounded optical responses and physical detector readout"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = ["numpy>=2.3,<3", "scipy>=1.16,<2", "orsia-numerics==0.1.0", "orsia-radiative==0.1.0", "orsia-uncertainty==0.1.0"]
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12"]
+build-backend = "uv_build"

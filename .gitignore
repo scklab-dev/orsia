@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+.devbox/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+# Interpreter/platform-specific products of the packaged propagation build.
+/libs/orsia-radiative/src/orsia_radiative/transfer/native/propagation_native*.so
+/libs/orsia-radiative/src/orsia_radiative/transfer/native/propagation_native*.pyd
+.env
+.env.*
+!.env.example
+/outputs/
+/.artifacts/
