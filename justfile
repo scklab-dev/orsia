@@ -25,6 +25,32 @@ setup:
     uv python install "$(cat .python-version)"
     uv sync --locked --all-packages
 
+# Explicit authentic acquisitions populate ignored outputs/ for both notebooks.
+prepare-five-band:
+    uv run --locked --all-packages --extra hitran --extra atmosphere python scripts/prepare_five_band.py
+
+prepare-five-band-enriched *args:
+    uv run --locked --all-packages --extra hitran --extra atmosphere python scripts/prepare_five_band_enriched.py {{args}}
+
+setup-sasktran2-reference:
+    UV_PROJECT_ENVIRONMENT=outputs/sasktran2-env uv sync --locked --only-group sasktran2-reference --python 3.14.3+gil --no-build
+
+execute-five-band:
+    uv run --no-sync --locked --all-packages --extra atmosphere python -m ipykernel install --prefix outputs/jupyter --name orsia-314t --display-name "Orsia CPython 3.14 free-threaded"
+    JUPYTER_PATH="$PWD/outputs/jupyter/share/jupyter${JUPYTER_PATH:+:$JUPYTER_PATH}" MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere jupyter execute --inplace --timeout=3600 --kernel_name=orsia-314t notebooks/era5_hitran_sasktran2_five_bands.ipynb
+
+execute-instrument-responses:
+    uv run --no-sync --locked --all-packages --extra atmosphere python -m ipykernel install --prefix outputs/jupyter --name orsia-314t --display-name "Orsia CPython 3.14 free-threaded"
+    JUPYTER_PATH="$PWD/outputs/jupyter/share/jupyter${JUPYTER_PATH:+:$JUPYTER_PATH}" MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere jupyter execute --inplace --timeout=3600 --kernel_name=orsia-314t notebooks/era5_hitran_instrument_responses.ipynb
+    uv run --no-sync --locked --all-packages python -m notebooks.support.notebook_instrument_responses
+
+# Replay against the user's own completed instrument execution, without new provider calls.
+replay-instrument-response:
+    MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere python -m scripts.replay_instrument_response
+
+test-notebooks:
+    MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere python -m pytest --no-cov notebooks/tests
+
 # Regenerate Python resolution after an explicit dependency declaration change.
 lock:
     uv lock

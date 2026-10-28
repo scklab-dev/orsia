@@ -26,8 +26,8 @@ devbox run -- just check
 
 `setup` provisions the locked CPython 3.14 free-threaded workspace in a local `.venv`. `check` runs formatting, Ruff, Pyrefly, dependency boundaries, free-threaded runtime checks and the software test suite with a 90% combined statement-and-branch coverage threshold for the workspace and each library. `devbox run -- just build` builds the six wheels. `devbox run -- just clean-install` checks installation outside workspace resolution.
 
-The [radiative composition guide](docs/atmosphere-to-radiance.md), [thermal composition guide](docs/atmosphere-to-thermal-radiance.md), [data acquisition guide](docs/atmospheric-data.md), [data products guide](docs/data-products.md), [data services guide](docs/data-services.md), [solar spectrum guide](docs/hsrs.md) and [MIPAS reference guide](docs/mipas-reference-atmospheres.md) explain the library boundaries and examples.
+The [radiative composition guide](docs/atmosphere-to-radiance.md), [thermal composition guide](docs/atmosphere-to-thermal-radiance.md), [data acquisition guide](docs/atmospheric-data.md), [data products guide](docs/data-products.md), [data services guide](docs/data-services.md), [solar spectrum guide](docs/hsrs.md) and [MIPAS reference guide](docs/mipas-reference-atmospheres.md) explain the library boundaries and examples. The [notebook guide](notebooks/README.md) describes both canonical notebooks, local input preparation, isolated reference setup and offline checks.
 
 ## License
 
-Orsia source, tests, synthetic fixtures, documentation and diagrams, including their SVG/PNG exports, are licensed under Apache-2.0. See the root [LICENSE](LICENSE) and each library's `LICENSE`.
+Orsia-authored source, tests, synthetic fixtures, documentation, notebooks, diagrams, saved notebook figures and diagram SVG/PNG exports are distributed under Apache-2.0. External inputs used to generate notebook figures retain their provider terms and attribution requirements. See the root [LICENSE](LICENSE), each library's `LICENSE` and the [notebook provenance guide](notebooks/README.md#provenance-and-attribution).

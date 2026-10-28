@@ -1,0 +1,33 @@
+{
+  "satellite_name": "GESAT GEN 1",
+  "norad_catalog_id": 62612,
+  "pointing": "Continuous geocentric nadir: radial optical axis toward Earth's centre, intersected with the WGS84 ellipsoid.",
+  "terrain_height_m": 0,
+  "reference_time_utc": "2025-06-17T11:14:51.378Z",
+  "scene_centre_latitude_deg": 43.61793268168382,
+  "scene_centre_longitude_deg": 1.3637164590379764,
+  "scene_location_description": "Western Toulouse area; nominal nadir trace at the closest daylight passage to the adopted city-centre coordinates during June and July 2025.",
+  "city_centre_reference_latitude_deg": 43.6045,
+  "city_centre_reference_longitude_deg": 1.444,
+  "scene_centre_distance_from_city_centre_km": 6.6507495336501075,
+  "image_extent_along_track_m": 5000,
+  "image_extent_cross_track_m": 5000,
+  "reconstructed_ground_sampling_m": 50,
+  "image_shape_along_cross_track": [100, 100],
+  "altitude_above_wgs84_ellipsoid_km": 506.64502436864217,
+  "nadir_ground_speed_km_s": 7.122363330501047,
+  "solar_elevation_at_city_centre_approx_deg": 68.14362144813778,
+  "along_track_5km_traversal_s": 0.7020141725412733,
+  "along_track_50m_traversal_ms": 7.020141725412733,
+  "historical_elements_epoch_utc": "2025-06-17T04:20:17.112768Z",
+  "historical_elements_gp_id": "290185411",
+  "historical_elements_age_at_reference_h": 6.90951815637152,
+  "provenance": {
+    "source": "Space-Track GP_HISTORY, with SGP4 propagation through Skyfield 1.54",
+    "query_receipt": "query-source.json",
+    "raw_elements": "62612-gp-history-2025-05-31--2025-08-01.json",
+    "calculation_checks": "selected-pass-checks-refined.json"
+  },
+  "parameter_status": "The user selected nadir pointing, Toulouse, June-July 2025, a 5 km square image and 50 m reconstructed sampling. The date, adjusted centre, along/cross-track grid orientation and geocentric nadir convention are assistant-selected simulation refinements.",
+  "qualification": "Nominal orbit-based simulation geometry. Displayed digits describe reproducible calculations; actual orbit, attitude and geolocation accuracy require separate evidence. The 50 m value specifies reconstructed sampling. Traversal times describe along-track ground motion; complete spectral-image acquisition duration depends on each optical architecture, exposures, reconstruction and edge coverage."
+}
