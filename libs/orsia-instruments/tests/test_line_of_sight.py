@@ -440,7 +440,7 @@ def test_ray_record_validates_shapes_unit_directions_and_order(changes):
 
 @pytest.mark.skipif(
     os.environ.get("ORSIA_TEST_ORBITAL") != "1",
-    reason="run just test-orbital for native frame/time integration",
+    reason="run just --justfile tests/justfile test-orbital for native frame/time integration",
 )
 def test_terrestrial_state_and_attitude_are_transformed_before_instrument_sampling():
     from orsia_geometry import frame_rotations, transform_states

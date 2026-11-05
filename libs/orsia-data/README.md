@@ -51,4 +51,4 @@ Expected output: `[1.8, 1.9]`, in W m-2 nm-1 at point centres in nm. Reading per
 - Readers require supported schemas and physical support. Detailed readers return independent writable arrays; reusable spectroscopy collection references contain independent read-only snapshots. Keep raw files stable during reading.
 - The experimental LISIRD adapter has no verified live schema here. HAPI acquisition mutates shared backend state and requires caller-managed serialization or isolation.
 
-From the workspace root, run `devbox run -- just test-data`. Offline synthetic tests establish software contracts; authentic provider coverage and scientific accuracy have separate evidence limits in each guide. Credentials and copyrighted raw products remain outside the repository.
+From the workspace root, run `devbox run -- just --justfile tests/justfile pytest libs/orsia-data/tests`. Offline synthetic tests establish software contracts; authentic provider coverage and scientific accuracy have separate evidence limits in each guide. Credentials and copyrighted raw products remain outside the repository.

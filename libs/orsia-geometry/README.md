@@ -119,9 +119,9 @@ For existing dated rays, `transform_rays` rotates matching `(...,3)` origins and
 With the existing DE421 and IERS EOP fixtures under `outputs/geometry-auxiliaries`, execute the README Python blocks against actual SatKit from the workspace root. The offline recipe fails if required files are absent:
 
 ```bash
-devbox run -- just test-orbital -k readme -s
+devbox run -- just --justfile tests/justfile test-orbital -k readme -s
 ```
 
 SatKit's normal public auxiliary management remains available outside the fixed local test recipe; offline operation is a test-fixture choice.
 
-`devbox run -- just test-geometry` covers array geometry, supplied trajectories and orbital contracts without requiring native orbital resources. The opt-in `test-orbital` scope executes this README and separately exercises native SatKit against bounded ERFA, GMAT and Vallado references. The workspace guide tests retain dependency-light examples and local-link checks. `coverage-geometry` applies the existing 90% combined statement-and-branch gate to Geometry; `check` includes Geometry in aggregate and per-library gates. Software checks establish no mission, orbit-knowledge or engineering qualification. Authenticated Space-Track access belongs to Data and has only mocked/local qualification here.
+`devbox run -- just --justfile tests/justfile pytest libs/orsia-geometry/tests libs/orsia-instruments/tests/test_line_of_sight.py tests/test_core_imports.py` covers array geometry, supplied trajectories and orbital contracts without requiring native orbital resources. The opt-in `test-orbital` scope executes this README and separately exercises native SatKit against bounded ERFA, GMAT and Vallado references. The workspace guide tests retain dependency-light examples and local-link checks. `test` and `check` include Geometry in the aggregate and per-library 90% combined statement-and-branch coverage gates. Software checks establish no mission, orbit-knowledge or engineering qualification. Authenticated Space-Track access belongs to Data and has only mocked/local qualification here.

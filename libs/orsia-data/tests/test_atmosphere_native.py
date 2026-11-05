@@ -13,7 +13,7 @@ from orsia_data import read_gfs_profiles, read_netcdf_profiles
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ORSIA_TEST_ATMOSPHERE_BACKENDS") != "1",
-    reason="run just test-atmosphere-backends for optional native interoperability",
+    reason="run just --justfile tests/justfile test-atmosphere-backends",
 )
 
 

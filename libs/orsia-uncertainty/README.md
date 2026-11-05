@@ -40,4 +40,4 @@ Expected output: `3.75 0.25`. The output variance is in DN²; the signed shift i
 - [Covariance and ensemble reference](docs/covariance.md): module ownership, prepared-factor reuse, shapes, tolerances and source sums.
 - [Orsia Inverse](../orsia-inverse/README.md): fixed-covariance estimation using this package's factors.
 
-Run `devbox run -- just test-uncertainty` from the workspace root. Synthetic algebra checks leave physical error laws, population coverage and image-scale resource costs application-specific.
+Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-uncertainty/tests` from the workspace root. Synthetic algebra checks leave physical error laws, population coverage and image-scale resource costs application-specific.

@@ -70,4 +70,4 @@ Expected output: `[0.031831, 0.127324]`, in W m-2 sr-1 per (cm-1). The two sampl
 - [Transfer reference](docs/transfer.md): solar/LTE APIs, executable examples, Delta-M and evidence limits.
 - [Native execution](docs/native-execution.md): implementation details and precision contracts.
 
-Run `devbox run -- just test-solar-calls` or `devbox run -- just test-thermal` from the workspace root. Synthetic numerical agreement leaves broad atmospheric accuracy, external-solver parity, instrument response and retrieval performance unqualified.
+Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-radiative/tests` or `devbox run -- just --justfile tests/justfile pytest libs/orsia-radiative/tests/test_thermal.py libs/orsia-radiative/tests/test_radiometry.py` from the workspace root. Synthetic numerical agreement leaves broad atmospheric accuracy, external-solver parity, instrument response and retrieval performance unqualified.

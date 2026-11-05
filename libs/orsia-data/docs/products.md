@@ -131,8 +131,8 @@ All readers accept bounded windows where applicable. Warp memory scales with sup
 Install `orsia-data[geospatial]` for Rasterio, pyproj and h5py. These backends are imported only by operations that need them. The base package and existing atmospheric/spectroscopy interfaces remain usable without that extra. Applications call data APIs, which use public radiative contracts; radiative has no data dependency.
 
 ```bash
-devbox run -- just test-data
-devbox run -- just typecheck-data
+devbox run -- just --justfile tests/justfile pytest libs/orsia-data/tests
+devbox run -- just typecheck
 devbox run -- just check
 ```
 

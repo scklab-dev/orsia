@@ -60,4 +60,4 @@ The returned `LinearEstimate` contains the minimum-norm state, estimator samplin
 
 - [Estimation and diagnostics reference](docs/estimation.md): module ownership, derivative checks, conditioning, bounds and uncertainty transport.
 
-Run `devbox run -- just test-inverse` from the workspace root. Numerical success and synthetic regressions leave physical model validity, nonlinear statistical coverage and atmospheric retrieval performance unqualified.
+Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-inverse/tests` from the workspace root. Numerical success and synthetic regressions leave physical model validity, nonlinear statistical coverage and atmospheric retrieval performance unqualified.

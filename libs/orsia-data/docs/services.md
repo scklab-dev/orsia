@@ -137,7 +137,7 @@ with CdseClient() as cdse:
 
 ## Compatibility and verification
 
-Keep discovery, selection, transfer, extraction and scientific reading explicitly callable. Local readers may construct public radiative values; radiative never imports data. Run `devbox run -- just test-data` from the workspace root after changing a service or reader.
+Keep discovery, selection, transfer, extraction and scientific reading explicitly callable. Local readers may construct public radiative values; radiative never imports data. Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-data/tests` from the workspace root after changing a service or reader.
 
 Compatibility imports include top-level functions, `providers`, `atmosphere.providers`, `solar.lisird`, `spectroscopy.hitran` and `terrain.download_copernicus_dem`. They preserve scientific selections, outputs and file-publication semantics. Internal monkeypatch locations are outside the public contract; tests intercept named services or shared transport. CDSE/CMR search functions accept a borrowed `session`; its timeout/byte/security policy overrides the standalone timeout. Native catalogue requests fail on redirects, preventing implicit redirection of credential-bearing sessions and POST bodies.
 

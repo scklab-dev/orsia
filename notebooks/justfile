@@ -1,15 +1,31 @@
+set shell := ["bash", "-uc"]
+set positional-arguments
 set working-directory := ".."
+set default-list
 
-check-paths := "notebooks/support tests/test_five_band_notebook.py tests/test_instrument_response_notebook.py tests/test_instrument_notebook_chains.py tests/test_notebook_companions.py tests/test_five_band_enrichment.py tests/test_notebook_sasktran2_cache.py"
+# Acquire authentic notebook inputs explicitly.
+prepare-five-band:
+    uv run --locked --all-packages --extra hitran --extra atmosphere python -m notebooks.support.prepare_five_band
 
-# Scoped checks preserve the provisioned workspace environment.
-fmt:
-    uv run --no-sync --locked --all-packages ruff format {{check-paths}}
-    uv run --no-sync --locked --all-packages ruff check --fix {{check-paths}}
+# Import retained authentic spectroscopy offline into a local collection.
+prepare-spectroscopy:
+    uv run --no-sync --locked --all-packages --extra atmosphere python -m notebooks.support.prepare_spectroscopy
 
-test:
-    MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere python -m pytest --no-cov tests/test_five_band_notebook.py tests/test_instrument_response_notebook.py tests/test_instrument_notebook_chains.py tests/test_notebook_companions.py tests/test_five_band_enrichment.py tests/test_notebook_sasktran2_cache.py
+# Verify retained enrichment offline; --download explicitly acquires inputs.
+prepare-five-band-enriched *args:
+    uv run --locked --all-packages --extra hitran --extra atmosphere python -m notebooks.support.prepare_five_band_enriched "$@"
 
-lint:
-    uv run --no-sync --locked --all-packages ruff check {{check-paths}}
-    uv run --no-sync --locked --all-packages ruff format --check {{check-paths}}
+# Register the local kernel and execute the notebook with retained inputs.
+execute-five-band:
+    uv run --no-sync --locked --all-packages --extra atmosphere python -m ipykernel install --prefix outputs/jupyter --name orsia-314t --display-name "Orsia CPython 3.14 free-threaded"
+    JUPYTER_PATH="$PWD/outputs/jupyter/share/jupyter${JUPYTER_PATH:+:$JUPYTER_PATH}" MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere jupyter execute --inplace --timeout=3600 --kernel_name=orsia-314t notebooks/era5_hitran_sasktran2_five_bands.ipynb
+
+# Execute the instrument notebook and export figures from retained inputs.
+execute-instrument-responses:
+    uv run --no-sync --locked --all-packages --extra atmosphere python -m ipykernel install --prefix outputs/jupyter --name orsia-314t --display-name "Orsia CPython 3.14 free-threaded"
+    JUPYTER_PATH="$PWD/outputs/jupyter/share/jupyter${JUPYTER_PATH:+:$JUPYTER_PATH}" MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere jupyter execute --inplace --timeout=3600 --kernel_name=orsia-314t notebooks/era5_hitran_instrument_responses.ipynb
+    uv run --no-sync --locked --all-packages python -m notebooks.support.notebook_instrument_responses
+
+# Replay selected-read chains against the latest full notebook execution.
+replay-instrument-response:
+    MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere python -m notebooks.support.replay_instrument_response

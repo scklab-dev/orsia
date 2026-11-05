@@ -27,6 +27,7 @@ EXAMPLES = (
 )
 DOCUMENTS = (
     ROOT / "README.md",
+    ROOT / "DEVELOPMENT.md",
     *(ROOT / f"libs/orsia-{library}/README.md" for library in LIBRARIES),
     *(
         path

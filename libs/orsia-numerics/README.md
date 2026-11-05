@@ -45,4 +45,4 @@ Expected output on supported Linux: `[5.0, 25.0]`. This tiny calculation demonst
 
 - [Executor contract](docs/execution.md): source ownership, independent array snapshots, CPU selection, native limits and lifecycle.
 
-Run `devbox run -- just test-numerics` from the workspace root. Affinity and a disabled GIL alone do not establish backend thread safety, scientific correctness or speedup.
+Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-numerics/tests` from the workspace root. Affinity and a disabled GIL alone do not establish backend thread safety, scientific correctness or speedup.

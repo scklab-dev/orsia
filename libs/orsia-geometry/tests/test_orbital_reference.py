@@ -35,7 +35,7 @@ from orsia_geometry.constants import WGS84_SEMIAXES_M, WGS84_SEMIMAJOR_AXIS_M
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ORSIA_TEST_ORBITAL") != "1",
-    reason="native reference scope: just test-orbital with existing local fixtures",
+    reason="run just --justfile tests/justfile test-orbital with existing local fixtures",
 )
 
 # CelesTrak fundamentals-of-astrodynamics 49df0479c950917c0a2c5ac31f2db6477bba57f6:

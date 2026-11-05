@@ -123,4 +123,4 @@ This breaking migration retains the earlier `DetectorMaps` to `DetectorPropertie
 - [Acquisition, readout and tolerances](docs/acquisition-and-detector.md): source ownership, local geometry, charge-only sampling and advanced kernels.
 - [GCRS line of sight](docs/line-of-sight.md): a moving pixel observes a varying surface, followed by frame and continuous-support contracts.
 
-Run `devbox run -- just test-instruments` from the workspace root. Bounded synthetic regressions leave realistic internal backgrounds, instrument accuracy, image-scale feasibility and retrieval performance unqualified.
+Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-instruments/tests tests/test_instrument_examples.py tests/test_lvf_scan.py tests/test_instrument_composition.py` from the workspace root. Bounded synthetic regressions leave realistic internal backgrounds, instrument accuracy, image-scale feasibility and retrieval performance unqualified.

@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-describedby="description">
+  <desc id="description">The application selects Data I/O, composes independent Geometry, Radiative and Instruments calculations, and supplies callbacks or a matrix to Inverse. Inverse evaluates the supplied prediction and Jacobian callbacks. Geometry has an array core and SatKit adapters with public auxiliary data access. Uncertainty and optional Numerics execution are cross-cutting capabilities.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#52677d"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: Helvetica, Arial, sans-serif; fill: #243b58; font-size: 24px; }
+    .name { font-size: 28px; font-weight: 700; }
+    .group { font-size: 25px; font-weight: 700; fill: #52677d; }
+    .small { font-size: 22px; }
+    .call { fill: none; stroke: #52677d; stroke-width: 2.5; marker-end: url(#arrow); }
+    .box { stroke-width: 1.5; rx: 8; }
+  </style>
+  <rect width="1600" height="900" fill="#ffffff"/>
+
+  <!-- Selected calls; scientific peers deliberately have no pipeline arrows. -->
+  <g aria-label="Selected application calls">
+    <path class="call" d="M 180 130 V 252"/>
+    <text x="198" y="196" class="small">acquire / read</text>
+    <path class="call" d="M 760 130 V 252"/>
+    <text x="778" y="196" class="small">compose calls</text>
+    <path class="call" d="M 1240 130 V 252"/>
+    <text x="1258" y="184" class="small"><tspan x="1258">solve /</tspan><tspan x="1258" dy="28">diagnose</tspan></text>
+    <path class="call" stroke-dasharray="7 6" d="M 1510 252 V 130"/>
+    <text x="1396" y="196" class="small">fun / jac</text>
+  </g>
+
+  <g data-qa-block="application">
+    <rect class="box" x="40" y="24" width="1520" height="106" fill="#243b58" stroke="#243b58"/>
+    <text x="66" y="65" class="name" style="fill:#ffffff">Caller-owned application and model composition</text>
+    <text x="66" y="104" style="fill:#ffffff">Scenes, data choices, physical assumptions, derivatives, random streams and execution budgets</text>
+  </g>
+
+  <g data-qa-block="data">
+    <rect class="box" x="40" y="252" width="280" height="340" fill="#fff4df" stroke="#c4a56c"/>
+    <text x="64" y="300" class="name">Data</text>
+    <text x="64" y="345"><tspan x="64">Explicit acquisition</tspan><tspan x="64" dy="36">Local readers</tspan><tspan x="64" dy="36">Geospatial</tspan><tspan x="64" dy="32">preparation</tspan></text>
+    <text x="64" y="510" class="small"><tspan x="64">Files, providers</tspan><tspan x="64" dy="32">and owned sessions</tspan></text>
+  </g>
+
+  <g aria-label="Scientific model components">
+    <rect class="box" x="350" y="252" width="820" height="340" fill="#f7f9fc" stroke="#c6d1df"/>
+    <text x="374" y="290" class="group">Scientific model components</text>
+    <g data-qa-block="geometry">
+      <rect class="box" x="374" y="314" width="238" height="126" fill="#e9effb" stroke="#7798c0"/>
+      <text x="394" y="352" class="name">Geometry</text>
+      <text x="394" y="390" class="small"><tspan x="394">Array rays, attitudes</tspan><tspan x="394" dy="30">and surfaces</tspan></text>
+    </g>
+    <g data-qa-block="geometry-adapters">
+      <rect class="box" x="374" y="456" width="238" height="112" fill="#fff4df" stroke="#c4a56c"/>
+      <text x="394" y="486" class="small"><tspan x="394" font-weight="700">SatKit adapters</tspan><tspan x="394" dy="30">Orbits / frames</tspan><tspan x="394" dy="30">Public auxiliaries</tspan></text>
+    </g>
+    <g data-qa-block="radiative">
+      <rect class="box" x="636" y="314" width="238" height="254" fill="#e9effb" stroke="#7798c0"/>
+      <text x="656" y="352" class="name">Radiative</text>
+      <text x="656" y="400" class="small"><tspan x="656">Atmospheric state</tspan><tspan x="656" dy="34">Spectroscopy / optics</tspan><tspan x="656" dy="34">Solar / thermal</tspan><tspan x="656" dy="30">radiance</tspan></text>
+    </g>
+    <g data-qa-block="instruments">
+      <rect class="box" x="898" y="314" width="248" height="254" fill="#e9effb" stroke="#7798c0"/>
+      <text x="918" y="352" class="name">Instruments</text>
+      <text x="918" y="400" class="small"><tspan x="918">Acquisition / optics</tspan><tspan x="918" dy="34">Electrons / readout</tspan><tspan x="918" dy="34">Supplied calibration</tspan><tspan x="918" dy="34">Image reconstruction</tspan></text>
+    </g>
+  </g>
+
+  <g data-qa-block="inverse">
+    <rect class="box" x="1200" y="252" width="360" height="340" fill="#e8f4ee" stroke="#75a898"/>
+    <text x="1224" y="300" class="name">Inverse</text>
+    <text x="1224" y="345"><tspan x="1224">Prediction + Jacobian</tspan><tspan x="1224" dy="36">or explicit linear matrix</tspan></text>
+    <text x="1224" y="474"><tspan x="1224">Gaussian estimation</tspan><tspan x="1224" dy="36">Rank / local diagnostics</tspan></text>
+  </g>
+
+  <g aria-label="Cross-cutting capabilities">
+    <rect class="box" x="40" y="650" width="1520" height="210" fill="#f7f9fc" stroke="#c6d1df"/>
+    <text x="64" y="689" class="group">Cross-cutting capabilities</text>
+    <g data-qa-block="uncertainty">
+      <rect class="box" x="64" y="714" width="716" height="122" fill="#e8f4ee" stroke="#75a898"/>
+      <text x="88" y="753" class="name">Uncertainty</text>
+      <text x="88" y="795">Covariance, signed bias, source errors and ensembles</text>
+    </g>
+    <g data-qa-block="numerics">
+      <rect class="box" x="804" y="714" width="732" height="122" fill="#ffffff" stroke="#8fa2b8"/>
+      <text x="828" y="753" class="name">Numerics</text>
+      <text x="828" y="795">Optional caller-owned scheduling and Linux thread controls</text>
+    </g>
+  </g>
+</svg>

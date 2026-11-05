@@ -23,7 +23,7 @@ from orsia_instruments import (
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ORSIA_TEST_INSTRUMENT_CHARACTERIZATION") != "1",
-    reason="opt-in refinement/resource checks: just test-instrument-characterization",
+    reason="run just --justfile tests/justfile test-instrument-characterization",
 )
 
 # Predeclared synthetic acceptance, never a mission requirement.

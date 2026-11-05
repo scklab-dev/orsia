@@ -145,7 +145,7 @@ assert readings.dn.shape == (1, 1)
 
 ## Execution and evidence boundary
 
-Run `devbox run -- just --command uv run --locked --all-packages pytest --no-cov libs/orsia-instruments/tests/test_dense_imaging.py` for synthetic dense photon conversion, full-image source combination, detector grouping and response projection. The [integrated synthetic cases](../../../tests/test_instrument_examples.py) and [LVF scan regression](../../../tests/test_lvf_scan.py) also exercise the dense API.
+Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-instruments/tests/test_dense_imaging.py` for synthetic dense photon conversion, full-image source combination, detector grouping and response projection. The [integrated synthetic cases](../../../tests/test_instrument_examples.py) and [LVF scan regression](../../../tests/test_lvf_scan.py) also exercise the dense API.
 
 The [image-closure regressions](../tests/test_image_closure.py) retain independent static optical/photon references, separate sampling-axis refinement, deliberately undersampled cases, parameter/noise transport and clipping checks. Refinement of a fixed interpolated scene leaves scene interpolation accuracy untested. Analytic pixel integrals have no pixel-quadrature convergence claim. High-finesse resonances and fringes require adequate spectral sampling; no fixed grid is sufficient for arbitrary response parameters. First-order tolerance budgets require step refinement and a local linearity check. Large pointing perturbations and clipping can invalidate linear moment predictions.
 

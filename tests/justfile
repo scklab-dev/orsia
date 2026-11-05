@@ -1,0 +1,41 @@
+set shell := ["bash", "-uc"]
+set positional-arguments
+set working-directory := ".."
+set default-list
+
+# Optional dependency set for focused pytest; override with extra=atmosphere.
+extra := "geospatial"
+
+# Run the standard split-process suite and unchanged coverage gates.
+test:
+    # Keep atmospheric reader imports out of the numerical test process.
+    # Match files because pytest still traverses directories listed in testpaths.
+    uv run --locked --all-packages --extra geospatial pytest --ignore-glob='libs/orsia-data/tests/*' --ignore=tests/test_five_band_notebook.py --cov-fail-under=0
+    uv run --locked --all-packages --extra geospatial pytest libs/orsia-data/tests tests/test_five_band_notebook.py --cov-append
+    uv run --locked --all-packages coverage report --include='libs/orsia-geometry/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-numerics/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-uncertainty/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-radiative/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-data/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-instruments/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-inverse/src/*'
+
+# Focused single-process tests; supply root-relative paths and keep reader scopes separate.
+pytest +args:
+    uv run --locked --all-packages --extra {{quote(extra)}} pytest --no-cov "$@"
+
+# Exercise optional HAPI with intercepted synthetic HTTP bytes.
+test-hitran-api:
+    uv run --locked --all-packages --extra hitran pytest --no-cov libs/orsia-data/tests/test_hitran_api.py
+
+# Opt into generated-file checks with atmosphere extras and Devbox ecCodes.
+test-atmosphere-backends:
+    ORSIA_TEST_ATMOSPHERE_BACKENDS=1 ECCODES_DIR="$(dirname "$(dirname "$(command -v grib_ls)")")" uv run --locked --all-packages --extra atmosphere pytest --no-cov libs/orsia-data/tests/test_atmosphere_native.py
+
+# Use existing DE421/EOP fixtures offline; never authenticate or acquire data.
+test-orbital *args:
+    SATKIT_DATA="$PWD/outputs/geometry-auxiliaries" SATKIT_JPLEPHEM_FILE="$PWD/outputs/geometry-auxiliaries/lnxp1900p2053.421" SATKIT_OFFLINE=1 ORSIA_TEST_ORBITAL=1 uv run --locked --all-packages pytest --no-cov libs/orsia-geometry/tests/test_orbital_reference.py libs/orsia-instruments/tests/test_line_of_sight.py "$@"
+
+# Opt into bounded synthetic refinement, statistics and 30 s / 512 MiB checks.
+test-instrument-characterization:
+    ORSIA_TEST_INSTRUMENT_CHARACTERIZATION=1 uv run --locked --all-packages pytest --no-cov tests/test_instrument_characterization.py
