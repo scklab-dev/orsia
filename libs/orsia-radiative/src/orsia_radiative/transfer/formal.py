@@ -14,8 +14,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import exprel
 
-from .native.propagation_native import apply as _native_apply
-from .native.propagation_native import prepare as _native_prepare
+from .native.transfer_native import apply as _native_apply
+from .native.transfer_native import prepare as _native_prepare
 
 
 @dataclass(frozen=True, eq=False)

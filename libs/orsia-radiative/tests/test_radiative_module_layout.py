@@ -1,4 +1,4 @@
-"""Scientific ownership and deliberately removed submodule contracts."""
+"""Scientific ownership and dependency direction contracts."""
 
 import ast
 import importlib
@@ -32,19 +32,6 @@ OWNERS = {
     "optics.scattering": "ScatteringProperties AerosolOptics RayleighComponent AerosolComponent",
     "optics.atmosphere": "AtmosphericOptics compose_atmospheric_optics validate_atmospheric_optics",
 }
-REMOVED = (
-    "atmosphere.column",
-    "atmospheric_columns",
-    "sources",
-    "arrays",
-    "state",
-    "optical",
-    "absorption",
-    "continuum",
-    "line_tables",
-    "spectral_grid",
-    "solar_spectrum",
-)
 
 
 @pytest.mark.parametrize("module,names", OWNERS.items())
@@ -57,43 +44,13 @@ def test_root_api_uses_defining_modules(module: str, names: str) -> None:
         assert name in radiative.__all__
 
 
-@pytest.mark.parametrize(
-    "module,old_name",
-    (
-        ("transfer.solar", "series_of_scatterers"),
-        ("atmosphere.hydrostatic", "materialize_hydrostatic_atmosphere"),
-    ),
-)
-def test_renamed_radiative_functions_have_only_canonical_names(module: str, old_name: str) -> None:
-    canonical = importlib.import_module(f"orsia_radiative.{module}")
-    assert not hasattr(canonical, old_name)
-    assert not hasattr(radiative, old_name)
-    assert old_name not in radiative.__all__
-
-
-@pytest.mark.parametrize("module", REMOVED)
-def test_removed_modules_are_not_importable(module: str) -> None:
-    with pytest.raises(ModuleNotFoundError) as error:
-        importlib.import_module(f"orsia_radiative.{module}")
-    assert error.value.name == f"orsia_radiative.{module}"
-
-
 @pytest.mark.parametrize("package", ("spectral", "solar", "spectroscopy", "optics"))
-def test_packages_do_not_reexport_old_symbols(package: str) -> None:
+def test_namespace_packages_keep_implementations_in_defining_modules(package: str) -> None:
     module = importlib.import_module(f"orsia_radiative.{package}")
     for owner, names in OWNERS.items():
         if owner.startswith(f"{package}."):
             for name in names.split():
                 assert not hasattr(module, name)
-
-
-def test_modules_do_not_depend_on_removed_state_or_arrays() -> None:
-    root = Path(radiative.__file__).parent
-    for path in root.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                assert node.module != "orsia_radiative.state"
-                assert node.module != "orsia_radiative.arrays"
 
 
 def test_atmosphere_package_preserves_record_imports() -> None:
@@ -106,15 +63,10 @@ def test_atmosphere_package_preserves_record_imports() -> None:
 
 
 def test_column_remapping_public_surface() -> None:
-    from orsia_radiative import atmosphere
     from orsia_radiative.atmosphere import hydrostatic, layers
 
     assert radiative.remap_layer_columns is layers.remap_layer_columns
     assert "remap_layer_columns" in radiative.__all__
-    for module in (radiative, atmosphere, layers, hydrostatic):
-        assert not hasattr(module, "pressure_layer_overlap")
-    for module in (radiative, atmosphere):
-        assert not hasattr(module, "_pressure_layer_overlap")
     assert hydrostatic._pressure_layer_overlap is layers._pressure_layer_overlap
 
 

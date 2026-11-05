@@ -1,5 +1,7 @@
 """Executor contracts, failure cleanup and bounded native interoperability checks."""
 
+from __future__ import annotations
+
 import gc
 import inspect
 import os
@@ -23,8 +25,19 @@ from orsia_numerics.execution import CpuThreadPoolExecutor
 from scipy.linalg import solve
 from threadpoolctl import ThreadpoolController
 
+requires_linux_affinity = pytest.mark.skipif(
+    not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"),
+    reason="Real pinned execution requires Linux CPU affinity",
+)
 
-def test_standard_interface() -> None:
+
+def affinity(pid: int = 0) -> set[int]:
+    get_affinity = getattr(os, "sched_getaffinity", None)
+    assert get_affinity is not None
+    return get_affinity(pid)
+
+
+def test_standard_interface(native: FakeOpenBlas) -> None:
     assert CpuThreadPoolExecutor.map is Executor.map
     assert CpuThreadPoolExecutor.__enter__ is Executor.__enter__
     assert CpuThreadPoolExecutor.__exit__ is Executor.__exit__
@@ -47,16 +60,19 @@ def test_standard_interface() -> None:
         pool.submit(int, 1)
 
 
-def test_readme_execution_example() -> None:
-    readme = Path(__file__).resolve().parents[1] / "README.md"
-    examples = re.findall(r"```python\n(.*?)```", readme.read_text(), re.DOTALL)
+@requires_linux_affinity
+@pytest.mark.parametrize("relative_path", ["README.md", "docs/execution.md"])
+def test_documented_execution_example(relative_path: str) -> None:
+    document = Path(__file__).resolve().parents[1] / relative_path
+    examples = re.findall(r"```python\n(.*?)```", document.read_text(), re.DOTALL)
     assert examples
     for example in examples:
-        exec(compile(example, "<numerics-readme-example>", "exec"), {})
+        exec(compile(example, "<numerics-documentation-example>", "exec"), {})
 
 
+@requires_linux_affinity
 def test_affinity_precedes_initializer_and_distinct_workers() -> None:
-    allowed = os.sched_getaffinity(0)
+    allowed = affinity()
     cpus = tuple(sorted(allowed, reverse=True)[:2])
     barrier = Barrier(len(cpus))
     initialized = {}
@@ -64,14 +80,14 @@ def test_affinity_precedes_initializer_and_distinct_workers() -> None:
 
     def initialize(marker: str) -> None:
         with lock:
-            initialized[current_thread().ident] = (os.sched_getaffinity(0), marker)
+            initialized[current_thread().ident] = (affinity(), marker)
 
     def observe() -> tuple[set[int], str]:
         barrier.wait(timeout=10)
-        affinity, marker = initialized[current_thread().ident]
-        assert affinity == os.sched_getaffinity(0)
+        placement, marker = initialized[current_thread().ident]
+        assert placement == affinity()
         assert marker == "ready"
-        return affinity, current_thread().name
+        return placement, current_thread().name
 
     with CpuThreadPoolExecutor(
         thread_name_prefix="science", initializer=initialize, initargs=("ready",), cpus=cpus
@@ -79,45 +95,50 @@ def test_affinity_precedes_initializer_and_distinct_workers() -> None:
         results = [f.result(timeout=10) for f in [pool.submit(observe) for _ in cpus]]
     assert {next(iter(affinity)) for affinity, _ in results} == set(cpus)
     assert all(name.startswith("science") for _, name in results)
-    assert os.sched_getaffinity(0) == allowed
+    assert affinity() == allowed
     with CpuThreadPoolExecutor(1, cpus=cpus) as pool:
-        assert pool.submit(os.sched_getaffinity, 0).result(timeout=10) == {cpus[0]}
+        assert pool.submit(affinity).result(timeout=10) == {cpus[0]}
 
 
+@requires_linux_affinity
 def test_automatic_cpus_use_constructor_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
-    cpu = min(os.sched_getaffinity(0))
-    original = os.sched_getaffinity
+    cpu = min(affinity())
+    original = getattr(os, "sched_getaffinity", None)
+    assert original is not None
     main = current_thread()
     monkeypatch.setattr(
         os, "sched_getaffinity", lambda pid: {cpu} if current_thread() is main else original(pid)
     )
     with CpuThreadPoolExecutor() as pool:
-        assert pool.submit(os.sched_getaffinity, 0).result(timeout=10) == {cpu}
+        assert pool.submit(affinity).result(timeout=10) == {cpu}
 
 
 @pytest.mark.parametrize("workers", [0, -1, 2])
-def test_invalid_worker_count(workers: int) -> None:
+def test_invalid_worker_count(workers: int, native: FakeOpenBlas) -> None:
     with pytest.raises(ValueError, match="max_workers"):
-        CpuThreadPoolExecutor(workers, cpus=[min(os.sched_getaffinity(0))])
+        CpuThreadPoolExecutor(workers, cpus=[min(affinity())])
 
 
 @pytest.mark.parametrize("kind", ["empty", "duplicate", "unavailable"])
-def test_invalid_cpus(kind: str) -> None:
-    allowed = os.sched_getaffinity(0)
+def test_invalid_cpus(kind: str, native: FakeOpenBlas) -> None:
+    allowed = affinity()
     cpu = min(allowed)
     cpus = {"empty": [], "duplicate": [cpu, cpu], "unavailable": [max(allowed) + 1]}[kind]
     with pytest.raises(ValueError, match="cpus"):
         CpuThreadPoolExecutor(cpus=cpus)
 
 
-def test_missing_affinity(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delattr(os, "sched_setaffinity")
+@pytest.mark.parametrize("name", ["sched_getaffinity", "sched_setaffinity"])
+def test_missing_affinity(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.delattr(os, name, raising=False)
     with pytest.raises(NotImplementedError, match="affinity"):
         CpuThreadPoolExecutor(1)
 
 
 @pytest.mark.parametrize("failure", ["set", "verify", "initializer"])
-def test_worker_setup_failure_breaks_pool(failure: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_worker_setup_failure_breaks_pool(
+    failure: str, monkeypatch: pytest.MonkeyPatch, native: FakeOpenBlas
+) -> None:
     initializer_ran = Event()
 
     def initialize() -> None:
@@ -132,7 +153,8 @@ def test_worker_setup_failure_breaks_pool(failure: str, monkeypatch: pytest.Monk
         monkeypatch.setattr(os, "sched_setaffinity", fail_set)
     elif failure == "verify":
         main = current_thread()
-        original = os.sched_getaffinity
+        original = getattr(os, "sched_getaffinity", None)
+        assert original is not None
         monkeypatch.setattr(
             os,
             "sched_getaffinity",
@@ -147,7 +169,7 @@ def test_worker_setup_failure_breaks_pool(failure: str, monkeypatch: pytest.Monk
     assert initializer_ran.is_set() == (failure == "initializer")
 
 
-def test_map_order_multiple_iterables_and_exception() -> None:
+def test_map_order_multiple_iterables_and_exception(native: FakeOpenBlas) -> None:
     with CpuThreadPoolExecutor(1) as pool:
         assert list(pool.map(pow, [2, 3, 4], [3, 2], chunksize=5, buffersize=1)) == [8, 9]
         results = pool.map(lambda x: 1 / x, [1, 0, 2])
@@ -160,7 +182,7 @@ def test_map_order_multiple_iterables_and_exception() -> None:
 
 
 @pytest.mark.parametrize("buffersize, consumed", [(None, 6), (2, 2)])
-def test_map_submission_bound(buffersize: int | None, consumed: int) -> None:
+def test_map_submission_bound(buffersize: int | None, consumed: int, native: FakeOpenBlas) -> None:
     seen = []
     release = Event()
 
@@ -182,7 +204,7 @@ def test_map_submission_bound(buffersize: int | None, consumed: int) -> None:
         assert list(results) == list(range(6))
 
 
-def test_map_timeout_and_invalid_buffer() -> None:
+def test_map_timeout_and_invalid_buffer(native: FakeOpenBlas) -> None:
     release = Event()
     with CpuThreadPoolExecutor(1) as pool:
         try:
@@ -195,7 +217,7 @@ def test_map_timeout_and_invalid_buffer() -> None:
             release.set()
 
 
-def test_context_exception_does_not_cancel_pending_work() -> None:
+def test_context_exception_does_not_cancel_pending_work(native: FakeOpenBlas) -> None:
     completed = Event()
     with pytest.raises(ValueError, match="body"):
         with CpuThreadPoolExecutor(1) as pool:
@@ -204,6 +226,7 @@ def test_context_exception_does_not_cancel_pending_work() -> None:
     assert completed.is_set()
 
 
+@requires_linux_affinity
 def test_native_numerical_calls_and_free_threaded_runtime() -> None:
     controllers = ThreadpoolController().lib_controllers
     before = [c.get_num_threads() for c in controllers]
@@ -217,13 +240,14 @@ def test_native_numerical_calls_and_free_threaded_runtime() -> None:
         np.testing.assert_allclose(matrix @ matrix, [[17, 7], [7, 10]])
         return solve(matrix, rhs)
 
-    with CpuThreadPoolExecutor(min(2, len(os.sched_getaffinity(0)))) as pool:
+    with CpuThreadPoolExecutor(min(2, len(affinity()))) as pool:
         for result in pool.map(lambda _: compute(), range(8), buffersize=2):
             np.testing.assert_allclose(result, reference)
     assert [c.get_num_threads() for c in controllers] == before
     assert not sys._is_gil_enabled()
 
 
+@requires_linux_affinity
 def test_real_native_limits_restore_nondefault_counts() -> None:
     controllers = ThreadpoolController().lib_controllers
     before = [c.get_num_threads() for c in controllers]
@@ -261,6 +285,16 @@ class FakeOpenBlas:
 
 @pytest.fixture
 def native(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeOpenBlas]:
+    # Unit tests simulate placement only on hosts without the Linux API. Real
+    # pinning/native integration tests above remain Linux-only; the API still rejects macOS.
+    if not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"):
+        state = local()
+        monkeypatch.setattr(
+            os, "sched_getaffinity", lambda pid: getattr(state, "cpus", {0, 1}), raising=False
+        )
+        monkeypatch.setattr(
+            os, "sched_setaffinity", lambda pid, cpus: setattr(state, "cpus", cpus), raising=False
+        )
     backend = FakeOpenBlas()
     monkeypatch.setattr(
         execution, "ThreadpoolController", lambda: SimpleNamespace(lib_controllers=[backend])
@@ -496,6 +530,7 @@ def test_restoration_failure_is_reported_and_retryable(
 
 
 @pytest.mark.parametrize("shutdown", ["pool.shutdown(wait=False)", ""])
+@requires_linux_affinity
 def test_interpreter_exit(shutdown: str) -> None:
     code = f"""
 from orsia_numerics.execution import CpuThreadPoolExecutor

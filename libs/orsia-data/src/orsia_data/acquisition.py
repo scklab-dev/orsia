@@ -200,13 +200,8 @@ def _publish_retrieval(
 ) -> Path:
     if max_bytes <= 0:
         raise ValueError("positive post-transfer byte bound required")
-    if expected_sha256 is not None and (
-        len(expected_sha256) != 64 or any(c not in "0123456789abcdef" for c in expected_sha256)
-    ):
-        raise ValueError("expected digest must be lowercase SHA-256")
-    if destination.exists() or destination.is_symlink():
-        raise FileExistsError(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    _validate_digest(expected_sha256)
+    _prepare_destination(destination)
     directory = Path(tempfile.mkdtemp(dir=destination.parent))
     try:
         target = directory / "native"
@@ -219,7 +214,7 @@ def _publish_retrieval(
             raise ValueError("retrieval did not produce a bounded nonempty regular file")
         if expected_sha256 is not None and file_sha256(target) != expected_sha256:
             raise ValueError("retrieval checksum mismatch")
-        os.link(target, destination)
+        _publish_file(target, destination)
         return destination
     finally:
         shutil.rmtree(directory)
@@ -236,13 +231,8 @@ def _download(
     _validate_url(url)
     if not isfinite(timeout_s) or timeout_s <= 0 or max_bytes <= 0:
         raise ValueError("timeout and byte bound must be positive")
-    if expected_sha256 is not None and (
-        len(expected_sha256) != 64 or any(c not in "0123456789abcdef" for c in expected_sha256)
-    ):
-        raise ValueError("expected digest must be lowercase SHA-256")
-    if destination.exists() or destination.is_symlink():
-        raise FileExistsError(destination)
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    _validate_digest(expected_sha256)
+    _prepare_destination(destination)
     temporary: Path | None = None
     try:
         with open_url(url, timeout=timeout_s) as response:
@@ -274,11 +264,29 @@ def _download(
                 os.fsync(stream.fileno())
         if expected_sha256 is not None and digest.hexdigest() != expected_sha256:
             raise ValueError("download checksum mismatch")
-        os.link(temporary, destination)
+        _publish_file(temporary, destination)
         return destination
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def _validate_digest(expected_sha256: str | None) -> None:
+    if expected_sha256 is not None and (
+        len(expected_sha256) != 64 or any(c not in "0123456789abcdef" for c in expected_sha256)
+    ):
+        raise ValueError("expected digest must be lowercase SHA-256")
+
+
+def _prepare_destination(destination: Path) -> None:
+    if destination.exists() or destination.is_symlink():
+        raise FileExistsError(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _publish_file(source: Path, destination: Path) -> None:
+    # The hard link publishes atomically and still rejects destinations created after preflight.
+    os.link(source, destination)
 
 
 def _validate_url(url: str) -> None:

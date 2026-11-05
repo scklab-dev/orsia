@@ -134,10 +134,8 @@ def window_from_bounds(
     xmin, ymin, xmax, ymax = bounds
     if not np.all(np.isfinite(bounds)) or xmin >= xmax or ymin >= ymax:
         raise ValueError("bounds must be finite and increasing")
-    a, b, c, d, e, f = grid.transform
     x, y = np.array([xmin, xmax, xmax, xmin]), np.array([ymin, ymin, ymax, ymax])
-    col = (e * (x - c) - b * (y - f)) / (a * e - b * d)
-    row = (-d * (x - c) + a * (y - f)) / (a * e - b * d)
+    col, row = _pixel_edge_coordinates(grid, x, y)
     left, right = int(np.floor(col.min())), int(np.ceil(col.max()))
     top, bottom = int(np.floor(row.min())), int(np.ceil(row.max()))
     if clip:
@@ -386,10 +384,7 @@ def sample_raster(
     _method(band, method)
     if x.shape != y.shape:
         raise ValueError("sampling coordinates must have matching shapes")
-    a, b, c, d, e, f = band.grid.transform
-    det = a * e - b * d
-    col = (e * (x - c) - b * (y - f)) / det
-    row = (-d * (x - c) + a * (y - f)) / det
+    col, row = _pixel_edge_coordinates(band.grid, x, y)
     finite = np.isfinite(col) & np.isfinite(row)
     col = np.where(finite, col, -2.0)
     row = np.where(finite, row, -2.0)
@@ -420,6 +415,14 @@ def sample_raster(
         values += weight * np.where(supported, band.values[yy, xx], 0)
     values[~valid] = np.nan
     return values, valid
+
+
+def _pixel_edge_coordinates(
+    grid: RasterGrid, x: NDArray[np.float64], y: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    a, b, c, d, e, f = grid.transform
+    determinant = a * e - b * d
+    return (e * (x - c) - b * (y - f)) / determinant, (-d * (x - c) + a * (y - f)) / determinant
 
 
 def _method(band: RasterBand, method: Resampling) -> None:

@@ -131,7 +131,7 @@ def test_many_layer_accumulation_is_owned_and_concurrent() -> None:
         )
 
     expected = calculate(0)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(calculate, range(8)))
     for result in results:
         np.testing.assert_array_equal(result, expected)

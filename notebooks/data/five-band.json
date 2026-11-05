@@ -1,0 +1,54 @@
+{
+  "manifest": "../../outputs/five-band-enriched-inputs/manifest.json",
+  "spectroscopy_collection": "../../outputs/spectroscopy/five-band",
+  "bands": {
+    "UV": {
+      "low_nm": 320,
+      "high_nm": 325,
+      "thermal": false,
+      "solar": {"max_order": 16, "angular_order": 4, "layer_subdivisions": 2}
+    },
+    "VNIR": {
+      "low_nm": 758,
+      "high_nm": 765,
+      "thermal": false,
+      "solar": {"max_order": 2, "angular_order": 2, "layer_subdivisions": 1}
+    },
+    "SWIR": {
+      "low_nm": 1645,
+      "high_nm": 1655,
+      "thermal": false,
+      "solar": {"max_order": 1, "angular_order": 2, "layer_subdivisions": 1}
+    },
+    "MWIR": {"low_nm": 4250, "high_nm": 4300, "thermal": true},
+    "LWIR": {"low_nm": 9950, "high_nm": 10050, "thermal": true}
+  },
+  "physics": {
+    "albedo": 0.2,
+    "emissivity": 0.97,
+    "surface_temperature_k": 300.0,
+    "solar_zenith_deg": 30.0,
+    "relative_azimuth_deg": 0.0,
+    "viewing_zenith_deg": 10.0,
+    "rayleigh_cross_section_m2": 5.1e-31,
+    "rayleigh_wavelength_um": 0.55,
+    "solar_aerosol": {
+      "optical_depth": 0.10,
+      "reference_wavelength_nm": 550.0,
+      "angstrom_exponent": 1.3,
+      "scale_height_m": 1000.0,
+      "single_scattering_albedo": 0.95,
+      "asymmetry": 0.65
+    }
+  },
+  "points": 201,
+  "line_margin_cm1": 26.0,
+  "wing_cutoff_cm1": 25.0,
+  "timing_runs": 3,
+  "reference": {
+    "cells": 32,
+    "streams": 32,
+    "cache_directory": "../../outputs/sasktran2-reference-cache",
+    "cache_mode": "reuse"
+  }
+}

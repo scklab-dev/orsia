@@ -1,6 +1,6 @@
-"""Propagate signed bias and combine or sample caller-labelled covariance arrays."""
+"""Propagate signed bias, combine source covariances and estimate ensemble covariance."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 
 import numpy as np
 from numpy.typing import NDArray
@@ -93,69 +93,6 @@ def combine_contributions(
             matrix += cross
             matrix += cross.T
     return validate_covariance(matrix)
-
-
-def sample_gaussian(
-    covariance: NDArray[np.float64], rng: np.random.Generator, count: int
-) -> NDArray[np.float64]:
-    """Draw centred Gaussian perturbations with caller-owned RNG and declared order.
-
-    Rows represent realisations, columns follow the covariance's vector order.
-    Semidefinite covariances are supported without adding artificial variance.
-
-    Args:
-        covariance: Float64 (n,) variances or PSD (n,n) covariance.
-        rng: Caller-owned NumPy generator consumed for each realization.
-        count: Positive number of independent draws.
-
-    Returns:
-        Fresh float64 perturbations of shape (count,n), with draws in rows.
-
-    Raises:
-        ValueError: Covariance fails validation or the count is not positive.
-    """
-    return gaussian_sampler(covariance)(rng, count)
-
-
-def gaussian_sampler(
-    covariance: NDArray[np.float64],
-) -> Callable[[np.random.Generator, int], NDArray[np.float64]]:
-    """Prepare centred Gaussian draws for repeated use of one covariance.
-
-    Return a callable accepting (caller-owned RNG, positive count). Output is a
-    fresh writable float64 (count, size) array with realisations in rows and
-    columns in caller-defined order. Dense preparation retains an owned square
-    root factor, O(size**2); diagonal preparation retains O(size) scales. Singular
-    PSD laws and the tiny-negative-eigenvalue clipping used by sample_gaussian
-    are preserved, without artificial variance or regularisation. No RNG is
-    consumed during preparation. Calls allocate their own work; callers manage
-    RNG sharing themselves. No global cache or persistent input mutation occurs.
-
-    Args:
-        covariance: Float64 (n,) variances or positive-semidefinite (n,n) matrix.
-
-    Returns:
-        Callable accepting an explicit RNG and count, yielding owned (count,n) draws.
-
-    Raises:
-        ValueError: The covariance shape, dtype or PSD property is invalid.
-    """
-    covariance = validate_covariance(covariance)
-    if covariance.ndim == 1:
-        factor = np.sqrt(covariance)
-    else:
-        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
-        factor = eigenvectors * np.sqrt(np.clip(eigenvalues, 0.0, None))
-    size = covariance.shape[0]
-    diagonal = covariance.ndim == 1
-
-    def draw(rng: np.random.Generator, count: int) -> NDArray[np.float64]:
-        if count < 1:
-            raise ValueError("sample count must be positive")
-        normal = rng.standard_normal((count, size))
-        return normal * factor if diagonal else normal @ factor.T
-
-    return draw
 
 
 def empirical_covariance(samples: NDArray[np.float64]) -> NDArray[np.float64]:

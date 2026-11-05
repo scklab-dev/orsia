@@ -1,0 +1,15 @@
+set working-directory := ".."
+
+check-paths := "notebooks/support tests/test_five_band_notebook.py tests/test_instrument_response_notebook.py tests/test_instrument_notebook_chains.py tests/test_notebook_companions.py tests/test_five_band_enrichment.py tests/test_notebook_sasktran2_cache.py"
+
+# Scoped checks preserve the provisioned workspace environment.
+fmt:
+    uv run --no-sync --locked --all-packages ruff format {{check-paths}}
+    uv run --no-sync --locked --all-packages ruff check --fix {{check-paths}}
+
+test:
+    MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere python -m pytest --no-cov tests/test_five_band_notebook.py tests/test_instrument_response_notebook.py tests/test_instrument_notebook_chains.py tests/test_notebook_companions.py tests/test_five_band_enrichment.py tests/test_notebook_sasktran2_cache.py
+
+lint:
+    uv run --no-sync --locked --all-packages ruff check {{check-paths}}
+    uv run --no-sync --locked --all-packages ruff format --check {{check-paths}}

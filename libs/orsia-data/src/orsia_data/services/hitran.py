@@ -1,12 +1,136 @@
 """HITRAN acquisition through HAPI; execution policy belongs to the caller."""
 
 import shutil
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Literal
 
+import numpy as np
+from numpy.typing import NDArray
 from orsia_radiative import LineDatabase
+from orsia_radiative.spectroscopy.line_tables import PartitionFunctionTable
+from orsia_radiative.spectroscopy.references import LineSpectroscopy
+from scipy.constants import atomic_mass
 
+from ..spectroscopy.collections import import_spectroscopy_collection
 from ..spectroscopy.lines import read_hitran_lines
+
+
+def acquire_hitran_references(
+    *,
+    selections: Mapping[tuple[str, int, int], tuple[tuple[float, float], ...]],
+    partition_temperatures_k: NDArray[np.float64],
+    tips_version: int,
+    edition: Literal["current"],
+    directory: Path,
+) -> Path:
+    """Acquire all requested isotope/interval references in one explicit operation.
+
+    HAPI is imported lazily. Each key is (species, molecule ID, local isotope ID);
+    intervals must be ordered and disjoint. Partition samples use an explicit TIPS
+    version and scalar partitionSum calls. Store native source hashes, HAPI version,
+    isotope masses and the current service selection. No frozen HITRAN edition is
+    inferred. Failure removes temporary inputs and leaves no destination. Existing
+    destinations are preserved. Upstream exceptions identify the failing operation
+    through an added exception note. Caller owns HAPI serialization and cancellation:
+    HAPI mutates global cache state and is unsafe for concurrent acquisition.
+
+    Args:
+        selections: Nonempty species/isotope selections and exact line-centre intervals, cm-1.
+        partition_temperatures_k: Positive increasing Q(T) knots in K, bracketing 296 K.
+        tips_version: Explicit HAPI TIPS version, such as 2025 for HAPI 1.3.
+        edition: Explicit 'current' service selection.
+        directory: New local collection directory; existing directories are preserved.
+
+    Returns:
+        Manifest path for one offline reusable collection.
+
+    Raises:
+        FileExistsError: The destination exists.
+        ImportError: Optional HAPI is unavailable.
+        ValueError: Identity, intervals, partition support or native outputs are invalid.
+        OSError: Local files cannot be created or read.
+    """
+    if directory.exists():
+        raise FileExistsError(directory)
+    if edition != "current" or not selections:
+        raise ValueError("nonempty selections and explicit current service are required")
+    keys = [(species, isotope) for species, _, isotope in selections]
+    if len(set(keys)) != len(keys):
+        raise ValueError("duplicate species/isotope identity in acquisition selections")
+    knots = partition_temperatures_k
+    for (species, molecule, isotope), intervals in selections.items():
+        table = PartitionFunctionTable(molecule, isotope, knots, np.ones_like(knots))
+        LineSpectroscopy(
+            species,
+            tuple(LineDatabase((), molecule, isotope, interval) for interval in intervals),
+            table,
+            atomic_mass,
+        )
+    if knots[0] > 296 or knots[-1] < 296:
+        raise ValueError("partition knots must bracket the 296 K reference temperature")
+    import hapi  # type: ignore[import-not-found]
+
+    for species, molecule, isotope in selections:
+        if hapi.moleculeName(molecule) != species:
+            raise ValueError("requested species conflicts with HAPI molecule identity")
+        # Resolve isotope validity before any transfer.
+        hapi.molecularMass(molecule, isotope)
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=directory.parent, prefix=".hitran-") as temporary:
+        references = []
+        files = []
+        operation = "initialization"
+        try:
+            for index, ((species, molecule, isotope), intervals) in enumerate(selections.items()):
+                databases = []
+                for segment, interval in enumerate(intervals):
+                    operation = (
+                        f"HITRAN {species} molecule={molecule} "
+                        f"isotope={isotope} interval={interval}"
+                    )
+                    native = Path(temporary) / f"{index}-{segment}"
+                    databases.append(
+                        fetch_hitran_lines(
+                            molecule_id=molecule,
+                            isotopologue_id=isotope,
+                            interval_cm1=interval,
+                            edition=edition,
+                            directory=native,
+                        )
+                    )
+                    files.extend((native / "lines.data", native / "lines.header"))
+                operation = f"TIPS-{tips_version} {species} molecule={molecule} isotope={isotope}"
+                sums = np.array(
+                    [
+                        hapi.partitionSum(molecule, isotope, float(t), version=tips_version)
+                        for t in knots
+                    ],
+                    dtype=np.float64,
+                )
+                references.append(
+                    LineSpectroscopy(
+                        species,
+                        tuple(databases),
+                        PartitionFunctionTable(molecule, isotope, knots, sums),
+                        float(hapi.molecularMass(molecule, isotope)) * atomic_mass,
+                    )
+                )
+            operation = "collection serialization"
+            return import_spectroscopy_collection(
+                directory,
+                lines=tuple(references),
+                source=f"HITRAN HAPI {hapi.HAPI_VERSION}",
+                edition=edition,
+                acquired_at_utc=datetime.now(UTC).isoformat(),
+                partition_source=f"HAPI {hapi.HAPI_VERSION}; TIPS-{tips_version}; sampled Q(T)",
+                source_files=tuple(files),
+            )
+        except Exception as error:
+            error.add_note(f"Grouped spectroscopy acquisition failed during {operation}")
+            raise
 
 
 def fetch_hitran_lines(

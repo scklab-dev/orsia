@@ -12,7 +12,7 @@ from orsia_radiative.optics.phases import henyey_greenstein_phase, rayleigh_phas
 from orsia_radiative.scene import RadiativeScene
 from orsia_radiative.solar.source import SolarSource
 
-from .native import propagation_native as _native
+from .native import transfer_native as _native
 
 _native_spectral_orders = _native.bind_spectral_blas(import_module("scipy.linalg.cython_blas"))
 

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-describedby="description">
+  <desc id="description">A two by two detector has band b0 on row zero and band b1 on row one. Three exposures retain the same row-band layout in native frames. Calibration and registration collect the reads into separate b0 and b1 ground planes. Each band plane has its own supported cells and gaps.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L12 6 L0 12 Z" fill="#52647a"/></marker>
+    <pattern id="cells" x="1160" y="325" width="25" height="25" patternUnits="userSpaceOnUse"><rect x="0.75" y="0.75" width="23.5" height="23.5" fill="none" stroke="#8ea3b8" stroke-width="1.5"/></pattern>
+    <style>
+      text { font-family: Helvetica, Arial, sans-serif; font-size: 26px; fill: #243b58; }
+      .heading { font-size: 29px; font-weight: 700; }
+      .detail { font-size: 24px; fill: #52647a; }
+      .link { fill: none; stroke: #52647a; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1600" height="800" fill="#ffffff"/>
+  <g aria-label="Processing sequence">
+    <path class="link" d="M470 400 H585"/>
+    <path class="link" d="M1015 400 H1130"/>
+  </g>
+  <g data-qa-block="detector-layout">
+    <rect x="40" y="75" width="430" height="620" rx="12" fill="#f8fbff" stroke="#d2dde9" stroke-width="2"/>
+    <text x="70" y="128" class="heading">Detector layout</text>
+    <text x="70" y="172" class="detail">One filter per complete row</text>
+    <text x="235" y="292" text-anchor="middle">c0</text>
+    <text x="355" y="292" text-anchor="middle">c1</text>
+    <rect x="175" y="320" width="120" height="100" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+    <rect x="295" y="320" width="120" height="100" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+    <rect x="175" y="420" width="120" height="100" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+    <rect x="295" y="420" width="120" height="100" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+    <text x="70" y="379">row 0</text>
+    <text x="70" y="479">row 1</text>
+    <text x="235" y="379" text-anchor="middle">b0</text>
+    <text x="355" y="379" text-anchor="middle">b0</text>
+    <text x="235" y="479" text-anchor="middle">b1</text>
+    <text x="355" y="479" text-anchor="middle">b1</text>
+    <text x="70" y="628" class="detail">(row,column)</text>
+  </g>
+  <g data-qa-block="frame-sequence">
+    <rect x="585" y="75" width="430" height="620" rx="12" fill="#f8fbff" stroke="#d2dde9" stroke-width="2"/>
+    <text x="615" y="128" class="heading">Native frames</text>
+    <text x="615" y="172" class="detail">Platform moves with time</text>
+    <g>
+      <text x="615" y="272">frame 0</text>
+      <rect x="775" y="215" width="90" height="48" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+      <rect x="865" y="215" width="90" height="48" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+      <rect x="775" y="263" width="90" height="48" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+      <rect x="865" y="263" width="90" height="48" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+      <text x="820" y="248" text-anchor="middle">b0</text><text x="910" y="248" text-anchor="middle">b0</text>
+      <text x="820" y="296" text-anchor="middle">b1</text><text x="910" y="296" text-anchor="middle">b1</text>
+    </g>
+    <g>
+      <text x="615" y="417">frame 1</text>
+      <rect x="775" y="360" width="90" height="48" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+      <rect x="865" y="360" width="90" height="48" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+      <rect x="775" y="408" width="90" height="48" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+      <rect x="865" y="408" width="90" height="48" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+      <text x="820" y="393" text-anchor="middle">b0</text><text x="910" y="393" text-anchor="middle">b0</text>
+      <text x="820" y="441" text-anchor="middle">b1</text><text x="910" y="441" text-anchor="middle">b1</text>
+    </g>
+    <g>
+      <text x="615" y="562">frame 2</text>
+      <rect x="775" y="505" width="90" height="48" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+      <rect x="865" y="505" width="90" height="48" fill="#dceaf9" stroke="#4974a5" stroke-width="2"/>
+      <rect x="775" y="553" width="90" height="48" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+      <rect x="865" y="553" width="90" height="48" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+      <text x="820" y="538" text-anchor="middle">b0</text><text x="910" y="538" text-anchor="middle">b0</text>
+      <text x="820" y="586" text-anchor="middle">b1</text><text x="910" y="586" text-anchor="middle">b1</text>
+    </g>
+    <text x="615" y="657" class="detail">(frame,row,column)</text>
+  </g>
+  <g data-qa-block="ground-planes">
+    <rect x="1130" y="75" width="430" height="620" rx="12" fill="#f8fbff" stroke="#d2dde9" stroke-width="2"/>
+    <text x="1160" y="128" class="heading">Registered band planes</text>
+    <text x="1160" y="172" class="detail">Calibration + registration</text>
+    <text x="1235" y="292" text-anchor="middle">b0</text>
+    <text x="1435" y="292" text-anchor="middle">b1</text>
+    <rect x="1160" y="325" width="150" height="150" fill="#f0f2f5"/>
+    <path d="M1185 350 H1285 V425 H1185 Z" fill="#dceaf9"/>
+    <rect x="1160" y="325" width="150" height="150" fill="url(#cells)" stroke="#8ea3b8" stroke-width="1.5"/>
+    <rect x="1360" y="325" width="150" height="150" fill="#f0f2f5"/>
+    <path d="M1385 375 H1485 V450 H1385 Z" fill="#fff3df"/>
+    <rect x="1360" y="325" width="150" height="150" fill="url(#cells)" stroke="#8ea3b8" stroke-width="1.5"/>
+    <text x="1160" y="530" class="detail">Each band has its own gaps</text>
+    <text x="1160" y="628" class="detail">(y,x,band)</text>
+  </g>
+  <g>
+    <rect x="40" y="741" width="28" height="28" fill="#dceaf9" stroke="#4974a5" stroke-width="1.5"/>
+    <text x="82" y="763" class="detail">b0</text>
+    <rect x="170" y="741" width="28" height="28" fill="#fff3df" stroke="#b57a2b" stroke-width="1.5"/>
+    <text x="212" y="763" class="detail">b1</text>
+    <rect x="300" y="741" width="28" height="28" fill="#f0f2f5" stroke="#8ea3b8" stroke-width="1.5"/>
+    <text x="342" y="763" class="detail">Unsupported cube cell</text>
+    <path class="link" d="M900 754 H975"/>
+    <text x="995" y="763" class="detail">Processing sequence</text>
+  </g>
+</svg>

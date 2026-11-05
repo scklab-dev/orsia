@@ -47,24 +47,51 @@ def interpolate_point_density(
         or np.any(source_values < 0)
     ):
         raise ValueError("source density must be finite nonnegative on source_grid")
-    source = source_grid.points
-    target = target_grid.points
-    right = np.searchsorted(source, target, side="left")
-    exact = (right < source.size) & (source[np.minimum(right, source.size - 1)] == target)
-    if np.any((right == 0) & ~exact) or np.any(right == source.size):
-        raise ValueError("target grid requires extrapolation beyond source points")
-    if source_grid.domain is not None:
-        bounds = np.asarray(source_grid.domain.intervals)
-        intervals = np.searchsorted(bounds[:, 0], target, side="right") - 1
-        lower = bounds[np.maximum(intervals, 0), 0]
-        upper = bounds[np.maximum(intervals, 0), 1]
-        if np.any(intervals < 0) or np.any(target > upper):
-            raise ValueError("target points lie in a declared spectral gap")
-        if np.any(source[np.maximum(right - 1, 0)][~exact] < lower[~exact]) or np.any(
-            source[right][~exact] > upper[~exact]
-        ):
-            raise ValueError("interpolation stencil crosses a declared spectral gap")
-    result = np.interp(target, source, source_values)
+    left, right, wl, wr = spectral_interpolation_weights(source_grid, target_grid)
+    result = wl * source_values[left] + wr * source_values[right]
     if not np.all(np.isfinite(result)):
         raise ValueError("interpolated point density must be finite")
     return result
+
+
+def spectral_interpolation_weights(
+    source_grid: SpectralGrid,
+    target_grid: SpectralGrid,
+) -> tuple[NDArray[np.int64], NDArray[np.int64], NDArray[np.float64], NDArray[np.float64]]:
+    """Locate nonnegative linear stencils within declared spectral intervals.
+
+    Exact nodes use identical left/right indices with weights one/zero, including
+    a singleton source. Unknown domains enforce the sampled envelope only.
+
+    Args:
+        source_grid: Increasing source cm^-1 samples with optional physical domain.
+        target_grid: Increasing target cm^-1 samples requiring in-domain brackets.
+
+    Returns:
+        Owned left/right int64 indices and left/right float64 weights on target points.
+
+    Raises:
+        ValueError: Coordinates mismatch, extrapolation is needed or a stencil crosses a gap.
+    """
+    require_wavenumber_grid(source_grid)
+    require_wavenumber_grid(target_grid)
+    source, target = source_grid.points, target_grid.points
+    right = np.searchsorted(source, target, side="left").astype(np.int64)
+    exact = (right < len(source)) & (source[np.minimum(right, len(source) - 1)] == target)
+    if np.any((right == 0) & ~exact) or np.any(right == len(source)):
+        raise ValueError("spectral extrapolation beyond source points is not supported")
+    left = np.where(exact, right, right - 1)
+    if source_grid.domain is not None:
+        bounds = np.asarray(source_grid.domain.intervals)
+        intervals = np.searchsorted(bounds[:, 0], target, side="right") - 1
+        lower, upper = bounds[np.maximum(intervals, 0)].T
+        if np.any(intervals < 0) or np.any(target > upper):
+            raise ValueError("target points lie outside declared spectral support in a gap")
+        if np.any(source[left][~exact] < lower[~exact]) or np.any(
+            source[right][~exact] > upper[~exact]
+        ):
+            raise ValueError("interpolation stencil crosses a declared spectral gap")
+    width = np.where(exact, 1.0, source[right] - source[left])
+    wl = np.where(exact, 1.0, (source[right] - target) / width)
+    wr = np.where(exact, 0.0, (target - source[left]) / width)
+    return left, right, wl, wr

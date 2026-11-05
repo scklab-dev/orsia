@@ -1,4 +1,4 @@
-"""Interchangeable physical laws, joint integration and backwards compatibility."""
+"""Interchangeable physical laws, joint integration and constant/callback agreement."""
 
 from functools import partial
 from math import erf
@@ -7,7 +7,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 from orsia_instruments import (
+    DetectorProperties,
+    GaussianPSF,
     RadianceField,
+    ReadSchedule,
     cavity_imager,
     cavity_transmission,
     dispersive_imager,
@@ -32,12 +35,12 @@ from orsia_instruments import (
 from orsia_radiative import SpectralDomain, SpectralGrid
 from scipy.integrate import quad
 
-COMMON = dict(focal_length_m=0.02, collecting_area_m2=1e-8, psf_sigma_m=3e-5)
+COMMON = dict(focal_length_m=0.02, collecting_area_m2=1e-8, spatial=GaussianPSF(3e-5))
 WAVE = np.array([2.01e-6, 1.98e-6, 2e-6])
 
 
 def test_documented_factory_example(acquisition):
-    guide = Path(__file__).resolve().parents[1] / "README.md"
+    guide = Path(__file__).resolve().parents[1] / "docs/optics.md"
     code = (
         guide.read_text()
         .split("### Interchangeable factory example\n", 1)[1]
@@ -55,11 +58,7 @@ def test_documented_factory_example(acquisition):
 @pytest.fixture
 def acquisition():
     return rectangular_acquisition(
-        sample_ids=("r",),
-        pixel_ids=("p",),
-        setting_ids=("s",),
-        port_ids=("direct",),
-        exposure_bounds_s=np.array([[0.0, 0.01]]),
+        reads=ReadSchedule(("r",), ("p",), ("s",), ("direct",), np.array([[0.0, 0.01]])),
         pixel_bounds_m=np.array([[-2e-5, 2e-5, -2e-5, 2e-5]]),
         direction_bounds_uv=(-0.001, 0.001, -0.001, 0.001),
         pointing=lambda t: np.zeros((len(t), 2)),
@@ -80,10 +79,10 @@ def test_lvf_profile_matches_existing_gaussian_and_spatial_filter(acquisition):
         reference_position_m=1e-6,
         pixel_order=12,
     )
-    legacy = lvf_imager(**COMMON, **options, sigma_m=2e-8)
+    reference = lvf_imager(**COMMON, **options, sigma_m=2e-8)
     supplied = lvf_imager(**COMMON, **options, profile=profile)
     for exposure in (0, 1):
-        expected = legacy.response(exposure, 0, WAVE, acquisition)
+        expected = reference.response(exposure, 0, WAVE, acquisition)
         np.testing.assert_array_equal(supplied.response(exposure, 0, WAVE, acquisition), expected)
     assert "sigma_m" not in supplied.settings
     np.testing.assert_array_equal(supplied.settings["reference_m"], [2e-6, 2.01e-6])
@@ -116,12 +115,12 @@ def test_uniform_spatial_filter_matches_analytic_path(acquisition):
     ],
 )
 def test_zero_offsets_match_analytic_path(acquisition, factory, params, offset):
-    legacy = factory(**COMMON, **params)
+    reference = factory(**COMMON, **params)
     spatial = factory(**COMMON, **params, **{offset: lambda x, y: 0.0}, pixel_order=12)
     for exposure in (0, 1):
         np.testing.assert_allclose(
             spatial.response(exposure, 0, WAVE, acquisition),
-            legacy.response(exposure, 0, WAVE, acquisition),
+            reference.response(exposure, 0, WAVE, acquisition),
             rtol=2e-14,
         )
 
@@ -232,7 +231,7 @@ def test_spectral_interferometer_parameters_and_complementary_ports(acquisition)
         np.testing.assert_array_equal(p, fraction * reference[0])
 
 
-def test_spectral_cavity_parameters_legacy_order_and_callback_support(acquisition):
+def test_spectral_cavity_parameters_reference_order_and_callback_support(acquisition):
     calls = []
 
     def index(w):
@@ -534,8 +533,38 @@ def test_dense_optical_charge_and_exposure_settings(kind):
         angular_order=3,
         time_order=1,
     )
-    dense = simulate_images(scene, **inputs)
-    charge = image_photoelectrons(scene, **inputs)
+    dense = simulate_images(
+        scene,
+        **inputs,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
+    charge = image_photoelectrons(
+        scene,
+        **inputs,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     np.testing.assert_allclose(
         charge.signal.total.reshape(dense.photoelectrons.shape), dense.photoelectrons, rtol=5e-13
     )

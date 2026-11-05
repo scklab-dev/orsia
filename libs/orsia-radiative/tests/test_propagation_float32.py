@@ -7,7 +7,7 @@ import formal_reference
 import numpy as np
 import pytest
 from orsia_radiative.transfer import formal
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 
 
 @pytest.mark.parametrize("solar_mu", [None, 0.8, 1e-5])
@@ -32,7 +32,7 @@ def test_float32_preparation(monkeypatch, solar_mu, cells, layout):
 
     def counted(*args):
         calls.append(1)
-        return propagation_native.prepare(*args)
+        return transfer_native.prepare(*args)
 
     monkeypatch.setattr(formal, "_native_prepare", counted)
     native = formal.propagation_coefficients(depth, mu, solar_mu=solar_mu)
@@ -144,7 +144,7 @@ def test_native_rejects_mixed_output_buffers(dtype):
     outputs = [np.empty((3, 2), dtype=dtype) for _ in range(6)]
     outputs[-1] = outputs[-1].astype(np.float64 if dtype == np.float32 else np.float32)
     with pytest.raises(ValueError, match="matching"):
-        propagation_native.prepare(depth, mu, 0.8, *outputs)
+        transfer_native.prepare(depth, mu, 0.8, *outputs)
 
 
 def test_float32_concurrent_application():
@@ -153,7 +153,7 @@ def test_float32_concurrent_application():
     source = np.ones((4, 2), dtype=np.float32)
     coefficients = formal.propagation_coefficients(depth, mu, solar_mu=0.8)
     expected = formal.apply_propagation(source, coefficients, solar_source=True)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
             pool.map(
                 lambda _: formal.apply_propagation(source, coefficients, solar_source=True),

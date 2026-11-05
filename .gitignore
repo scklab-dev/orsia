@@ -10,12 +10,13 @@ htmlcov/
 *.egg-info/
 build/
 dist/
-# Interpreter/platform-specific products of the packaged propagation build.
-/libs/orsia-radiative/src/orsia_radiative/transfer/native/propagation_native*.so
-/libs/orsia-radiative/src/orsia_radiative/transfer/native/propagation_native*.pyd
+# Interpreter/platform-specific products of the packaged transfer build.
+/libs/orsia-radiative/src/orsia_radiative/transfer/native/transfer_native*.so
+/libs/orsia-radiative/src/orsia_radiative/transfer/native/transfer_native*.pyd
 .env
 .env.*
 !.env.example
-.ipynb_checkpoints/
 /outputs/
 /.artifacts/
+.ipynb_checkpoints/
+.DS_Store

@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-describedby="description">
+  <desc id="description">Three operations with separate inputs. The camera, true grid and radiance feed simulation, producing native frames. Supplied calibration and the frames feed calibration, producing native band means. Estimated geometry and target cells and bands feed reconstruction, producing a radiance cube with coverage and validity.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0 0 L10 5 L0 10 Z" fill="#52647a"/></marker>
+    <style>
+      text { font-family: Helvetica, Arial, sans-serif; fill: #243b58; font-size: 27px; }
+      .heading { font-weight: 700; font-size: 30px; }
+      .detail { font-size: 25px; fill: #52647a; }
+      .api { font-family: Menlo, Consolas, monospace; font-size: 23px; }
+      .link { fill: none; stroke: #52647a; stroke-width: 3; marker-end: url(#arrow); stroke-linejoin: round; }
+    </style>
+  </defs>
+  <rect width="1600" height="800" fill="#ffffff"/>
+  <g aria-label="Input and output paths">
+    <path class="link" d="M250 235 V320"/>
+    <path class="link" d="M800 235 V320"/>
+    <path class="link" d="M1350 235 V320"/>
+    <path class="link" d="M250 430 V515"/>
+    <path class="link" d="M800 430 V515"/>
+    <path class="link" d="M1350 430 V515"/>
+    <path class="link" d="M450 600 H525 V375 H600"/>
+    <path class="link" d="M1000 600 H1075 V375 H1150"/>
+  </g>
+  <g data-qa-block="simulation-inputs">
+    <rect x="50" y="55" width="400" height="180" rx="12" fill="#eaf2fb" stroke="#4974a5" stroke-width="2"/>
+    <text x="80" y="104" class="heading">Simulation truth</text>
+    <text x="80" y="152">Camera + true grid</text>
+    <text x="80" y="196" class="detail">Radiance + source coverage</text>
+  </g>
+  <g data-qa-block="calibration-inputs">
+    <rect x="600" y="55" width="400" height="180" rx="12" fill="#fff3df" stroke="#b57a2b" stroke-width="2"/>
+    <text x="630" y="104" class="heading">Supplied calibration</text>
+    <text x="630" y="152">Native band response</text>
+    <text x="630" y="196" class="detail">Detector calibration</text>
+  </g>
+  <g data-qa-block="reconstruction-inputs">
+    <rect x="1150" y="55" width="400" height="180" rx="12" fill="#e9f4ef" stroke="#46816a" stroke-width="2"/>
+    <text x="1180" y="104" class="heading">Estimated geometry</text>
+    <text x="1180" y="152">Estimated grid</text>
+    <text x="1180" y="196" class="detail">Target cells + band responses</text>
+  </g>
+  <g data-qa-block="simulate">
+    <rect x="50" y="320" width="400" height="110" rx="12" fill="#f8fbff" stroke="#8ea3b8" stroke-width="2"/>
+    <text x="250" y="366" text-anchor="middle" class="heading">Simulate</text>
+    <text x="250" y="405" text-anchor="middle" class="api">simulate_frames</text>
+  </g>
+  <g data-qa-block="calibrate">
+    <rect x="600" y="320" width="400" height="110" rx="12" fill="#f8fbff" stroke="#8ea3b8" stroke-width="2"/>
+    <text x="800" y="366" text-anchor="middle" class="heading">Calibrate</text>
+    <text x="800" y="405" text-anchor="middle" class="api">calibrate_frames</text>
+  </g>
+  <g data-qa-block="reconstruct">
+    <rect x="1150" y="320" width="400" height="110" rx="12" fill="#f8fbff" stroke="#8ea3b8" stroke-width="2"/>
+    <text x="1350" y="366" text-anchor="middle" class="heading">Register</text>
+    <text x="1350" y="405" text-anchor="middle" class="api">reconstruct_radiance_cube</text>
+  </g>
+  <g data-qa-block="frames">
+    <rect x="50" y="515" width="400" height="180" rx="12" fill="#ffffff" stroke="#8ea3b8" stroke-width="2"/>
+    <text x="80" y="564" class="heading">Native frames</text>
+    <text x="80" y="612">(frame,row,column)</text>
+    <text x="80" y="656" class="detail">DN adds a realisation axis</text>
+  </g>
+  <g data-qa-block="band-means">
+    <rect x="600" y="515" width="400" height="180" rx="12" fill="#ffffff" stroke="#8ea3b8" stroke-width="2"/>
+    <text x="630" y="564" class="heading">Calibrated reads</text>
+    <text x="630" y="612">(realisation,read)</text>
+    <text x="630" y="656" class="detail">Photon-weighted band means</text>
+  </g>
+  <g data-qa-block="cube">
+    <rect x="1150" y="515" width="400" height="180" rx="12" fill="#ffffff" stroke="#46816a" stroke-width="2"/>
+    <text x="1180" y="564" class="heading">Radiance cube</text>
+    <text x="1180" y="612">(y,x,band)</text>
+    <text x="1180" y="656" class="detail">values, coverage, valid</text>
+  </g>
+  <g fill="#52647a">
+    <text x="50" y="756" class="detail">Data flow</text>
+    <path class="link" d="M185 747 H265"/>
+  </g>
+</svg>

@@ -73,20 +73,12 @@ def scene(atmosphere: Atmosphere, source: SolarSource) -> RadiativeScene:
     )
 
 
-def test_atmospheric_optics_exports_domain_names_without_compatibility_aliases() -> None:
+def test_atmospheric_optics_exports_domain_operations() -> None:
     from orsia_radiative.optics import atmosphere as optical
 
     for name in ("AtmosphericOptics", "compose_atmospheric_optics", "validate_atmospheric_optics"):
         assert name in orsia_radiative.__all__
         assert getattr(orsia_radiative, name) is getattr(optical, name)
-    for name in (
-        "PreparedOpticalInputs",
-        "prepare_optical_inputs",
-        "validate_prepared_optical_inputs",
-    ):
-        assert name not in orsia_radiative.__all__
-        assert not hasattr(orsia_radiative, name)
-        assert not hasattr(optical, name)
     atmosphere, source, _ = inputs()
     assert type(compose_atmospheric_optics(atmosphere, source)) is AtmosphericOptics
 

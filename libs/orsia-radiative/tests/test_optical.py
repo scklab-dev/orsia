@@ -4,7 +4,6 @@ from math import exp, expm1, pi, sqrt
 from typing import Any, cast
 
 import numpy as np
-import orsia_radiative
 import pytest
 from numpy.typing import NDArray
 from orsia_radiative import (
@@ -272,12 +271,6 @@ def test_optical_inputs_remain_separate_and_validate() -> None:
         )
         is None
     )
-
-
-def test_no_speculative_scene_wide_or_solver_contract_is_exported() -> None:
-    for name in ("OpticalState", "SolverAdaptation", "build_optical_state"):
-        assert name not in orsia_radiative.__all__
-        assert not hasattr(orsia_radiative, name)
 
 
 @pytest.mark.parametrize(

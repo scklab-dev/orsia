@@ -10,7 +10,9 @@ from orsia_instruments import (
     DetectorElectronics,
     DetectorReadings,
     ExpectedElectrons,
+    GaussianPSF,
     RadianceField,
+    ReadSchedule,
     cavity_transmission,
     central_difference,
     digitize,
@@ -20,12 +22,13 @@ from orsia_instruments import (
     gaussian_filter,
     gaussian_pixel_fraction,
     lvf_centre,
-    modulated_pixel_response,
     native_difference,
+    pixel_acceptance,
+    read_schedule,
     rectangular_acquisition,
+    sample_optical_acceptance,
     sample_radiance,
     sample_readout,
-    sampled_optical_response,
     two_beam_ports,
     uniform_radiance_field,
 )
@@ -38,11 +41,7 @@ from scipy.special import erf
 
 def acquisition() -> Acquisition:
     return Acquisition(
-        ("a",),
-        ("p",),
-        ("s",),
-        ("+",),
-        np.array([[0.0, 2.0]]),
+        ReadSchedule(("a",), ("p",), ("s",), ("+",), np.array([[0.0, 2.0]])),
         np.array([[0.5, 1.5]]),
         np.zeros((1, 2, 2)),
         np.zeros((1, 2, 2)),
@@ -80,7 +79,7 @@ def test_prepared_response_reuses_optics_not_radiance():
         calls.append((read, len(wavelengths)))
         return np.broadcast_to(wavelengths / wave.max(), (2, len(wavelengths)))
 
-    prepared = sampled_optical_response(acq, response, wave)
+    prepared = sample_optical_acceptance(acq, response, wave)
     assert calls == [(0, len(wave))]
     calls.clear()
     for scale in (1, 3):
@@ -90,18 +89,10 @@ def test_prepared_response_reuses_optics_not_radiance():
         reference = expected_electrons(changed, acq, response, collecting_area_m2=2)
         np.testing.assert_allclose(actual.total, reference.total, rtol=3e-15)
         calls.clear()
-    np.testing.assert_allclose(prepared(0, wave[::-1], acq), response(0, wave[::-1], acq))
-    with pytest.raises(ValueError):
-        prepared(0, wave, replace(acq))
-    with pytest.raises(ValueError):
-        prepared(0, np.array([wave.max() * 2]), acq)
-    with pytest.raises(ValueError):
-        prepared(0, np.array([wave.min() / 2]), acq)
-    with pytest.raises(ValueError):
-        prepared(-1, wave, acq)
-    with pytest.raises(ValueError):
-        prepared(0, np.array([np.nan]), acq)
-    assert prepared(0, wave, acq).flags.writeable
+    np.testing.assert_allclose(prepared.fractions[0, :, ::-1], response(0, wave[::-1], acq))
+    assert not prepared.fractions.flags.writeable
+    with pytest.raises(ValueError, match="original acquisition"):
+        expected_electrons(scene, replace(acq), prepared, collecting_area_m2=1)
 
 
 @pytest.mark.parametrize(
@@ -110,13 +101,13 @@ def test_prepared_response_reuses_optics_not_radiance():
 )
 def test_prepared_response_rejects_invalid_support(wave):
     with pytest.raises(ValueError):
-        sampled_optical_response(acquisition(), unity, wave)
+        sample_optical_acceptance(acquisition(), unity, wave)
 
 
 def test_prepared_response_rejects_invalid_fractions():
     for response in (lambda *_: np.ones((1, 2)), lambda *_: np.full((2, 2), 2)):
         with pytest.raises(ValueError):
-            sampled_optical_response(acquisition(), response, [1, 2])
+            sample_optical_acceptance(acquisition(), response, [1, 2])
 
 
 def test_prepared_response_preserves_joint_read_node_spectral_dependence():
@@ -124,9 +115,18 @@ def test_prepared_response_preserves_joint_read_node_spectral_dependence():
     parameters = {
         member.name: np.repeat(getattr(original, member.name), 3, axis=0)
         for member in fields(original)
-        if member.name not in {"sample_ids", "pixel_ids", "setting_ids", "port_ids"}
+        if member.name != "reads"
     }
-    acq = Acquisition(("a", "b", "c"), ("p",) * 3, ("s",) * 3, ("+",) * 3, **parameters)
+    acq = Acquisition(
+        ReadSchedule(
+            ("a", "b", "c"),
+            ("p",) * 3,
+            ("s",) * 3,
+            ("+",) * 3,
+            np.repeat(original.exposure_bounds_s, 3, axis=0),
+        ),
+        **parameters,
+    )
     scene = field()
     wave = 0.01 / scene.grid.points
     buffer = np.empty((2, len(wave)))
@@ -135,7 +135,7 @@ def test_prepared_response_preserves_joint_read_node_spectral_dependence():
         buffer[:] = (read + 1) * np.array([[0.1], [0.2]]) * wavelengths / wave.max()
         return buffer
 
-    prepared = sampled_optical_response(acq, response, wave)
+    prepared = sample_optical_acceptance(acq, response, wave)
     buffer[:] = 0
     actual = expected_electrons(scene, acq, prepared, collecting_area_m2=1)
     reference = expected_electrons(scene, acq, response, collecting_area_m2=1)
@@ -157,7 +157,7 @@ def test_independent_photon_integral_scaling_and_ownership():
     np.testing.assert_allclose(result.total, expected, rtol=3e-15)
     for name in ("values", "times_s", "u"):
         assert getattr(scene, name).flags.writeable
-    assert acq.times_s.flags.writeable
+    assert not acq.times_s.flags.writeable
     assert result.contributions["scene"].flags.writeable
     result.total[:] = 0
     np.testing.assert_allclose(result.total, expected)
@@ -176,7 +176,7 @@ def test_independent_photon_integral_scaling_and_ownership():
     np.testing.assert_allclose(doubled.total, result.total * 2)
     source = np.array([1.0])
     combined = ExpectedElectrons(
-        acq, {"external": source, "internal-after-own-path": np.array([2.0])}
+        read_schedule(acq), {"external": source, "internal-after-own-path": np.array([2.0])}
     )
     source[:] = 100
     np.testing.assert_array_equal(combined.total, [3.0])
@@ -296,16 +296,18 @@ def test_scene_rejects_invalid_contract(change):
 )
 def test_acquisition_rejects_invalid_contract(change):
     with pytest.raises(ValueError):
-        replace(acquisition(), **change)
+        if any(
+            name in change
+            for name in ("sample_ids", "pixel_ids", "setting_ids", "port_ids", "exposure_bounds_s")
+        ):
+            replace(acquisition().reads, **change)
+        else:
+            replace(acquisition(), **change)
 
 
 def test_rectangular_quadrature_geometry_and_motion():
     kwargs = dict(
-        sample_ids=("r",),
-        pixel_ids=("p",),
-        setting_ids=("s",),
-        port_ids=("p",),
-        exposure_bounds_s=np.array([[0.0, 2.0]]),
+        reads=ReadSchedule(("r",), ("p",), ("s",), ("p",), np.array([[0.0, 2.0]])),
         pixel_bounds_m=np.array([[-1.0, 1.0, -1.0, 1.0]]),
         direction_bounds_uv=(-0.1, 0.1, -0.1, 0.1),
         pointing=lambda t: np.column_stack((t / 10, t * 0)),
@@ -379,11 +381,11 @@ def test_filter_lvf_width_peak_and_joint_pixel_integral():
     assert lvf_centre(0, reference_m=2, gradient=0, angle_rad=0.3) < 2
     centres = np.array([[0.0, 0.0], [0.2, 0.0]])
     bounds = [-1, 1, -1, 1]
-    result = modulated_pixel_response(
+    result = pixel_acceptance(
         np.array([2.0]),
         bounds,
         centres,
-        sigma_m=0.5,
+        spatial=GaussianPSF(0.5),
         transmission=lambda x, y, w: np.array([0.7]),
         pixel_order=24,
     )
@@ -394,8 +396,13 @@ def test_filter_lvf_width_peak_and_joint_pixel_integral():
     def local(x, y, wave):
         return gaussian_filter(wave, 2 + x * 0.2, 0.1)
 
-    coupled = modulated_pixel_response(
-        np.array([2.1]), bounds, centres, sigma_m=0.5, transmission=local, pixel_order=24
+    coupled = pixel_acceptance(
+        np.array([2.1]),
+        bounds,
+        centres,
+        spatial=GaussianPSF(0.5),
+        transmission=local,
+        pixel_order=24,
     )
     # Independent double integral, not the pixel-centre separable approximation.
     reference = quad(
@@ -415,20 +422,20 @@ def test_filter_lvf_width_peak_and_joint_pixel_integral():
     separated = gaussian_pixel_fraction(bounds, centres, 0.5) * local(0, 0, np.array([2.1]))
     assert abs(coupled[0, 0] / separated[0] - 1) > 0.02
     with pytest.raises(ValueError):
-        modulated_pixel_response(
+        pixel_acceptance(
             np.array([2.0]),
             bounds,
             centres,
-            sigma_m=1e-3,
+            spatial=GaussianPSF(1e-3),
             transmission=lambda x, y, w: np.ones(1),
             pixel_order=1,
         )
     with pytest.raises(ValueError):
-        modulated_pixel_response(
+        pixel_acceptance(
             np.array([2.0]),
             bounds,
-            np.zeros((1, 1, 2)),
-            sigma_m=1,
+            np.zeros((1, 2, 2)),
+            spatial=GaussianPSF(1),
             transmission=lambda x, y, w: np.ones(1),
         )
 
@@ -529,7 +536,10 @@ def test_integration_rejection(change):
 
 def test_bad_response_support_and_source_rejection():
     for changed in (
-        replace(acquisition(), exposure_bounds_s=np.array([[-0.1, 2.0]])),
+        replace(
+            acquisition(),
+            reads=replace(acquisition().reads, exposure_bounds_s=np.array([[-0.1, 2.0]])),
+        ),
         replace(acquisition(), direction_bounds_uv=np.array([[-0.11, 0.1, -0.1, 0.1]])),
     ):
         with pytest.raises(ValueError, match="entire acquisition"):
@@ -547,11 +557,11 @@ def test_bad_response_support_and_source_rejection():
         {"x": np.array([np.nan])},
     ):
         with pytest.raises(ValueError):
-            ExpectedElectrons(acquisition(), sources)
+            ExpectedElectrons(read_schedule(acquisition()), sources)
 
 
 def test_detector_analytic_ensemble_reproducibility_and_port_noise():
-    signal = ExpectedElectrons(acquisition(), {"scene": np.array([100.0])})
+    signal = ExpectedElectrons(read_schedule(acquisition()), {"scene": np.array([100.0])})
     detector = DetectorElectronics(
         dark_electrons_per_s=2,
         read_noise_electrons=3,
@@ -584,11 +594,11 @@ def test_digitization_order_flags_rounding_and_zero_counts():
     )
     charge = np.array([[0.0], [1.0], [3.0], [10.0], [100.0], [100.0]])
     noise = np.array([[0.0], [0.0], [0.0], [0.0], [8.0], [-20.0]])
-    reads = digitize(acquisition(), charge, noise, detector)
+    reads = digitize(read_schedule(acquisition()), charge, noise, detector)
     np.testing.assert_array_equal(reads.dn[:, 0], [1, 2, 2, 6, 7, 0])
     np.testing.assert_array_equal(reads.full_well_saturated[:, 0], [False] * 3 + [True] * 3)
     np.testing.assert_array_equal(reads.adc_clipped[:, 0], [False] * 4 + [True] * 2)
-    signal = ExpectedElectrons(acquisition(), {"scene": np.array([0.0])})
+    signal = ExpectedElectrons(read_schedule(acquisition()), {"scene": np.array([0.0])})
     reads = sample_readout(signal, DetectorElectronics(), np.random.default_rng(1))
     np.testing.assert_array_equal(reads.dn, 0)
     assert not reads.full_well_saturated.any()
@@ -596,7 +606,7 @@ def test_digitization_order_flags_rounding_and_zero_counts():
 
 @pytest.mark.parametrize("mean", [0.05, 1e6])
 def test_low_and_high_poisson_charge(mean):
-    signal = ExpectedElectrons(acquisition(), {"scene": np.array([mean])})
+    signal = ExpectedElectrons(read_schedule(acquisition()), {"scene": np.array([mean])})
     detector = DetectorElectronics(full_well_electrons=1e9, adc_bits=32)
     readings = sample_readout(signal, detector, np.random.default_rng(911), realisations=100000)
     values = readings.dn[:, 0]
@@ -606,7 +616,7 @@ def test_low_and_high_poisson_charge(mean):
 
 
 def test_detector_parameter_perturbations_keep_native_mean_and_dispersion_separate():
-    signal = ExpectedElectrons(acquisition(), {"scene": np.array([100.0])})
+    signal = ExpectedElectrons(read_schedule(acquisition()), {"scene": np.array([100.0])})
     detector = DetectorElectronics(dark_electrons_per_s=2, read_noise_electrons=3)
     mean, variance = electron_moments(signal, detector)
     changed_mean, changed_variance = electron_moments(
@@ -648,7 +658,7 @@ def test_detector_rejects_invalid_parameters(change):
 
 def test_detector_rejects_invalid_readings_and_draw_count():
     acq = acquisition()
-    signal = ExpectedElectrons(acq, {"x": np.ones(1)})
+    signal = ExpectedElectrons(read_schedule(acq), {"x": np.ones(1)})
     with pytest.raises(ValueError):
         sample_readout(signal, DetectorElectronics(), np.random.default_rng(1), realisations=0)
     for charge, noise in (
@@ -657,21 +667,21 @@ def test_detector_rejects_invalid_readings_and_draw_count():
         (np.ones((1, 1)), np.array([[np.nan]])),
     ):
         with pytest.raises(ValueError):
-            digitize(acq, charge, noise, DetectorElectronics())
+            digitize(read_schedule(acq), charge, noise, DetectorElectronics())
     for dn, full, adc in (
         (np.ones(1, dtype=np.int64), np.zeros(1, bool), np.zeros(1, bool)),
         (np.ones((1, 1)), np.zeros((1, 1), bool), np.zeros((1, 1), bool)),
         (-np.ones((1, 1), dtype=np.int64), np.zeros((1, 1), bool), np.zeros((1, 1), bool)),
     ):
         with pytest.raises(ValueError):
-            DetectorReadings(acq, cast(Any, dn), full, adc)
+            DetectorReadings(read_schedule(acq), cast(Any, dn), full, adc)
 
 
 def test_signed_perturbations_identity_and_step_refinement():
     acq = acquisition()
 
     def evaluate(x):
-        return ExpectedElectrons(acq, {"x": np.array([np.exp(x)])})
+        return ExpectedElectrons(read_schedule(acq), {"x": np.array([np.exp(x)])})
 
     baseline = evaluate(1.0)
     np.testing.assert_array_equal(native_difference(baseline, baseline), 0)
@@ -682,6 +692,8 @@ def test_signed_perturbations_identity_and_step_refinement():
         with pytest.raises(ValueError):
             central_difference(evaluate, 1, step)
     with pytest.raises(ValueError):
-        native_difference(baseline, replace(baseline, acquisition=replace(acq, port_ids=("-",))))
+        native_difference(
+            baseline, replace(baseline, reads=replace(read_schedule(acq), port_ids=("-",)))
+        )
     with pytest.raises(ValueError):
-        native_difference(baseline, ExpectedElectrons(acq, {"y": np.ones(1)}))
+        native_difference(baseline, ExpectedElectrons(read_schedule(acq), {"y": np.ones(1)}))

@@ -7,7 +7,6 @@ from urllib.parse import parse_qs, urlsplit
 
 import numpy as np
 import pytest
-import xarray as xr
 from numpy.testing import assert_allclose
 from numpy.typing import NDArray
 from orsia_data import (
@@ -20,6 +19,7 @@ from orsia_data import (
     read_netcdf_surface_fields,
     read_pressure_level_atmosphere,
 )
+from orsia_data.atmosphere import netcdf as netcdf_reader
 from orsia_data.atmosphere.sampling import linear_axis_weights
 from orsia_data.services import nomads as providers
 from orsia_radiative import hydrostatic_atmosphere, pressure_level_layer_means
@@ -130,6 +130,8 @@ def test_netcdf_support_failures(tmp_path: Path, options: dict[str, object]) -> 
         ("calendar", "360_day"),
         ("units", "fortnights since 2025-01-01"),
         ("units", "hours"),
+        ("units", "hours since 1500-01-01"),
+        ("units", "hours since invalid"),
     ],
 )
 def test_bad_time_metadata(tmp_path: Path, attribute: str, value: str) -> None:
@@ -268,18 +270,19 @@ def test_cf_validity_checks(tmp_path: Path, attribute: str, value: object) -> No
         read(path)
 
 
-def test_xarray_bounded_decode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bounded_netcdf_decode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path = tmp_path / "native.nc"
     fixture_file(path)
-    decode = xr.decode_cf
+    decode = netcdf_reader._values
     decoded_shapes = []
 
-    def record(dataset: xr.Dataset, **kwargs: Any) -> xr.Dataset:
-        if "field" in dataset and dataset["field"].attrs.get("units") in ("K", "kg kg**-1"):
-            decoded_shapes.append(dataset["field"].shape)
-        return decode(dataset, **kwargs)
+    def record(variable: Any, backend: str, selection: Any = Ellipsis) -> NDArray[np.float64]:
+        result = decode(variable, backend, selection)
+        if variable.units in (b"K", b"kg kg**-1"):
+            decoded_shapes.append(result.shape)
+        return result
 
-    monkeypatch.setattr(xr, "decode_cf", record)
+    monkeypatch.setattr(netcdf_reader, "_values", record)
     levels, fields = read(path, vertical_interval=(500, 900))
     assert_allclose(levels, [500])
     assert_allclose(fields["q"], [0.011])
@@ -294,7 +297,7 @@ def test_xarray_bounded_decode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         ("days since 2025-01-01", [0, 0.25]),
     ],
 )
-def test_xarray_cf_time_decoding(tmp_path: Path, units: str, values: list[float]) -> None:
+def test_cf_time_decoding(tmp_path: Path, units: str, values: list[float]) -> None:
     path = tmp_path / "native.nc"
     fixture_file(path)
     with netcdf_file(path, "a") as dataset:
@@ -303,7 +306,33 @@ def test_xarray_cf_time_decoding(tmp_path: Path, units: str, values: list[float]
     assert_allclose(read(path)[1]["t"], [106.5, 108.5])
 
 
-def test_xarray_packed_validity_before_scaling(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "units,values",
+    [
+        ("seconds since 2025-01-01", [0.0, 1e-7]),
+        ("seconds since 2025-01-01T01:00:00.000000100+01:00", [-1e-7, 1e-7]),
+    ],
+)
+def test_cf_fractional_time_precision(tmp_path: Path, units: str, values: list[float]) -> None:
+    path = tmp_path / "native.nc"
+    fixture_file(path)
+    with netcdf_file(path, "a") as dataset:
+        dataset.variables["time"].units = units
+        dataset.variables["time"][:] = values
+    fields = read(path, valid_time=CYCLE)[1]
+    assert_allclose(fields["t"], [104.5, 106.5], rtol=0, atol=0)
+
+
+def test_netcdf_nonfinite_time_coordinate(tmp_path: Path) -> None:
+    path = tmp_path / "native.nc"
+    fixture_file(path)
+    with netcdf_file(path, "a") as dataset:
+        dataset.variables["time"][0] = np.nan
+    with pytest.raises(ValueError, match="invalid native time"):
+        read(path)
+
+
+def test_packed_validity_before_scaling(tmp_path: Path) -> None:
     path = tmp_path / "native.nc"
     fixture_file(path)
     with netcdf_file(path, "a") as dataset:

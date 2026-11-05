@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCUMENTS = (ROOT / "README.md", ROOT / "src/orsia_uncertainty/README.md")
+DOCUMENTS = (
+    ROOT / "README.md",
+    ROOT / "docs/covariance.md",
+)
 
 
 @pytest.mark.parametrize("document", DOCUMENTS)

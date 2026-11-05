@@ -34,7 +34,8 @@ def reference(
     Snapshot all shared arrays before hashing and solving. Timings in ``timing``
     and ``worker_wall_seconds`` describe the original computation; ``cache``
     records this access, including identity-probe and load wall times separately.
-    Every access probes the isolated environment; a hit skips the solve worker.
+    Every access probes a separate process in the caller-selected environment;
+    a hit skips the solve worker. The notebook uses its own ``sys.executable``.
     Concurrent writers may compute the same key, then atomically replace it.
     """
     if mode not in {"reuse", "refresh", "off"}:
@@ -174,7 +175,11 @@ def _validate(record: dict, arrays: dict, cells: int, streams: int, runs: int, b
             raise ValueError("invalid wall time")
     if datetime.fromisoformat(record["computed_at_utc"]).utcoffset() is None:
         raise ValueError("computation time requires a timezone")
-    expected_depth = (arrays["absorption_depth"] + arrays["rayleigh_depth"]).sum(axis=0)
+    expected_depth = (
+        arrays["absorption_depth"]
+        + arrays["rayleigh_depth"]
+        + arrays.get("aerosol_extinction_depth", 0.0)
+    ).sum(axis=0)
     np.testing.assert_allclose(
         record["los_optical_depth"], expected_depth / arrays["muv"], rtol=1e-4, atol=1e-10
     )

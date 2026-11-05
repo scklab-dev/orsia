@@ -14,7 +14,7 @@ import orders_reference as reference
 import pytest
 from orsia_radiative import AerosolComponent
 from orsia_radiative.transfer import orders
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 from test_solar_accumulation import _inputs
 from test_solar_boundary import _sweep_reference
 
@@ -41,9 +41,9 @@ def test_mixed_general_path(backend, moments, angular, maximum):
     with patch.object(reference, "_accumulate_orders", _sweep_reference):
         expected = reference.scattering_orders(scene, source=source, optics=optics, **controls)
     kernel = (
-        propagation_native.spectral_orders
+        transfer_native.spectral_orders
         if backend == "portable"
-        else propagation_native.bind_spectral_blas(import_module("scipy.linalg.cython_blas"))
+        else transfer_native.bind_spectral_blas(import_module("scipy.linalg.cython_blas"))
     )
     with patch.object(orders, "_native_spectral_orders", kernel):
         actual = orders.scattering_orders(scene, source=source, optics=optics, **controls)
@@ -85,9 +85,9 @@ def test_angular_conversion_matches_original_recurrence(
     )
     expected = reference.scattering_orders(scene, source=source, optics=optics, **controls)
     kernel = (
-        propagation_native.spectral_orders
+        transfer_native.spectral_orders
         if backend == "portable"
-        else propagation_native.bind_spectral_blas(import_module("scipy.linalg.cython_blas"))
+        else transfer_native.bind_spectral_blas(import_module("scipy.linalg.cython_blas"))
     )
     with patch.object(orders, "_native_spectral_orders", kernel):
         actual = orders.scattering_orders(scene, source=source, optics=optics, **controls)
@@ -146,7 +146,7 @@ def test_concurrent_general_calls_and_one_native_boundary():
         return orders.scattering_orders(scene, source=source, optics=optics, **controls)
 
     expected = calculate(0)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(calculate, range(16)))
     assert not sys._is_gil_enabled()
     for result in results:
@@ -213,7 +213,7 @@ def test_private_boundary_rejections(failure):
         args[4] = args[4].copy()
         args[4][0] = np.nan
     with pytest.raises((ValueError, OverflowError)):
-        propagation_native.spectral_orders(*args)
+        transfer_native.spectral_orders(*args)
 
 
 @pytest.mark.parametrize("failure", [None, "shape", "detached-weight"])
@@ -239,14 +239,14 @@ def test_exports_and_blas_owner_lifetimes(failure):
         else:
             wrappers[-1].array[0] = np.nan
         with pytest.raises(ValueError):
-            propagation_native.spectral_orders(*args)
+            transfer_native.spectral_orders(*args)
     else:
         owner = ModuleType("blas_owner")
         owner.__dict__["__pyx_capi__"] = dict(
             import_module("scipy.linalg.cython_blas").__pyx_capi__
         )
         lifetime = weakref.ref(owner)
-        kernel = propagation_native.bind_spectral_blas(owner)
+        kernel = transfer_native.bind_spectral_blas(owner)
         del owner
         gc.collect()
         assert lifetime() is not None

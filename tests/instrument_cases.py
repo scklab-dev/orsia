@@ -5,15 +5,17 @@ from numpy.typing import NDArray
 from orsia_instruments import (
     Acquisition,
     ExpectedElectrons,
+    GaussianPSF,
     OpticalResponse,
     RadianceField,
+    ReadSchedule,
     cavity_transmission,
     dispersive_response,
     expected_electrons,
     gaussian_filter,
     gaussian_pixel_fraction,
     lvf_centre,
-    modulated_pixel_response,
+    pixel_acceptance,
     rectangular_acquisition,
     two_beam_ports,
 )
@@ -73,12 +75,14 @@ def make_case(
         for port in (("+", "-") if family == "two-beam" else ("direct",))
     ]
     acquisition = rectangular_acquisition(
-        sample_ids=tuple(f"r{r}-s{s}-p{p}-{port}" for r, s, p, port in identities),
-        pixel_ids=tuple(f"p{p}" for _, _, p, _ in identities),
-        setting_ids=tuple(f"s{s}" for _, s, _, _ in identities),
-        port_ids=tuple(port for _, _, _, port in identities),
-        exposure_bounds_s=np.array(
-            [[s * 0.05 + time_shift, s * 0.05 + 0.02 + time_shift] for _, s, _, _ in identities]
+        reads=ReadSchedule(
+            tuple(f"r{r}-s{s}-p{p}-{port}" for r, s, p, port in identities),
+            tuple(f"p{p}" for _, _, p, _ in identities),
+            tuple(f"s{s}" for _, s, _, _ in identities),
+            tuple(port for _, _, _, port in identities),
+            np.array(
+                [[s * 0.05 + time_shift, s * 0.05 + 0.02 + time_shift] for _, s, _, _ in identities]
+            ),
         ),
         pixel_bounds_m=np.array(
             [[(-1 + p) * 8e-5, p * 8e-5, -5e-5, 5e-5] for _, _, p, _ in identities]
@@ -141,8 +145,13 @@ def make_case(
                 order_transmission=gaussian_filter(wave, 2e-6, 3e-8),
             )
 
-        return modulated_pixel_response(
-            wavelength, bounds, image, sigma_m=3e-5, transmission=local, pixel_order=pixel_order
+        return pixel_acceptance(
+            wavelength,
+            bounds,
+            image,
+            spatial=GaussianPSF(3e-5),
+            transmission=local,
+            pixel_order=pixel_order,
         )
 
     return field, acquisition, response
@@ -187,5 +196,5 @@ def radiative_inputs() -> tuple[Radiance, Radiance]:
     solar = transfer.solar.reflected_radiance(
         scene, max_order=0, delta_m_moments=None, source=source, optics=optics
     )
-    thermal = transfer.thermal.schwarzschild_radiance(scene, optics=optics)
+    thermal = transfer.thermal.thermal_radiance(scene, optics=optics)
     return solar, thermal

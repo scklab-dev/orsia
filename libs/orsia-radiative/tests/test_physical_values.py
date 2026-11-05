@@ -83,20 +83,12 @@ def test_physical_fields_and_serialized_keys(
     record = physical_values[name]
     assert tuple(f.name for f in fields(record)) == expected
     assert tuple(asdict(record)) == expected
-    for obsolete in ("source_id", "input_source_ids", "reference_atmosphere"):
-        assert not hasattr(record, obsolete)
-        with pytest.raises(TypeError, match=obsolete):
-            replace(record, **{obsolete: "removed"})
     np.testing.assert_equal(asdict(record), asdict(replace(record)))
 
 
-def test_cross_section_inputs_also_exclude_provenance() -> None:
+def test_cross_section_inputs_are_independently_reconstructible() -> None:
     scene, irradiance, _, _ = case()
     table = field(scene)
-    assert not hasattr(table, "source_id")
-    obsolete_fields: dict[str, Any] = {"source_id": "another-artifact"}
-    with pytest.raises(TypeError, match="source_id"):
-        replace(table, **obsolete_fields)
     np.testing.assert_equal(
         asdict(table_absorption(scene.atmosphere, irradiance.grid, table)),
         asdict(table_absorption(scene.atmosphere, irradiance.grid, replace(table))),

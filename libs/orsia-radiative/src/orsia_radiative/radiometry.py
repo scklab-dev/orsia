@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy import constants
 
-from orsia_radiative.radiance import SpectralIrradiance
+from orsia_radiative.irradiance import SpectralIrradiance
 from orsia_radiative.spectral.grid import _validate_points
 
 # Convert the second radiation constant from SI metres to centimetres.

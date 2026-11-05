@@ -17,8 +17,6 @@ def test_exports() -> None:
         (cross_sections, "read_cross_section_table"),
     ):
         assert getattr(orsia_data, name) is getattr(spectroscopy, name) is getattr(module, name)
-    for name in ("SpectroscopyArtifact", "SolarArtifact", "line_set", "read_manifest"):
-        assert not hasattr(orsia_data, name)
 
 
 def test_partition_table_owned_storage(tmp_path: Path) -> None:

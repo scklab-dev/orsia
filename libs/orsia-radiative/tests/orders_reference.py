@@ -29,12 +29,12 @@ from orsia_radiative.transfer.formal import (
 from scipy.special import roots_legendre
 
 try:
-    from orsia_radiative.transfer.native.propagation_native import bind_rayleigh_blas
-    from orsia_radiative.transfer.native.propagation_native import (
+    from orsia_radiative.transfer.native.transfer_native import bind_rayleigh_blas
+    from orsia_radiative.transfer.native.transfer_native import (
         rayleigh_orders as _native_rayleigh_orders,
     )
 except ModuleNotFoundError as error:
-    if error.name != "orsia_radiative.transfer.native.propagation_native":
+    if error.name != "orsia_radiative.transfer.native.transfer_native":
         raise
     _native_rayleigh_orders = None
 else:
@@ -280,7 +280,7 @@ def _accumulate_orders(
             if _native_rayleigh_orders is None:
                 raise ImportError(
                     "Eligible Rayleigh scattering orders require the compiled "
-                    "orsia_radiative.transfer.native.propagation_native extension; "
+                    "orsia_radiative.transfer.native.transfer_native extension; "
                     "install or rebuild orsia-radiative for this interpreter."
                 )
             # The point-local recurrence owns its scratch and runs detached;

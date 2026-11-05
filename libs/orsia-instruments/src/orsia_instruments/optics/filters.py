@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from scipy.special import expit
 
 from ..quadrature import validate_quadrature_order
-from .psfs import PointSpreadFunction
+from .psfs import SpatialDensity
 from .response import (
     ImagingOptics,
     exposure_setting,
@@ -498,13 +498,7 @@ def filter_imager(
     *,
     focal_length_m: float,
     collecting_area_m2: float,
-    psf_sigma_m: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None = None,
-    psf: PointSpreadFunction | None = None,
+    spatial: SpatialDensity,
     filter: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     throughput: float = 1,
     pixel_order: int = 8,
@@ -523,29 +517,17 @@ def filter_imager(
     ``functools.partial``, or supply another spectral law. Tabulated support and
     any out-of-support policy remain the filter's responsibility.
 
-    Supply exactly one of ``psf`` and ``psf_sigma_m``. The callback is
-    psf(offset_xy_m, wavelengths_m, image_xy_m, exposure_index), returning
-    finite nonnegative (nodes,wavelengths) density in m^-2, with unit integral
-    on the whole plane. Offsets (nodes,wavelengths,2) are detector position
-    minus mapped centroid; field positions (nodes,2) are before dispersion,
-    all in metres. Exposure is the global zero-based index. Inputs/captures
-    are borrowed, stable and nonmutating; normalization is caller-owned.
-    No registration or inheritance is needed. Bind gaussian_psf/tabulated_psf
-    with partial, or supply your own law. General PSFs use pixel_order
-    quadrature; point checks do not prove normalization or convergence.
-
-    Legacy sigma is a positive scalar or (x,y) pair in focal-plane metres.
-    Both it and partial(gaussian_psf, sigma_m=...) snapshot sigma and retain
-    analytic finite-pixel integration here. Wrapped Gaussians use quadrature.
-    Lost tails are never renormalised. Filter transmission and additional
-    optical ``throughput`` each enter once. Spatially varying filters require
-    ``lvf_imager`` or ``spatial_filter_imager`` instead.
+    Supply spatial=GaussianPSF(widths), a prepared TabulatedPSF, or a pure
+    callback(offsets,wavelengths,image_field,exposure) returning finite nonnegative
+    (nodes,wavelengths) density in inverse square metres. Gaussian models with
+    uniform transmission use analytic integration. Other densities and spatial
+    transmissions use shared pixel quadrature; callers establish normalization
+    and convergence by refinement. Missing finite-support mass remains lost.
 
     Args:
         focal_length_m: Positive detector-plane focal length in metres.
         collecting_area_m2: Nonnegative projected collecting area in square metres.
-        psf_sigma_m: Optional analytic Gaussian scalar or (x,y) width in metres.
-        psf: Alternative borrowed point-spread density callback.
+        spatial: Declared Gaussian, prepared tabulated density or pure spatial callback.
         filter: Pure wavelength-vector callback returning accepted fractions in [0,1].
         throughput: Additional dimensionless optical transmission in [0,1].
         pixel_order: Gauss order for numerical pixel integration of general PSFs.
@@ -570,11 +552,10 @@ def filter_imager(
     return imaging_optics(
         focal_length_m,
         collecting_area_m2,
-        psf_sigma_m,
+        spatial,
         throughput,
         transmission,
         {},
-        psf=psf,
         pixel_order=pixel_order,
     )
 
@@ -583,13 +564,7 @@ def spatial_filter_imager(
     *,
     focal_length_m: float,
     collecting_area_m2: float,
-    psf_sigma_m: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None = None,
-    psf: PointSpreadFunction | None = None,
+    spatial: SpatialDensity,
     filter: Callable[[float, float, NDArray[np.float64]], NDArray[np.float64]],
     throughput: float = 1,
     pixel_order: int = 8,
@@ -609,8 +584,7 @@ def spatial_filter_imager(
     Args:
         focal_length_m: Positive focal length in detector metres.
         collecting_area_m2: Nonnegative projected pupil area in square metres.
-        psf_sigma_m: Optional analytic Gaussian width in detector metres.
-        psf: Alternative borrowed point-spread density callback.
+        spatial: Declared Gaussian, prepared tabulated density or pure spatial callback.
         filter: Pure (x_m,y_m,wavelengths_m) accepted-fraction callback.
         throughput: Additional dimensionless optical transmission in [0,1].
         pixel_order: Gauss order for joint PSF/filter pixel integration.
@@ -631,12 +605,11 @@ def spatial_filter_imager(
     return imaging_optics(
         focal_length_m,
         collecting_area_m2,
-        psf_sigma_m,
+        spatial,
         throughput,
         transmission,
         {},
-        psf=psf,
-        spatial=True,
+        spatial_transmission=True,
         pixel_order=pixel_order,
     )
 
@@ -645,13 +618,7 @@ def lvf_imager(
     *,
     focal_length_m: float,
     collecting_area_m2: float,
-    psf_sigma_m: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None = None,
-    psf: PointSpreadFunction | None = None,
+    spatial: SpatialDensity,
     reference_m: float
     | np.floating
     | np.integer
@@ -690,8 +657,7 @@ def lvf_imager(
     Args:
         focal_length_m: Positive image-plane focal length in metres.
         collecting_area_m2: Nonnegative projected collecting area in square metres.
-        psf_sigma_m: Optional Gaussian PSF width in detector metres.
-        psf: Alternative borrowed point-spread density callback.
+        spatial: Declared Gaussian, prepared tabulated density or pure spatial callback.
         reference_m: Scalar or per-exposure central wavelength at reference position in metres.
         gradient: Filter-centre gradient in metre per metre of detector coordinate.
         sigma_m: Optional Gaussian spectral width in metres, scalar or per exposure.
@@ -749,14 +715,13 @@ def lvf_imager(
     return imaging_optics(
         focal_length_m,
         collecting_area_m2,
-        psf_sigma_m,
+        spatial,
         throughput,
         transmission,
         {"reference_m": reference}
         if sigma is None
         else {"reference_m": reference, "sigma_m": sigma},
-        psf=psf,
-        spatial=True,
+        spatial_transmission=True,
         pixel_order=pixel_order,
     )
 

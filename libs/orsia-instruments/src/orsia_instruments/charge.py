@@ -7,7 +7,7 @@ from types import MappingProxyType
 import numpy as np
 from numpy.typing import NDArray
 
-from .acquisition import Acquisition, ReadSchedule, read_schedule
+from .acquisition import ReadSchedule
 
 
 @dataclass(frozen=True, eq=False)
@@ -16,16 +16,15 @@ class ExpectedElectrons:
 
     Each named contribution is a finite nonnegative (reads,) writable copy.
     Sources are added only after their respective optical paths; names distinguish
-    contributions, not a mandatory provenance framework. ``acquisition`` retains
-    the exact supplied Acquisition or ReadSchedule for identity-preserving caller access.
+    contributions. ``reads`` retains the exact supplied ReadSchedule.
     Already integrated photoelectrons receive no further QE or exposure factor.
 
     Attributes:
-        acquisition: Physical read identities and exposure intervals for this charge.
+        reads: Physical read identities and exposure intervals for this charge.
         contributions: Named, owned mean-electron vectors of shape (reads,).
     """
 
-    acquisition: Acquisition | ReadSchedule
+    reads: ReadSchedule
     contributions: Mapping[str, NDArray[np.float64]]
 
     def __post_init__(self) -> None:
@@ -34,7 +33,7 @@ class ExpectedElectrons:
             array = np.copy(values)
             if not np.isfinite(array).all():
                 raise ValueError("expected-electron contributions must be finite")
-            if not name or array.shape != (len(self.acquisition.sample_ids),) or np.any(array < 0):
+            if not name or array.shape != (len(self.reads.sample_ids),) or np.any(array < 0):
                 raise ValueError(
                     "sources need names and nonnegative counts matching physical reads"
                 )
@@ -44,15 +43,6 @@ class ExpectedElectrons:
         if not np.all(np.isfinite(np.sum(list(contributions.values()), axis=0))):
             raise ValueError("total expected electrons overflow")
         object.__setattr__(self, "contributions", MappingProxyType(contributions))
-
-    @property
-    def reads(self) -> ReadSchedule:
-        """Expose read identities and timing for charge alignment.
-
-        Returns:
-            Geometry-free physical reads, freshly snapshotted for an Acquisition.
-        """
-        return read_schedule(self.acquisition)
 
     @property
     def total(self) -> NDArray[np.float64]:
@@ -69,7 +59,7 @@ def combine_source_paths(*paths: ExpectedElectrons) -> ExpectedElectrons:
 
     Each path owns its radiance support, optical response and throughput; only
     read identities and physical exposure intervals must agree. The first path
-    supplies the retained acquisition geometry. Never pass internal emission
+    supplies the retained read schedule. Never pass internal emission
     through the external scene response merely to combine detector contributions.
 
     Args:
@@ -77,7 +67,7 @@ def combine_source_paths(*paths: ExpectedElectrons) -> ExpectedElectrons:
             exposure intervals, each using distinct source names.
 
     Returns:
-        Combined expected electrons with the first path's acquisition identity
+        Combined expected electrons with the first path's read-schedule identity
         and copied named contributions.
 
     Raises:
@@ -86,13 +76,13 @@ def combine_source_paths(*paths: ExpectedElectrons) -> ExpectedElectrons:
     """
     if not paths:
         raise ValueError("at least one source path is required")
-    first = paths[0].acquisition
+    first = paths[0].reads
     contributions: dict[str, NDArray[np.float64]] = {}
     for path in paths:
         for name in ("sample_ids", "pixel_ids", "setting_ids", "port_ids"):
-            if getattr(path.acquisition, name) != getattr(first, name):
+            if getattr(path.reads, name) != getattr(first, name):
                 raise ValueError("source paths must have matching physical-read identities")
-        if not np.array_equal(path.acquisition.exposure_bounds_s, first.exposure_bounds_s):
+        if not np.array_equal(path.reads.exposure_bounds_s, first.exposure_bounds_s):
             raise ValueError("source paths must have matching exposure intervals")
         if contributions.keys() & path.contributions.keys():
             raise ValueError("source names must be unique across paths")

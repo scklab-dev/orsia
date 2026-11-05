@@ -4,13 +4,14 @@ import numpy as np
 from numpy.typing import NDArray
 from orsia_instruments import (
     Acquisition,
-    DetectorMaps,
+    DetectorProperties,
+    GaussianPSF,
     ImagingOptics,
     RadianceField,
     exposure_sequence,
     gaussian_filter,
     lvf_centre,
-    modulated_pixel_response,
+    pixel_acceptance,
     simulate_images,
 )
 from orsia_radiative import SpectralDomain, SpectralGrid
@@ -77,11 +78,11 @@ def _scan(*, rows: int = 3, cols: int = 4) -> dict:
             )
             return gaussian_filter(wavelength, centre, 1.5e-8, 0.8)
 
-        return modulated_pixel_response(
+        return pixel_acceptance(
             wave,
             acquisition.pixel_bounds_m[i],
             acquisition.image_xy_m[i],
-            sigma_m=3e-5,
+            spatial=GaussianPSF(3e-5),
             transmission=local,
             pixel_order=5,
         )
@@ -93,13 +94,17 @@ def _scan(*, rows: int = 3, cols: int = 4) -> dict:
         direction_bounds_uv=(-0.003, 0.003, -0.003, 0.003),
         pointing_uv=pointing,
     )
-    detector = DetectorMaps(
+    detector = DetectorProperties(
+        pixel_bounds_m=pixels,
+        pitch_m=None,
         quantum_efficiency=0.7,
         dark_electrons_per_s=2,
         read_noise_electrons=1,
         full_well_electrons=1e6,
         electrons_per_dn=2,
         bias_dn=100,
+        nonlinearity=0,
+        adc_bits=16,
     )
     optics = ImagingOptics(
         0.02, 1e-8, lambda setting, read, wave, acq: response(read, wave, acq), {}, throughput=0.8

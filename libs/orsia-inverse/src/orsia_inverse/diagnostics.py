@@ -4,9 +4,9 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
+from orsia_uncertainty import whiten
 
 from .estimation import GaussianEstimate
-from .weighting import covariance_factor, whiten
 
 
 @dataclass(frozen=True, eq=False)
@@ -79,13 +79,11 @@ def retrieval_diagnostics(
     if not np.isfinite(rank_rtol) or not 0 < rank_rtol < 1:
         raise ValueError("rank_rtol must be finite and between zero and one")
     n = estimate.state.size
-    factor = covariance_factor(
-        estimate.observation_covariance, estimate.prediction.size, "observation_covariance"
-    )
+    factor = estimate.observation_factor
     measured = whiten(factor, estimate.jacobian)
     augmented = measured
-    if estimate.prior_covariance is not None:
-        prior_factor = covariance_factor(estimate.prior_covariance, n, "prior_covariance")
+    if estimate.prior_factor is not None:
+        prior_factor = estimate.prior_factor
         augmented = np.vstack((measured, whiten(prior_factor, np.eye(n))))
     if not np.all(np.isfinite(augmented)):
         raise ValueError("whitened diagnostic Jacobian must be finite")

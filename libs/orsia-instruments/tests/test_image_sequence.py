@@ -3,15 +3,17 @@
 import numpy as np
 import pytest
 from orsia_instruments import (
-    DetectorMaps,
+    DetectorProperties,
     ImagingOptics,
     RadianceField,
+    ReadSchedule,
     expected_electrons,
     exposure_sequence,
     gaussian_filter,
     gaussian_pixel_fraction,
     image_acquisition,
     lvf_centre,
+    raster_read_schedule,
     rectangular_acquisition,
     simulate_images,
 )
@@ -63,10 +65,10 @@ def inputs():
 def scan(inputs, *, time_order=3, angular_order=5):
     exposures, pixels, offsets, patch, pointing, _, _ = inputs
     return image_acquisition(
-        exposure_bounds_s=exposures,
-        setting_ids=("first", "second"),
+        schedule=raster_read_schedule(
+            exposures, pixels.shape[:2], setting_ids=("first", "second"), row_offsets_s=offsets
+        ),
         pixel_bounds_m=pixels,
-        row_offsets_s=offsets,
         direction_bounds_uv=patch,
         pointing=pointing,
         focal_length_m=0.02,
@@ -80,14 +82,14 @@ def test_dense_image_matches_independent_acquisition_and_radiometry(inputs):
     acquisition = scan(inputs)
     assert len(acquisition.sample_ids) == 8
     dense = rectangular_acquisition(
-        sample_ids=tuple(
-            f"s{s}-p{r * 2 + c}" for s in range(2) for r in range(2) for c in range(2)
-        ),
-        pixel_ids=tuple(f"r{r}-c{c}" for _ in range(2) for r in range(2) for c in range(2)),
-        setting_ids=tuple(k for k in ("first", "second") for _ in range(4)),
-        port_ids=("direct",) * 8,
-        exposure_bounds_s=np.array(
-            [exposures[s] + offsets[r] for s in range(2) for r in range(2) for _ in range(2)]
+        reads=ReadSchedule(
+            tuple(f"s{s}-p{r * 2 + c}" for s in range(2) for r in range(2) for c in range(2)),
+            tuple(f"r{r}-c{c}" for _ in range(2) for r in range(2) for c in range(2)),
+            tuple(k for k in ("first", "second") for _ in range(4)),
+            ("direct",) * 8,
+            np.array(
+                [exposures[s] + offsets[r] for s in range(2) for r in range(2) for _ in range(2)]
+            ),
         ),
         pixel_bounds_m=np.array(
             [pixels[r, c] for _ in range(2) for r in range(2) for c in range(2)]
@@ -113,7 +115,18 @@ def test_dense_image_matches_independent_acquisition_and_radiometry(inputs):
             pointing_uv=pointing,
             row_delay_s=offsets[1],
         ),
-        detector=DetectorMaps(read_noise_electrons=0, full_well_electrons=1e9),
+        detector=DetectorProperties(
+            pixel_bounds_m=pixels,
+            pitch_m=None,
+            read_noise_electrons=0,
+            full_well_electrons=1e9,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
         rng=np.random.default_rng(4),
     )
     np.testing.assert_allclose(images.photoelectrons.ravel(), full.total, rtol=5e-13)
@@ -128,10 +141,10 @@ def test_motion_jitter_rolling_and_static_uniform_limit(inputs):
     assert not np.array_equal(acquisition.image_xy_m[0, :5], acquisition.image_xy_m[0, -5:])
     exposures, pixels, _, patch, _, field, response = inputs
     acq = image_acquisition(
-        exposure_bounds_s=exposures[:1],
-        setting_ids=("first",),
+        schedule=raster_read_schedule(
+            exposures[:1], pixels.shape[:2], setting_ids=("first",), row_offsets_s=np.zeros(2)
+        ),
         pixel_bounds_m=pixels,
-        row_offsets_s=np.zeros(2),
         direction_bounds_uv=patch,
         pointing=lambda t: np.zeros((len(t), 2)),
         focal_length_m=0.02,
@@ -189,7 +202,19 @@ def test_bad_image_acquisition_inputs(inputs, change):
     else:
         kw["exposure_bounds_s"][0] = [0.02, 0.0]
     with pytest.raises(ValueError):
-        image_acquisition(**kw)
+        schedule = raster_read_schedule(
+            kw.pop("exposure_bounds_s"),
+            pixels.shape[:2],
+            setting_ids=kw.pop("setting_ids"),
+            row_offsets_s=kw.pop("row_offsets_s"),
+        )
+        image_acquisition(
+            schedule=schedule,
+            pixel_bounds_m=kw["pixel_bounds_m"],
+            direction_bounds_uv=patch,
+            pointing=pointing,
+            focal_length_m=0.02,
+        )
 
 
 def test_snapshot_and_callback_support(inputs):
@@ -204,10 +229,13 @@ def test_snapshot_and_callback_support(inputs):
     # Invalid callback result is checked during dense acquisition construction.
     with pytest.raises(ValueError):
         image_acquisition(
-            exposure_bounds_s=np.array([[0.0, 0.01]]),
-            setting_ids=("s",),
+            schedule=raster_read_schedule(
+                np.array([[0.0, 0.01]]),
+                np.array([[[-1e-5, 1e-5, -1e-5, 1e-5]]]).shape[:2],
+                setting_ids=("s",),
+                row_offsets_s=np.array([0.0]),
+            ),
             pixel_bounds_m=np.array([[[-1e-5, 1e-5, -1e-5, 1e-5]]]),
-            row_offsets_s=np.array([0.0]),
             direction_bounds_uv=patch,
             pointing=lambda t: np.full((len(t), 2), np.nan),
             focal_length_m=0.02,
@@ -247,4 +275,16 @@ def test_scene_callback_must_cover_full_acquisition(inputs):
                 row_delay_s=offsets[1],
             ),
             optics=ImagingOptics(0.02, 1e-8, lambda s, r, w, a: response(r, w, a), {}),
+            detector=DetectorProperties(
+                pixel_bounds_m=pixels,
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
         )

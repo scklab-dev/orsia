@@ -69,8 +69,9 @@ def test_vertical_coordinate_validation() -> None:
 
 
 def test_documented_atmosphere_example() -> None:
-    document = Path(__file__).resolve().parents[3] / "docs" / "atmospheric-data.md"
-    snippet = document.read_text().split("```python\n")[1].split("```")[0]
+    document = Path(__file__).resolve().parents[1] / "docs/columns.md"
+    section = document.read_text().split("### Synthetic hydrostatic column\n", 1)[1]
+    snippet = section.split("```python\n", 1)[1].split("```", 1)[0]
     namespace: dict[str, Any] = {}
     exec(compile(snippet, str(document), "exec"), namespace)
     atmosphere = namespace["atmosphere"]

@@ -1,18 +1,123 @@
-"""Spatial intensity densities in m^-2, normalized on the whole image plane.
+"""Spatial intensity densities in m^-2 with declared physical mass.
 
-Inputs and callbacks are borrowed without mutation; no normalization of arbitrary
-callbacks is inferred from point samples. Throughput belongs outside the PSF."""
+Gaussian and Airy models have unit whole-plane mass; prepared tables retain
+their finite-support mass. Callback normalization belongs to the caller. Inputs
+remain unchanged, and throughput belongs outside the spatial density."""
 
 from collections.abc import Callable, Sequence
-from functools import partial
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.interpolate import RegularGridInterpolator
+from scipy.special import j1
 
 type PointSpreadFunction = Callable[
     [NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], int], NDArray[np.float64]
 ]
+
+
+@dataclass(frozen=True, eq=False, init=False)
+class GaussianPSF:
+    """Declared normalized diagonal Gaussian intensity model.
+
+    Attributes:
+        sigma_m: Owned immutable scalar or (x,y) positive widths in metres.
+    """
+
+    sigma_m: NDArray[np.float64]
+
+    def __init__(
+        self,
+        sigma_m: float
+        | np.floating
+        | np.integer
+        | Sequence[float]
+        | NDArray[np.floating | np.integer],
+    ) -> None:
+        """Snapshot positive scalar or (x,y) Gaussian widths in metres.
+
+        Args:
+            sigma_m: Finite positive scalar or (x,y) standard deviations in metres.
+
+        Raises:
+            ValueError: Widths have invalid shape, sign or finiteness.
+        """
+        sigma = _psf_sigma(sigma_m)
+        object.__setattr__(
+            self, "sigma_m", np.frombuffer(sigma.tobytes(), dtype=np.float64).reshape(sigma.shape)
+        )
+
+
+@dataclass(frozen=True, eq=False, init=False)
+class TabulatedPSF:
+    """Prepared bilinear spatial density with retained finite-support physical mass.
+
+    Values outside the table are zero. Mass below unity remains lost. The exact
+    bilinear integral uses tensor trapezoids. Preparation validates and snapshots
+    axes and density once; pixel quadrature still requires refinement.
+
+    Attributes:
+        x_offsets_m: Owned immutable strictly increasing x offsets in metres.
+        y_offsets_m: Owned immutable strictly increasing y offsets in metres.
+        density_per_m2: Owned immutable nonnegative (x,y) density in inverse square metres.
+        mass: Finite table integral in [0,1], with roundoff tolerance 1e-10.
+        interpolator: Prepared zero-extrapolating bilinear interpolator over immutable buffers.
+    """
+
+    x_offsets_m: NDArray[np.float64]
+    y_offsets_m: NDArray[np.float64]
+    density_per_m2: NDArray[np.float64]
+    mass: float = field(init=False)
+    interpolator: RegularGridInterpolator = field(init=False, repr=False)
+
+    def __init__(
+        self,
+        x_offsets_m: Sequence[float] | NDArray[np.floating | np.integer],
+        y_offsets_m: Sequence[float] | NDArray[np.floating | np.integer],
+        density_per_m2: Sequence[Sequence[float]] | NDArray[np.floating | np.integer],
+    ) -> None:
+        """Prepare immutable axes, density, finite-support mass and interpolation once.
+
+        Args:
+            x_offsets_m: Strictly increasing x offsets in metres, at least two nodes.
+            y_offsets_m: Strictly increasing y offsets in metres, at least two nodes.
+            density_per_m2: Finite nonnegative density (x,y) in inverse square metres.
+
+        Raises:
+            ValueError: Axes, density shape, finiteness or physical mass is invalid.
+        """
+        x, y = _axis(x_offsets_m), _axis(y_offsets_m)
+        density = np.array(density_per_m2, dtype=np.float64, copy=True)
+        if (
+            density.shape != (len(x), len(y))
+            or not np.isfinite(density).all()
+            or np.any(density < 0)
+        ):
+            raise ValueError("PSF table density must be finite nonnegative (x,y)")
+        mass = float(np.trapezoid(np.trapezoid(density, x=y, axis=1), x=x))
+        if not np.isfinite(mass) or mass < 0 or mass > 1 + 1e-10:
+            raise ValueError("PSF table must have finite mass at most one")
+        arrays = []
+        for name, value in (("x_offsets_m", x), ("y_offsets_m", y), ("density_per_m2", density)):
+            snapshot = np.frombuffer(value.tobytes(), dtype=np.float64).reshape(value.shape)
+            object.__setattr__(self, name, snapshot)
+            arrays.append(snapshot)
+        object.__setattr__(self, "mass", mass)
+        object.__setattr__(
+            self,
+            "interpolator",
+            RegularGridInterpolator(
+                (arrays[0], arrays[1]),
+                arrays[2],
+                method="linear",
+                bounds_error=False,
+                fill_value=0.0,
+            ),
+        )
+
+
+type SpatialDensity = GaussianPSF | TabulatedPSF | PointSpreadFunction
 
 
 def gaussian_psf(
@@ -56,111 +161,49 @@ def gaussian_psf(
     return np.exp(-0.5 * np.sum(z * z, axis=-1)) / (2 * np.pi * np.prod(sigma))
 
 
-def tabulated_psf(
+def airy_psf(
     offset_xy_m: NDArray[np.float64],
     wavelengths_m: NDArray[np.float64],
     image_xy_m: NDArray[np.float64],
     exposure_index: int,
     *,
-    x_offsets_m: Sequence[float] | NDArray[np.floating | np.integer],
-    y_offsets_m: Sequence[float] | NDArray[np.floating | np.integer],
-    density_per_m2: Sequence[Sequence[float]] | NDArray[np.floating | np.integer],
-    normalize: bool = False,
+    f_number: float,
+    wavelength_max_m: float | None = None,
 ) -> NDArray[np.float64]:
-    """Bilinear density on a rectangular offset grid, zero outside its support.
+    """Evaluate a whole-plane normalized circular-pupil Airy intensity density.
 
-    The callback coordinates/context follow gaussian_psf. Bind x_offsets_m, y_offsets_m and
-    density_per_m2 with partial: axes are finite strictly increasing vectors
-    (at least two nodes each), density is finite nonnegative (len(x),len(y))
-    in m^-2. Values at support boundaries are included; beyond them density is
-    zero, never extrapolated. Field, exposure and wavelength do not change this
-    table. Inputs/captured arrays remain caller-owned and must stay stable.
-
-    The tensor trapezoidal integral is exact for this bilinear interpolant.
-    By default it must be unity (relative tolerance 1e-10). normalize=True
-    explicitly divides by its positive finite integral without mutating the
-    table. This normalizes the declared finite-support model, not unknown lost
-    optical tails. It does not renormalize detector truncation. Repeated calls
-    validate the table again; pixel quadrature still needs convergence checks.
+    The density is pi/(4*(wavelength*f_number)^2) * (2*J1(z)/z)^2,
+    where z=pi*radius/(wavelength*f_number). The removable origin is exact.
+    Field position and exposure do not change this ideal unobscured pupil.
 
     Args:
-        offset_xy_m: Detector offsets in metres, (nodes, wavelengths, 2).
-        wavelengths_m: Positive wavelength vector in metres.
-        image_xy_m: Incident field positions in metres, (nodes, 2).
-        exposure_index: Zero-based exposure identifier; density is invariant across exposures.
-        x_offsets_m: Strictly increasing x offsets from the centroid in metres.
-        y_offsets_m: Strictly increasing y offsets from the centroid in metres.
-        density_per_m2: Nonnegative density with shape (len(x_offsets_m), len(y_offsets_m)).
-        normalize: Whether to divide by the positive finite whole-table integral.
+        offset_xy_m: Detector-minus-centroid offsets (nodes,wavelengths,2), metres.
+        wavelengths_m: Positive (wavelengths,) wavelengths in metres.
+        image_xy_m: Finite incident positions (nodes,2), metres.
+        exposure_index: Physical exposure index, unused by this stationary law.
+        f_number: Positive focal length divided by circular pupil diameter.
+        wavelength_max_m: Optional positive upper support limit in metres.
 
     Returns:
-        Interpolated intensity density in m^-2, (nodes, wavelengths).
+        Finite nonnegative (nodes,wavelengths) density in m^-2.
 
     Raises:
-        ValueError: If coordinate support or table normalization is invalid.
+        ValueError: Coordinates, f-number or wavelength support are invalid.
     """
     offsets = _coordinates(offset_xy_m, wavelengths_m, image_xy_m)
-    x = _axis(x_offsets_m)
-    y = _axis(y_offsets_m)
-    density = np.asarray(density_per_m2, dtype=np.float64)
-    if not np.isfinite(density).all() or np.any(density < 0):
-        raise ValueError("PSF table density must be finite and in [0, inf]")
-    if density.shape != (len(x), len(y)):
-        raise ValueError("PSF table must have shape (len(x_offsets_m),len(y_offsets_m))")
-    mass = float(np.trapezoid(np.trapezoid(density, x=y, axis=1), x=x))
-    if not np.isfinite(mass) or mass <= 0:
-        raise ValueError("PSF table must have a positive finite integral")
-    if not normalize and not np.isclose(mass, 1, rtol=1e-10, atol=0):
-        raise ValueError("PSF table integral must be one; use normalize=True explicitly")
-    interpolator = RegularGridInterpolator(
-        (x, y), density, method="linear", bounds_error=False, fill_value=0.0
-    )
-    result = interpolator(offsets)
-    return result / mass if normalize else result
-
-
-def select_psf(
-    sigma: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None,
-    psf: PointSpreadFunction | None,
-) -> tuple[NDArray[np.float64] | None, PointSpreadFunction | None]:
-    """Select exactly one spatial law without changing Gaussian pixel integration.
-
-    Positive scalar/(x,y) sigma in metres is snapshotted. An exact
-    partial(gaussian_psf, sigma_m=...) binding receives the same treatment;
-    other PSF callbacks remain borrowed for quadrature and return m^-2 density.
-    The pair is (copied Gaussian sigma, None) or (None, borrowed callable).
-
-    Args:
-        sigma: Scalar or (x, y) Gaussian width in metres, or None for a callback.
-        psf: Borrowed spatial density callback, or None for direct Gaussian integration.
-
-    Returns:
-        A copied width paired with None for analytic integration, or None paired
-        with a borrowed callback for numerical integration.
-
-    Raises:
-        ValueError: If both spatial laws are supplied, neither is supplied, or a
-            selected Gaussian width is nonpositive or has the wrong shape.
-    """
-    if (sigma is None) == (psf is None):
-        raise ValueError("supply exactly one of psf and psf_sigma_m")
-    if sigma is not None:
-        return _psf_sigma(sigma), None
-    # Only a known, unmodified catalogue binding has an exact Gaussian integral.
-    # Wrappers and arbitrary callable attributes never opt into this shortcut.
-    if (
-        type(psf) is partial
-        and psf.func is gaussian_psf
-        and not psf.args
-        and set(psf.keywords) == {"sigma_m"}
+    if not np.isfinite(f_number) or f_number <= 0:
+        raise ValueError("Airy f-number must be finite and positive")
+    if wavelength_max_m is not None and (
+        not np.isfinite(wavelength_max_m)
+        or wavelength_max_m <= 0
+        or np.any(wavelengths_m > wavelength_max_m)
     ):
-        return _psf_sigma(psf.keywords["sigma_m"]), None
-    return None, psf
+        raise ValueError("Airy wavelengths exceed declared maximum support")
+    scale = wavelengths_m * f_number
+    z = np.pi * np.linalg.norm(offsets, axis=-1) / scale
+    amplitude = np.ones_like(z)
+    np.divide(2 * j1(z), z, out=amplitude, where=z != 0)
+    return np.pi / (4 * scale**2) * amplitude**2
 
 
 def _coordinates(

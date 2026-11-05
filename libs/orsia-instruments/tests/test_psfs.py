@@ -1,4 +1,4 @@
-"""Callable PSFs: normalization, coordinate context, joint integrals and compatibility."""
+"""Callable PSFs: normalization, coordinate context and analytic-integral agreement."""
 
 from functools import partial
 from pathlib import Path
@@ -6,7 +6,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 from orsia_instruments import (
+    DetectorProperties,
+    GaussianPSF,
     RadianceField,
+    ReadSchedule,
+    TabulatedPSF,
     cavity_imager,
     dispersive_imager,
     exposure_sequence,
@@ -16,12 +20,11 @@ from orsia_instruments import (
     image_photoelectrons,
     interferometric_imager,
     lvf_imager,
+    pixel_acceptance,
     rectangular_acquisition,
     regular_pixel_bounds,
     simulate_images,
     spatial_filter_imager,
-    tabulated_pixel_response,
-    tabulated_psf,
 )
 from orsia_radiative import SpectralDomain, SpectralGrid
 from scipy.integrate import quad
@@ -47,11 +50,7 @@ FACTORIES = [
 @pytest.fixture
 def acquisition():
     return rectangular_acquisition(
-        sample_ids=("r",),
-        pixel_ids=("p",),
-        setting_ids=("s",),
-        port_ids=("direct",),
-        exposure_bounds_s=np.array([[0.0, 0.01]]),
+        reads=ReadSchedule(("r",), ("p",), ("s",), ("direct",), np.array([[0.0, 0.01]])),
         pixel_bounds_m=np.array([[-2e-5, 2e-5, -2e-5, 2e-5]]),
         direction_bounds_uv=(-0.001, 0.001, -0.001, 0.001),
         pointing=lambda t: np.zeros((len(t), 2)),
@@ -66,13 +65,17 @@ def wrapped_gaussian(offsets, wave, field, exposure):
 
 
 @pytest.mark.parametrize("factory,kwargs", FACTORIES)
-def test_gaussian_binding_and_generic_quadrature_match_legacy(acquisition, factory, kwargs):
-    legacy = factory(**COMMON, psf_sigma_m=SIGMA, pixel_order=20, **kwargs)
-    bound = factory(**COMMON, psf=partial(gaussian_psf, sigma_m=SIGMA), pixel_order=20, **kwargs)
-    generic = factory(**COMMON, psf=wrapped_gaussian, pixel_order=20, **kwargs)
+def test_gaussian_binding_and_generic_quadrature_match_reference(acquisition, factory, kwargs):
+    reference = factory(**COMMON, spatial=GaussianPSF(SIGMA), pixel_order=20, **kwargs)
+    bound = factory(
+        **COMMON, spatial=partial(gaussian_psf, sigma_m=SIGMA), pixel_order=20, **kwargs
+    )
+    generic = factory(**COMMON, spatial=wrapped_gaussian, pixel_order=20, **kwargs)
     for exposure in (0, 1):
-        expected = legacy.response(exposure, 0, WAVE, acquisition)
-        np.testing.assert_array_equal(bound.response(exposure, 0, WAVE, acquisition), expected)
+        expected = reference.response(exposure, 0, WAVE, acquisition)
+        np.testing.assert_allclose(
+            bound.response(exposure, 0, WAVE, acquisition), expected, rtol=3e-14
+        )
         np.testing.assert_allclose(
             generic.response(exposure, 0, WAVE, acquisition), expected, rtol=3e-14
         )
@@ -80,18 +83,15 @@ def test_gaussian_binding_and_generic_quadrature_match_legacy(acquisition, facto
 
 @pytest.mark.parametrize("factory,kwargs", FACTORIES)
 def test_psf_selection_and_order_validation(factory, kwargs):
-    for selection in ({}, dict(psf=wrapped_gaussian, psf_sigma_m=SIGMA)):
-        with pytest.raises(ValueError, match="exactly one"):
-            factory(**COMMON, **kwargs, **selection)
+    with pytest.raises(TypeError, match="spatial"):
+        factory(**COMMON, **kwargs)
     with pytest.raises(ValueError, match="order"):
-        factory(**COMMON, **kwargs, psf=wrapped_gaussian, pixel_order=0)
+        factory(**COMMON, **kwargs, spatial=wrapped_gaussian, pixel_order=0)
 
 
 def test_analytic_path_and_owned_sigma(acquisition):
     sigma = np.array(SIGMA)
-    optics = filter_imager(
-        **COMMON, filter=np.ones_like, psf=partial(gaussian_psf, sigma_m=sigma), pixel_order=1
-    )
+    optics = filter_imager(**COMMON, filter=np.ones_like, spatial=GaussianPSF(sigma), pixel_order=1)
     sigma[:] = 1e-8
     expected = gaussian_pixel_fraction(
         acquisition.pixel_bounds_m[0], acquisition.image_xy_m[0], SIGMA
@@ -166,7 +166,7 @@ def test_chromatic_field_exposure_context_and_mapped_offsets(acquisition):
         result[..., 0] += (w - 2e-6) * 400
         return result
 
-    optics = dispersive_imager(**COMMON, psf=psf, image_map=mapping, pixel_order=16)
+    optics = dispersive_imager(**COMMON, spatial=psf, image_map=mapping, pixel_order=16)
     for exposure in (0, 1):
         expected = gaussian_pixel_fraction(
             acquisition.pixel_bounds_m[0],
@@ -182,22 +182,22 @@ def test_chromatic_field_exposure_context_and_mapped_offsets(acquisition):
     np.testing.assert_array_equal(acquisition.image_xy_m[0], original)
 
 
-def test_table_bilinear_axes_support_and_explicit_normalization():
+def test_table_bilinear_axes_support_and_retained_mass():
     x, y = np.array([-2.0, 0.0, 2.0]), np.array([-1.0, 1.0])
     table = (1 + x[:, None] / 4 + y[None, :] / 4) / 8
-    saved = table.copy()
+    model = TabulatedPSF(x, y, table)
     offsets = np.array([[[-2.0, -1.0], [1.0, 0.5], [2.0, 1.0], [3.0, 0.0], [0.0, -2.0]]])
-    wave = np.ones(5)
-    field = np.zeros((1, 2))
-    law = partial(tabulated_psf, x_offsets_m=x, y_offsets_m=y)
-    actual = law(offsets, wave, field, 0, density_per_m2=table)
+    actual = model.interpolator(offsets)
     np.testing.assert_allclose(actual, [[0.25 / 8, 1.375 / 8, 1.75 / 8, 0, 0]])
-    np.testing.assert_array_equal(table, saved)
-    with pytest.raises(ValueError, match="integral must be one"):
-        law(offsets, wave, field, 0, density_per_m2=table * 2)
-    np.testing.assert_allclose(
-        law(offsets, wave, field, 0, density_per_m2=table * 2, normalize=True), actual
-    )
+    assert model.mass == pytest.approx(1.0)
+    lost = TabulatedPSF(x, y, table * 0.4)
+    assert lost.mass == pytest.approx(0.4)
+    np.testing.assert_allclose(lost.interpolator(offsets), actual * 0.4)
+    table.fill(99)
+    x.fill(99)
+    np.testing.assert_array_equal(model.interpolator(offsets), actual)
+    with pytest.raises(ValueError, match="mass"):
+        TabulatedPSF([-2.0, 0.0, 2.0], y, model.density_per_m2 * 2)
 
 
 @pytest.mark.parametrize("readonly", [False, True])
@@ -222,26 +222,18 @@ def test_tabulated_interpolation_irregular_grid_support_and_ownership(readonly, 
     wave = np.ones(px.shape[1])
     if pixel:
         # One midpoint quadrature node at (0,0): offsets equal minus the centroids.
-        actual = tabulated_pixel_response(
+        actual = pixel_acceptance(
             wave,
             [-0.1, 0.1, -0.1, 0.1],
             -offsets,
-            x,
-            y,
-            table,
+            spatial=TabulatedPSF(x, y, table),
             transmission=lambda qx, qy, w: np.ones_like(w),
             pixel_order=1,
         )
         expected *= 0.04
     else:
-        actual = tabulated_psf(
-            offsets,
-            wave,
-            np.zeros((len(px), 2)),
-            0,
-            x_offsets_m=x,
-            y_offsets_m=y,
-            density_per_m2=table,
+        actual = TabulatedPSF(x_offsets_m=x, y_offsets_m=y, density_per_m2=table).interpolator(
+            offsets
         )
     assert actual.shape == expected.shape and actual.flags.writeable
     np.testing.assert_allclose(actual, expected, rtol=1e-14, atol=1e-16)
@@ -252,15 +244,9 @@ def test_tabulated_interpolation_irregular_grid_support_and_ownership(readonly, 
 
 @pytest.mark.parametrize("shape", [(0, 3), (2, 0)])
 def test_tabulated_psf_empty_coordinates(shape):
-    actual = tabulated_psf(
-        np.empty((*shape, 2)),
-        np.ones(shape[1]),
-        np.zeros((shape[0], 2)),
-        0,
-        x_offsets_m=[0, 1],
-        y_offsets_m=[0, 1],
-        density_per_m2=np.ones((2, 2)),
-    )
+    actual = TabulatedPSF(
+        x_offsets_m=[0, 1], y_offsets_m=[0, 1], density_per_m2=np.ones((2, 2))
+    ).interpolator(np.empty((*shape, 2)))
     assert actual.shape == shape and actual.flags.writeable
 
 
@@ -275,7 +261,6 @@ def test_tabulated_psf_empty_coordinates(shape):
         dict(density_per_m2=np.ones((2, 3))),
         dict(density_per_m2=-np.ones((2, 2))),
         dict(density_per_m2=np.full((2, 2), np.nan)),
-        dict(density_per_m2=np.zeros((2, 2))),
     ],
 )
 def test_invalid_tables(overrides):
@@ -283,19 +268,19 @@ def test_invalid_tables(overrides):
         dict(x_offsets_m=[0, 1], y_offsets_m=[0, 1], density_per_m2=np.ones((2, 2))) | overrides
     )
     with pytest.raises(ValueError):
-        tabulated_psf(np.zeros((1, 1, 2)), np.ones(1), np.zeros((1, 2)), 0, **kwargs)
+        TabulatedPSF(**kwargs).interpolator(np.zeros((1, 1, 2)))
 
 
 def test_joint_table_integral_not_centre_sample(acquisition):
     # Linear density on an asymmetric, non-square x/y table, unit integral.
     x, y = np.array([-1e-4, 0, 1e-4]), np.array([-8e-5, 8e-5])
     density = np.broadcast_to((1 + x[:, None] / 2e-4) / (2e-4 * 1.6e-4), (3, 2)).copy()
-    psf = partial(tabulated_psf, x_offsets_m=x, y_offsets_m=y, density_per_m2=density)
+    psf = TabulatedPSF(x_offsets_m=x, y_offsets_m=y, density_per_m2=density)
 
     def law(x, y, w):
         return np.full_like(w, 0.5 + 1e4 * x)
 
-    optics = spatial_filter_imager(**COMMON, psf=psf, filter=law, pixel_order=2)
+    optics = spatial_filter_imager(**COMMON, spatial=psf, filter=law, pixel_order=2)
     actual = optics.response(0, 0, WAVE, acquisition)
     # Exact polynomial integral: E[x]=0 and E[x^2]=a^2/3 over [-a,a].
     centres = acquisition.image_xy_m[0, :, 0]
@@ -306,23 +291,21 @@ def test_joint_table_integral_not_centre_sample(acquisition):
     )
     np.testing.assert_allclose(actual, np.broadcast_to(expected[:, None], actual.shape), rtol=1e-14)
     assert np.all(actual < 1)  # Detector truncation is retained, not normalized away.
-    legacy = tabulated_pixel_response(
+    reference = pixel_acceptance(
         WAVE,
         acquisition.pixel_bounds_m[0],
         acquisition.image_xy_m[0],
-        x,
-        y,
-        density,
+        spatial=TabulatedPSF(x, y, density),
         transmission=law,
         pixel_order=2,
     )
-    np.testing.assert_allclose(actual, legacy, rtol=1e-14)
+    np.testing.assert_allclose(actual, reference, rtol=1e-14)
 
 
 @pytest.mark.parametrize("value", [-1, np.nan, np.inf])
 def test_invalid_callback_density_even_with_zero_transmission(acquisition, value):
     optics = filter_imager(
-        **COMMON, filter=np.zeros_like, psf=lambda d, w, f, e: np.full(d.shape[:2], value)
+        **COMMON, filter=np.zeros_like, spatial=lambda d, w, f, e: np.full(d.shape[:2], value)
     )
     with pytest.raises(ValueError, match="PSF density"):
         optics.response(0, 0, WAVE, acquisition)
@@ -330,14 +313,14 @@ def test_invalid_callback_density_even_with_zero_transmission(acquisition, value
 
 @pytest.mark.parametrize("shape", [(), (3,), (1, 3), (4, 3, 1)])
 def test_callback_exact_shape(acquisition, shape):
-    optics = filter_imager(**COMMON, filter=np.ones_like, psf=lambda d, w, f, e: np.ones(shape))
-    with pytest.raises(ValueError, match="PSF density must have shape"):
+    optics = filter_imager(**COMMON, filter=np.ones_like, spatial=lambda d, w, f, e: np.ones(shape))
+    with pytest.raises(ValueError, match="PSF density"):
         optics.response(0, 0, WAVE, acquisition)
 
 
 def test_underresolved_or_unnormalized_callback_is_not_clipped(acquisition):
     optics = filter_imager(
-        **COMMON, filter=np.ones_like, psf=lambda d, w, f, e: np.full(d.shape[:2], 1e12)
+        **COMMON, filter=np.ones_like, spatial=lambda d, w, f, e: np.full(d.shape[:2], 1e12)
     )
     with pytest.raises(ValueError, match="fraction exceeds one"):
         optics.response(0, 0, WAVE, acquisition)
@@ -345,15 +328,15 @@ def test_underresolved_or_unnormalized_callback_is_not_clipped(acquisition):
         **COMMON,
         filter=np.ones_like,
         pixel_order=2,
-        psf=lambda d, w, f, e: gaussian_psf(d, w, f, e, sigma_m=1e-5),
+        spatial=lambda d, w, f, e: gaussian_psf(d, w, f, e, sigma_m=1e-5),
     )
     refined = filter_imager(
         **COMMON,
         filter=np.ones_like,
         pixel_order=20,
-        psf=lambda d, w, f, e: gaussian_psf(d, w, f, e, sigma_m=1e-5),
+        spatial=lambda d, w, f, e: gaussian_psf(d, w, f, e, sigma_m=1e-5),
     )
-    exact = filter_imager(**COMMON, filter=np.ones_like, psf_sigma_m=1e-5)
+    exact = filter_imager(**COMMON, filter=np.ones_like, spatial=GaussianPSF(1e-5))
     reference = exact.response(0, 0, WAVE, acquisition)
     fine = refined.response(0, 0, WAVE, acquisition)
     np.testing.assert_allclose(fine, reference, rtol=1e-13)
@@ -364,7 +347,7 @@ def test_callback_exceptions_propagate_and_not_called_at_construction(acquisitio
     def law(d, w, f, e):
         raise RuntimeError("calibration unavailable")
 
-    optics = filter_imager(**COMMON, filter=np.ones_like, psf=law)
+    optics = filter_imager(**COMMON, filter=np.ones_like, spatial=law)
     with pytest.raises(RuntimeError, match="calibration unavailable"):
         optics.response(0, 0, WAVE, acquisition)
 
@@ -386,7 +369,7 @@ def test_dense_psf_exposure_dependence():
     def law(d, w, f, e):
         return gaussian_psf(d, w, f, e, sigma_m=3e-5 * (1 + 0.2 * e))
 
-    optics = filter_imager(**COMMON, filter=np.ones_like, psf=law, pixel_order=8)
+    optics = filter_imager(**COMMON, filter=np.ones_like, spatial=law, pixel_order=8)
     kwargs = dict(
         pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=2e-5),
         optics=optics,
@@ -396,15 +379,45 @@ def test_dense_psf_exposure_dependence():
         time_order=1,
         angular_order=2,
     )
-    dense = simulate_images(scene, **kwargs)
-    charge = image_photoelectrons(scene, **kwargs)
+    dense = simulate_images(
+        scene,
+        **kwargs,
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=(4e-5, 5e-5)),
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
+    charge = image_photoelectrons(
+        scene,
+        **kwargs,
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=(4e-5, 5e-5)),
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     assembled = charge.signal.total.reshape(dense.photoelectrons.shape)
     np.testing.assert_allclose(assembled, dense.photoelectrons, rtol=2e-14)
     assert not np.allclose(assembled[0], assembled[1])
 
 
 def test_documented_psf_examples(acquisition):
-    guide = Path(__file__).resolve().parents[1] / "README.md"
+    guide = Path(__file__).resolve().parents[1] / "docs/optics.md"
     code = (
         guide.read_text()
         .split("### PSF callback contract\n", 1)[1]
@@ -420,8 +433,7 @@ def test_documented_psf_examples(acquisition):
 
 def test_unit_mass_roundoff_and_zero_outside_detector(acquisition):
     half_width = 2e-5
-    psf = partial(
-        tabulated_psf,
+    psf = TabulatedPSF(
         x_offsets_m=[-half_width, half_width],
         y_offsets_m=[-half_width, half_width],
         density_per_m2=np.full((2, 2), (1 + 2e-12) / (2 * half_width) ** 2),
@@ -430,13 +442,13 @@ def test_unit_mass_roundoff_and_zero_outside_detector(acquisition):
     def centred(field, wave):
         return np.zeros((len(field), len(wave), 2))
 
-    optics = dispersive_imager(**COMMON, psf=psf, image_map=centred, pixel_order=8)
+    optics = dispersive_imager(**COMMON, spatial=psf, image_map=centred, pixel_order=8)
     np.testing.assert_array_equal(optics.response(0, 0, WAVE, acquisition), np.ones((4, 3)))
 
     def outside(field, wave):
         return np.full((len(field), len(wave), 2), 1.0)
 
-    optics = dispersive_imager(**COMMON, psf=psf, image_map=outside)
+    optics = dispersive_imager(**COMMON, spatial=psf, image_map=outside)
     np.testing.assert_array_equal(optics.response(0, 0, WAVE, acquisition), np.zeros((4, 3)))
 
 
@@ -473,8 +485,8 @@ def test_rotated_two_component_psf_against_adaptive_reference(acquisition):
         return quad(at_x, -1, 1, epsabs=1e-12, epsrel=1e-12)[0]
 
     reference = np.array([integral(*centre) for centre in acquisition.image_xy_m[0] / scale])
-    fine = spatial_filter_imager(**COMMON, psf=psf, filter=transmission, pixel_order=24)
-    coarse = spatial_filter_imager(**COMMON, psf=psf, filter=transmission, pixel_order=3)
+    fine = spatial_filter_imager(**COMMON, spatial=psf, filter=transmission, pixel_order=24)
+    coarse = spatial_filter_imager(**COMMON, spatial=psf, filter=transmission, pixel_order=3)
     np.testing.assert_allclose(fine.response(0, 0, WAVE, acquisition)[:, 0], reference, rtol=1e-12)
     assert np.max(abs(coarse.response(0, 0, WAVE, acquisition)[:, 0] - reference)) > 1e-4
 
@@ -485,8 +497,8 @@ def test_partial_subclass_does_not_bypass_custom_density(acquisition):
             return gaussian_psf(offsets, wave, field, exposure, sigma_m=6e-5)
 
     psf = WiderGaussian(gaussian_psf, sigma_m=3e-5)
-    optics = filter_imager(**COMMON, filter=np.ones_like, psf=psf, pixel_order=12)
-    reference = filter_imager(**COMMON, filter=np.ones_like, psf_sigma_m=6e-5)
+    optics = filter_imager(**COMMON, filter=np.ones_like, spatial=psf, pixel_order=12)
+    reference = filter_imager(**COMMON, filter=np.ones_like, spatial=GaussianPSF(6e-5))
     np.testing.assert_allclose(
         optics.response(0, 0, WAVE, acquisition),
         reference.response(0, 0, WAVE, acquisition),

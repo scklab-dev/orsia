@@ -4,18 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields, replace
 
 import numpy as np
-import orsia_radiative
 import pytest
 from orsia_radiative import compose_atmospheric_optics, solar_source, transfer
 from orsia_radiative.transfer import orders
 from test_composable_transfer import case
 from test_thermal import case as thermal_case
-
-
-def test_removed_output_records_have_no_exports_or_compatibility_aliases() -> None:
-    for name in ("RadianceComponent", "RadianceDiagnostic"):
-        assert name not in orsia_radiative.__all__
-        assert not hasattr(orsia_radiative, name)
 
 
 def test_physical_radiance_fields_with_independent_equal_inputs() -> None:
@@ -87,9 +80,7 @@ def test_thermal_terms_share_physics_but_not_storage_with_physical_radiance(meth
     from typing import Literal, cast
 
     selected = cast(Literal["quadrature", "expn"], method)
-    result = transfer.thermal.schwarzschild_radiance(
-        scene, optics=optics, hemispheric_method=selected
-    )
+    result = transfer.thermal.thermal_radiance(scene, optics=optics, hemispheric_method=selected)
     first = transfer.thermal.schwarzschild_terms(scene, optics=optics, hemispheric_method=selected)
     second = transfer.thermal.schwarzschild_terms(scene, optics=optics, hemispheric_method=selected)
     assert list(first) == [

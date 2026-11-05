@@ -54,3 +54,39 @@ def test_real_hapi_fetch_with_synthetic_http(
     if not empty:
         assert database.lines[0].centre_cm1 == 950.0
         assert database.lines[0].strength_ref_cm_per_molecule == 1e-25
+
+
+def test_real_hapi_grouped_partitions_and_mass_with_offline_http(tmp_path, monkeypatch):
+    """Exercise installed HAPI's scalar TIPS version selector and isotope mass API."""
+    import hapi  # type: ignore[import-not-found]
+    import numpy as np
+    from orsia_data import acquire_hitran_references, read_spectroscopy_collection
+    from scipy.constants import atomic_mass
+
+    calls = []
+
+    def response(url):
+        calls.append(url)
+        return BytesIO(b"")
+
+    monkeypatch.setattr(hapi.urllib2, "urlopen", response)
+    destination = tmp_path / "collection"
+    acquire_hitran_references(
+        selections={
+            ("H2O", 1, 1): ((900.0, 1000.0), (1900.0, 2000.0)),
+            ("CO2", 2, 1): ((900.0, 1000.0),),
+        },
+        partition_temperatures_k=np.array([200.0, 296.0, 350.0]),
+        tips_version=2025,
+        edition="current",
+        directory=destination,
+    )
+    assert len(calls) == 3
+    collection = read_spectroscopy_collection(destination)
+    assert len(collection.lines) == 2
+    ref = collection.lines[("CO2", 1)]
+    assert ref.molecular_mass_kg == hapi.molecularMass(2, 1) * atomic_mass
+    np.testing.assert_array_equal(
+        ref.partition_table.partition_sums,
+        [hapi.partitionSum(2, 1, t, version=2025) for t in (200.0, 296.0, 350.0)],
+    )

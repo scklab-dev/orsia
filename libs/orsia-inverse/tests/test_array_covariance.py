@@ -6,38 +6,20 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 from orsia_inverse import retrieval_diagnostics, solve_map
+from orsia_uncertainty import factor_covariance
 
 
-@pytest.mark.parametrize("name", ["observation_covariance", "prior_covariance"])
-@pytest.mark.parametrize(
-    "covariance, message",
-    [
-        (np.ones(3), "shape"),
-        (np.ones((2, 1)), "shape"),
-        (np.ones((2, 2, 1)), "shape"),
-        (np.array(1.0), "shape"),
-        (np.ones(2, dtype=np.float32), "float64"),
-        (np.array([1.0, np.nan]), "finite"),
-        (np.array([1.0, np.inf]), "finite"),
-        (np.array([[1.0, np.nan], [np.nan, 1.0]]), "finite"),
-        (np.zeros(2), "positive definite"),
-        (np.zeros((2, 2)), "positive definite"),
-        (np.array([1.0, -1.0]), "positive definite"),
-        (np.array([1.0, 0.0]), "positive definite"),
-        (np.ones((2, 2)), "positive definite"),
-        (np.array([[1.0, 2.0], [2.0, 1.0]]), "positive definite"),
-        (np.array([1.0, 1e-12]), "well-conditioned"),
-        (np.diag([1.0, 1e-12]), "well-conditioned"),
-        (np.array([[1.0, 0.1], [0.2, 1.0]]), "symmetric"),
-    ],
-)
-def test_invalid_covariance(name: str, covariance: NDArray[np.float64], message: str) -> None:
-    options: dict[str, Any] = {"observation_covariance": np.ones(2)}
-    if name == "prior_covariance":
-        options["prior_mean"] = np.zeros(2)
-    options[name] = covariance
-    with pytest.raises(ValueError, match=f"{name}.*{message}"):
-        solve_map(lambda q: q, lambda q: np.eye(2), np.ones(2), np.zeros(2), **options)
+@pytest.mark.parametrize("name", ["observation_factor", "prior_factor"])
+def test_factor_dimensions_and_inverse_support(name: str) -> None:
+    for covariance in (np.ones(3), np.array([1.0, 1e-12]), np.array([1.0, 0.0])):
+        options: dict[str, Any] = {
+            "observation_factor": factor_covariance(np.ones(2), method="eigh")
+        }
+        if name == "prior_factor":
+            options["prior_mean"] = np.zeros(2)
+        options[name] = factor_covariance(covariance, method="eigh")
+        with pytest.raises(ValueError, match="size|ill-conditioned"):
+            solve_map(lambda q: q, lambda q: np.eye(2), np.ones(2), np.zeros(2), **options)
 
 
 @pytest.mark.parametrize("diagonal_observation", [False, True])
@@ -54,9 +36,13 @@ def test_variance_vectors_and_dense_diagonals_agree(
         lambda q: k,
         y,
         np.zeros(2),
-        observation_covariance=variances if diagonal_observation else np.diag(variances),
+        observation_factor=factor_covariance(
+            variances if diagonal_observation else np.diag(variances), method="cholesky"
+        ),
         prior_mean=qa,
-        prior_covariance=prior_variances if diagonal_prior else np.diag(prior_variances),
+        prior_factor=factor_covariance(
+            prior_variances if diagonal_prior else np.diag(prior_variances), method="cholesky"
+        ),
     )
     precision = k.T @ np.diag(1 / variances) @ k + np.diag(1 / prior_variances)
     expected = np.linalg.solve(precision, k.T @ (y / variances) + qa / prior_variances)
@@ -76,7 +62,6 @@ def test_covariance_snapshots_and_writable_diagnostics(dense: bool) -> None:
     sa = np.array([4.0, 5.0])
     if dense:
         se, sa = np.diag(se), np.diag(sa)
-    expected_se, expected_sa = se.copy(), sa.copy()
     qa = np.zeros(2)
 
     def fun(q: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -91,19 +76,16 @@ def test_covariance_snapshots_and_writable_diagnostics(dense: bool) -> None:
         lambda q: np.eye(2),
         np.ones(2),
         np.zeros(2),
-        observation_covariance=se,
+        observation_factor=factor_covariance(se, method="cholesky"),
         prior_mean=qa,
-        prior_covariance=sa,
+        prior_factor=factor_covariance(sa, method="cholesky"),
     )
     np.testing.assert_allclose(estimate.state, [4 / 6, 5 / 8])
-    for retained, original, expected in (
-        (estimate.observation_covariance, se, expected_se),
-        (estimate.prior_covariance, sa, expected_sa),
-        (estimate.prior_mean, qa, np.zeros(2)),
-    ):
-        assert retained is not None and retained.flags.writeable
-        assert not np.shares_memory(retained, original)
-        np.testing.assert_array_equal(retained, expected)
+    for retained, original in ((estimate.observation_factor, se), (estimate.prior_factor, sa)):
+        assert retained is not None and not retained.root.flags.writeable
+        assert not np.shares_memory(retained.root, original)
+    assert estimate.prior_mean is not None
+    np.testing.assert_array_equal(estimate.prior_mean, np.zeros(2))
     diagnostics = retrieval_diagnostics(estimate, include_gain=True, include_averaging_kernel=True)
     for values in (
         diagnostics.posterior_covariance,
@@ -112,7 +94,7 @@ def test_covariance_snapshots_and_writable_diagnostics(dense: bool) -> None:
     ):
         assert values is not None and values.flags.writeable
         assert values.dtype == np.float64 and values.shape == (2, 2)
-        assert not np.shares_memory(values, estimate.observation_covariance)
+        assert not np.shares_memory(values, estimate.observation_factor.root)
         assert not np.shares_memory(values, estimate.jacobian)
     assert diagnostics.posterior_covariance is not None
     diagnostics.posterior_covariance.fill(99)
@@ -132,7 +114,7 @@ def test_covariance_scale_is_not_an_absolute_cutoff(scale: float, dense: bool) -
         lambda q: np.eye(2),
         np.ones(2),
         np.ones(2),
-        observation_covariance=covariance,
+        observation_factor=factor_covariance(covariance, method="cholesky"),
     )
     diagnostics = retrieval_diagnostics(estimate, include_gain=True)
     assert diagnostics.available and diagnostics.posterior_covariance is not None
@@ -149,7 +131,7 @@ def test_roundoff_asymmetry_is_averaged_without_modifying_input() -> None:
         lambda q: np.eye(2),
         np.ones(2),
         np.zeros(2),
-        observation_covariance=covariance,
+        observation_factor=factor_covariance(covariance, method="cholesky"),
     )
     np.testing.assert_array_equal(covariance, original)
     diagnostics = retrieval_diagnostics(estimate)
@@ -168,20 +150,9 @@ def test_invalid_vectors(name: str, values: NDArray[np.float64]) -> None:
     options: dict[str, Any] = {"observations": np.ones(2), "initial_state": np.zeros(2)}
     options[name] = values
     with pytest.raises(ValueError, match=name):
-        solve_map(lambda q: q, lambda q: np.eye(2), observation_covariance=np.ones(2), **options)
-
-
-@pytest.mark.parametrize(
-    "keyword", ["observation_layout", "state_layout", "observation_unit_squared"]
-)
-def test_removed_metadata_keywords_are_rejected(keyword: str) -> None:
-    options: dict[str, Any] = {keyword: None}
-    with pytest.raises(TypeError, match=keyword):
         solve_map(
             lambda q: q,
-            lambda q: np.eye(1),
-            np.ones(1),
-            np.zeros(1),
-            observation_covariance=np.ones(1),
+            lambda q: np.eye(2),
+            observation_factor=factor_covariance(np.ones(2), method="cholesky"),
             **options,
         )

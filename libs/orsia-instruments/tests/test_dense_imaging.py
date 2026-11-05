@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 from orsia_instruments import (
-    DetectorMaps,
+    DetectorProperties,
+    GaussianPSF,
     cavity_imager,
     combine_image_source_paths,
     detector_response,
@@ -18,8 +19,10 @@ from orsia_instruments import (
     interferometric_imager,
     lvf_imager,
     photoelectron_response,
+    raster_read_schedule,
     regular_pixel_bounds,
     response_electrons,
+    sample_optical_acceptance,
     simulate_images,
 )
 from orsia_instruments.scene import RadianceField
@@ -50,7 +53,7 @@ def case():
     optics = filter_imager(
         focal_length_m=0.02,
         collecting_area_m2=1e-8,
-        psf_sigma_m=3e-5,
+        spatial=GaussianPSF(3e-5),
         filter=lambda wave: np.ones_like(wave),
     )
     return scene, exposures, pixels, optics
@@ -59,10 +62,13 @@ def case():
 def test_full_spectral_coefficients_and_qe_callback():
     scene, exposures, pixels, _ = case()
     acq = image_acquisition(
-        exposure_bounds_s=exposures.bounds_s,
-        setting_ids=("0", "1"),
+        schedule=raster_read_schedule(
+            exposures.bounds_s,
+            pixels.shape[:2],
+            setting_ids=("0", "1"),
+            row_offsets_s=np.array([0.0, 0.05]),
+        ),
         pixel_bounds_m=pixels,
-        row_offsets_s=np.array([0.0, 0.05]),
         direction_bounds_uv=exposures.direction_bounds_uv,
         pointing=exposures.pointing,
         focal_length_m=0.02,
@@ -81,8 +87,7 @@ def test_full_spectral_coefficients_and_qe_callback():
 
     coeff = photoelectron_response(
         scene.grid,
-        acq,
-        response,
+        sample_optical_acceptance(acq, response, 0.01 / (scene.grid).points),
         collecting_area_m2=2.0,
         quantum_efficiency=qe,
     )
@@ -105,8 +110,7 @@ def test_full_spectral_coefficients_and_qe_callback():
     with pytest.raises(ValueError, match="QE callback"):
         photoelectron_response(
             scene.grid,
-            acq,
-            response,
+            sample_optical_acceptance(acq, response, 0.01 / (scene.grid).points),
             collecting_area_m2=2.0,
             quantum_efficiency=lambda indices, wave: np.ones((1, len(wave))),
         )
@@ -119,7 +123,18 @@ def test_full_image_charge_and_readout():
         pixel_bounds_m=pixels,
         optics=optics,
         exposures=exposures,
-        detector=DetectorMaps(quantum_efficiency=0),
+        detector=DetectorProperties(
+            pixel_bounds_m=pixels,
+            pitch_m=None,
+            quantum_efficiency=0,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
         rng=np.random.default_rng(4),
         realisations=2,
         row_noise_electrons=1,
@@ -127,7 +142,10 @@ def test_full_image_charge_and_readout():
     assert images.photoelectrons.shape == (2, 2, 2)
     assert images.dn is not None and images.dn.shape == (2, 2, 2, 2)
     np.testing.assert_array_equal(images.photoelectrons, 0)
-    np.testing.assert_allclose(images.exposure_bounds_s[:, 1], [[0.05, 0.15], [0.55, 0.65]])
+    np.testing.assert_allclose(
+        images.schedule.reads.exposure_bounds_s.reshape(*images.schedule.native_shape, 2)[:, 1, 0],
+        [[0.05, 0.15], [0.55, 0.65]],
+    )
     assert images.dn.flags.writeable
     seen = []
     charge = image_photoelectrons(
@@ -135,15 +153,44 @@ def test_full_image_charge_and_readout():
         pixel_bounds_m=pixels,
         optics=optics,
         exposures=exposures,
+        detector=DetectorProperties(
+            pixel_bounds_m=pixels,
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
     )
     assert seen == [8]
     external = image_charge(
         {"external": np.ones((2, 2, 2))},
-        exposure_bounds_s=exposures.bounds_s,
-        row_delay_s=exposures.row_delay_s,
+        schedule=raster_read_schedule(
+            exposures.bounds_s,
+            (2, 2),
+            row_offsets_s=np.arange(2, dtype=np.float64) * (exposures.row_delay_s),
+        ),
     )
     combined = combine_image_source_paths(charge, external)
-    means = image_readout(combined)
+    means = image_readout(
+        combined,
+        detector=DetectorProperties(
+            pixel_bounds_m=pixels,
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     np.testing.assert_allclose(means.photoelectrons, charge.signal.total.reshape(2, 2, 2) + 1)
     assert set(means.contributions) == {"scene", "external"}
     assert means.dn is None
@@ -164,10 +211,27 @@ def test_full_image_optical_families(factory, settings):
     optics = factory(
         focal_length_m=0.02,
         collecting_area_m2=1e-8,
-        psf_sigma_m=3e-5,
+        spatial=GaussianPSF(3e-5),
         **settings,
     )
-    image = simulate_images(scene, pixel_bounds_m=pixels, optics=optics, exposures=exposures)
+    image = simulate_images(
+        scene,
+        pixel_bounds_m=pixels,
+        optics=optics,
+        exposures=exposures,
+        detector=DetectorProperties(
+            pixel_bounds_m=pixels,
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     assert image.photoelectrons.shape == (2, 2, 2)
     assert np.all(np.isfinite(image.photoelectrons))
     assert np.all(image.photoelectrons >= 0)
@@ -181,7 +245,18 @@ def test_correlated_read_noise_groups():
         pixel_bounds_m=pixels,
         optics=optics,
         exposures=exposures,
-        detector=DetectorMaps(quantum_efficiency=0, bias_dn=1000),
+        detector=DetectorProperties(
+            pixel_bounds_m=pixels,
+            pitch_m=None,
+            quantum_efficiency=0,
+            bias_dn=1000,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
         rng=np.random.default_rng(7),
         realisations=2000,
         row_noise_electrons=20,
@@ -194,10 +269,13 @@ def test_correlated_read_noise_groups():
 def test_dense_projected_response_and_direct_correlation():
     scene, exposures, pixels, _ = case()
     acquisition = image_acquisition(
-        exposure_bounds_s=exposures.bounds_s[:1],
-        setting_ids=("0",),
+        schedule=raster_read_schedule(
+            exposures.bounds_s[:1],
+            pixels[:1, :1].shape[:2],
+            setting_ids=("0",),
+            row_offsets_s=np.array([0.0]),
+        ),
         pixel_bounds_m=pixels[:1, :1],
-        row_offsets_s=np.array([0.0]),
         direction_bounds_uv=exposures.direction_bounds_uv,
         pointing=exposures.pointing,
         focal_length_m=0.02,
@@ -218,8 +296,11 @@ def test_dense_projected_response_and_direct_correlation():
     )
     weights = photoelectron_response(
         scene.grid,
-        acquisition,
-        lambda read, wave, current: np.ones((current.times_s.shape[1], len(wave))),
+        sample_optical_acceptance(
+            acquisition,
+            lambda read, wave, current: np.ones((current.times_s.shape[1], len(wave))),
+            0.01 / (scene.grid).points,
+        ),
         collecting_area_m2=1,
     )
     np.testing.assert_allclose(physical.coefficients[0, 1, 1], weights.sum(axis=1)[0])

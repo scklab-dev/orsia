@@ -1,4 +1,4 @@
-/* Absorption-only LTE thermal transport, included by propagation_native.cpp.
+/* Absorption-only LTE thermal transport, included by transfer_native.cpp.
  * Bottom-to-top layers; cm-1 coordinates; K temperatures; radiance per cm-1.
  * Serial pointer kernels use call-local scratch and borrowed stable inputs.
  */

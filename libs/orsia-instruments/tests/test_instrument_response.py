@@ -10,6 +10,7 @@ from orsia_instruments import (
     DetectorOperatingPoints,
     DetectorResponse,
     ExpectedElectrons,
+    GaussianPSF,
     GroundGrid,
     InstrumentResponse,
     LinearTrajectory,
@@ -35,8 +36,10 @@ from orsia_instruments import (
     instrument_response,
     photoelectron_response,
     raster_exposure_bounds,
+    read_schedule,
     rectangular_acquisition,
     response_electrons,
+    sample_optical_acceptance,
     sample_readout,
     uniform_radiance_field,
 )
@@ -92,20 +95,6 @@ def scan(**changes):
         focal_length_m=1.0,
         **changes,
     )
-
-
-def test_removed_records_and_direct_scan_contract():
-    import orsia_instruments as instruments
-    from orsia_instruments import acquisition
-
-    for name in (
-        "AlongTrackIntegrationOrders",
-        "AlongTrackReadSpecification",
-        "GroundSpatialSupport",
-    ):
-        assert not hasattr(instruments, name)
-        assert not hasattr(acquisition, name)
-    assert instruments.linear_scan_acquisition is along_track_acquisition
 
 
 def test_strip_templates_and_raster_window_keep_explicit_geometry_and_read_order():
@@ -272,7 +261,7 @@ def test_gaussian_scan_lift_matches_full_optical_law_and_checks_node_pairing():
     optics = filter_imager(
         focal_length_m=1,
         collecting_area_m2=0.1,
-        psf_sigma_m=4e-6,
+        spatial=GaussianPSF(4e-6),
         filter=lambda wave: gaussian_filter(wave, centre_m=2e-6, width_m=1e-7),
     )
     lifted = gaussian_cross_track_response(line, optics, sigma_m=4e-6)(full)
@@ -350,7 +339,8 @@ def test_gaussian_scan_lift_matches_full_optical_law_and_checks_node_pairing():
         gaussian_cross_track_response(line, optics, sigma_m=0)
 
 
-def test_gaussian_along_track_response_matches_independent_read_composition():
+@pytest.mark.parametrize("qe_kind", ["scalar", "column", "spectral", "full", "callback"])
+def test_gaussian_along_track_response_matches_independent_read_composition(qe_kind):
     trajectory = LinearTrajectory(height_m=1000, speed_m_s=100, time_origin_s=2)
     reads = along_track_read_schedule(
         sample_ids=("read-0", "read-1"),
@@ -368,7 +358,7 @@ def test_gaussian_along_track_response_matches_independent_read_composition():
         filter_imager(
             focal_length_m=1,
             collecting_area_m2=0.1 + read * 0.03,
-            psf_sigma_m=4e-6,
+            spatial=GaussianPSF(4e-6),
             throughput=0.8 - read * 0.2,
             filter=lambda wave, read=read: gaussian_filter(
                 wave,
@@ -379,6 +369,20 @@ def test_gaussian_along_track_response_matches_independent_read_composition():
         for read in range(2)
     )
     knots = np.array([-20.0, 0.0, 20.0])
+    qe_arrays = {
+        "scalar": 0.7,
+        "column": np.array([[0.3], [0.7]]),
+        "spectral": np.array([0.2, 0.4, 0.6]),
+        "full": np.array([[0.2, 0.4, 0.6], [0.3, 0.5, 0.7]]),
+    }
+    qe_values = np.broadcast_to(qe_arrays.get(qe_kind, qe_arrays["full"]), (2, 3)).copy()
+    qe_calls = []
+
+    def qe_callback(indices, wavelengths):
+        qe_calls.append((indices.copy(), wavelengths.copy()))
+        return qe_values[indices]
+
+    qe = qe_callback if qe_kind == "callback" else qe_arrays[qe_kind]
     result = gaussian_along_track_response(
         grid(),
         reads,
@@ -393,8 +397,12 @@ def test_gaussian_along_track_response_matches_independent_read_composition():
         focal_length_m=1,
         sigma_m=4e-6,
         pointing_law=zero_pointing,
-        quantum_efficiency=0.7,
+        quantum_efficiency=qe,
     )
+    if qe_kind == "callback":
+        assert len(qe_calls) == 1
+        np.testing.assert_array_equal(qe_calls[0][0], [0, 1])
+        np.testing.assert_array_equal(qe_calls[0][1], 0.01 / grid().points)
     assert result.coefficients.shape == (2, 3, 3, 3)
     assert np.all(result.coefficients >= 0)
     assert result.reads.sample_ids == ("read-0", "read-1")
@@ -436,7 +444,7 @@ def test_gaussian_along_track_response_matches_independent_read_composition():
             pointing_law=zero_pointing,
             collecting_area_m2=optics[read].collecting_area_m2,
             throughput=optics[read].throughput,
-            quantum_efficiency=0.7,
+            quantum_efficiency=qe_values[read : read + 1],
         )
         np.testing.assert_array_equal(result.coefficients[read], reference.coefficients[0])
         np.testing.assert_array_equal(
@@ -455,6 +463,47 @@ def test_gaussian_along_track_response_matches_independent_read_composition():
             ground_grid=GroundGrid(knots, knots),
             focal_length_m=1,
             sigma_m=4e-6,
+        )
+
+
+@pytest.mark.parametrize("callback", [False, True])
+@pytest.mark.parametrize(
+    "qe_values,match",
+    [
+        (np.array([[np.nan], [0.5]]), "finite"),
+        (np.array([[-0.1], [0.5]]), "finite"),
+        (np.array([[0.5], [1.1]]), "finite"),
+        (np.ones((3, 3)), "reads,wavenumbers|broadcast"),
+    ],
+)
+def test_gaussian_along_track_qe_validation(callback, qe_values, match):
+    reads = ReadSchedule(
+        ("a", "b"), ("p", "p"), ("s", "s"), ("+", "+"), np.array([[0.0, 0.2], [0.2, 0.4]])
+    )
+
+    def qe(indices, wavelengths):
+        if qe_values.shape == (2, 1):
+            return np.broadcast_to(qe_values, (2, len(wavelengths)))
+        return qe_values
+
+    def unused_optics(read):
+        pytest.fail("invalid QE must fail before selecting optics")
+
+    edges = np.array([-20.0, 0.0, 20.0])
+    with pytest.raises(ValueError, match=match):
+        gaussian_along_track_response(
+            grid(),
+            reads,
+            LinearTrajectory(height_m=1000, speed_m_s=100),
+            unused_optics,
+            pixel_bounds_m=np.tile([-1e-5, 1e-5, -1e-5, 1e-5], (2, 1)),
+            along_edges_m=edges,
+            cross_edges_m=edges,
+            ground_grid=GroundGrid(edges, edges),
+            focal_length_m=1,
+            sigma_m=4e-6,
+            pointing_law=zero_pointing,
+            quantum_efficiency=qe if callback else qe_values,
         )
 
 
@@ -502,7 +551,8 @@ def test_along_track_raster_reads_matches_explicit_timing_and_identities():
     assert actual.port_ids == reference.port_ids
     np.testing.assert_array_equal(actual.exposure_bounds_s, reference.exposure_bounds_s)
     before = actual.exposure_bounds_s.copy()
-    templates.exposure_bounds_s[:] = [[2, 3], [3, 4]]
+    with pytest.raises(ValueError):
+        templates.exposure_bounds_s[:] = [[2, 3], [3, 4]]
     np.testing.assert_array_equal(actual.exposure_bounds_s, before)
     with pytest.raises(ValueError, match="target rows"):
         along_track_raster_reads(
@@ -703,7 +753,8 @@ def test_grouped_scan_defaults_per_read_timing_and_borrowed_inputs():
         np.testing.assert_array_equal(current, original)
         for output in (acquisition.times_s, acquisition.pixel_bounds_m, acquisition.weights_sr_s):
             assert not np.shares_memory(current, output)
-    acquisition.pixel_bounds_m[:] = 0
+    with pytest.raises(ValueError):
+        acquisition.pixel_bounds_m[:] = 0
     np.testing.assert_array_equal(pixels, originals[2])
     # Reuse the physical read, trajectory and orders with a narrow cross-track support.
     line = along_track_acquisition(
@@ -760,7 +811,8 @@ def test_along_track_read_schedule_matches_full_scan_without_optical_nodes():
     target[0] = -100.0
     durations[0] = 4.0
     np.testing.assert_array_equal(reads.exposure_bounds_s, full.exposure_bounds_s)
-    reads.exposure_bounds_s[0, 0] = 2.0
+    with pytest.raises(ValueError):
+        reads.exposure_bounds_s[0, 0] = 2.0
     assert full.exposure_bounds_s[0, 0] != 2.0
 
 
@@ -793,11 +845,13 @@ def test_along_track_read_schedule_validates_positions_timing_and_identities():
 def test_scan_and_rectangular_angular_measures_remain_distinct():
     local = scan(support_frame="platform")
     sky = rectangular_acquisition(
-        sample_ids=local.sample_ids,
-        pixel_ids=local.pixel_ids,
-        setting_ids=local.setting_ids,
-        port_ids=local.port_ids,
-        exposure_bounds_s=local.exposure_bounds_s,
+        reads=ReadSchedule(
+            local.sample_ids,
+            local.pixel_ids,
+            local.setting_ids,
+            local.port_ids,
+            local.exposure_bounds_s,
+        ),
         pixel_bounds_m=local.pixel_bounds_m,
         direction_bounds_uv=(0.0, 0.04, -0.02, 0.02),
         pointing=lambda times: np.zeros((len(times), 2)),
@@ -834,16 +888,14 @@ def test_analytic_photon_area_exposure_qe_spectral_scaling():
     np.testing.assert_allclose(signal.total, expected, rtol=2e-14)
     dense = photoelectron_response(
         g,
-        acquisition,
-        acceptance,
+        sample_optical_acceptance(acquisition, acceptance, 0.01 / (g).points),
         collecting_area_m2=0.02,
         throughput=0.5,
         quantum_efficiency=0.8,
     )
     callback = photoelectron_response(
         g,
-        acquisition,
-        acceptance,
+        sample_optical_acceptance(acquisition, acceptance, 0.01 / (g).points),
         collecting_area_m2=0.02,
         throughput=0.5,
         quantum_efficiency=lambda r, w: np.full((len(r), len(w)), 0.8),
@@ -925,7 +977,7 @@ def test_projection_against_independent_bilinear_polynomial_and_direct_field():
         quantum_efficiency=0.8,
     )
     np.testing.assert_allclose(result.total, direct.total, rtol=2e-14)
-    assert result.acquisition.sample_ids == acquisition.sample_ids
+    assert result.reads.sample_ids == acquisition.sample_ids
     assert response.coefficients.min() >= 0
     np.testing.assert_allclose(
         response.coefficients.sum(axis=(1, 2))[1] / response.coefficients.sum(axis=(1, 2))[0], 7 / 3
@@ -967,7 +1019,7 @@ def test_halo_correlation_block_direct_and_native_identities():
         method="correlation",
     )
     np.testing.assert_allclose(dense_result.total, direct.total, rtol=2e-15)
-    assert direct.acquisition is reads
+    assert direct.reads is reads
     for row, column, offset in ((1, 1, 0), (1, 5, 1), (5, 1, 2), (5, 5, 3)):
         patch = dense[row - 1 : row + 2, column - 1 : column + 2]
         np.testing.assert_allclose(
@@ -992,6 +1044,7 @@ def test_halo_correlation_block_direct_and_native_identities():
 
 def test_physical_detector_then_signed_reconstruction_and_covariance():
     reads = scan()
+    reads = read_schedule(reads)
     signal = ExpectedElectrons(reads, {"scene": np.array([20.0, 5.0])})
     detector = DetectorElectronics(full_well_electrons=10, electrons_per_dn=1, adc_bits=8)
     mean, _ = electron_moments(signal, detector)
@@ -1016,7 +1069,7 @@ def test_physical_detector_then_signed_reconstruction_and_covariance():
         exposure_ids=("same", "same"),
         exposure_noise_electrons=3,
     )
-    assert draws.dn.shape == (4, 2) and draws.acquisition is reads
+    assert draws.dn.shape == (4, 2) and draws.reads is reads
     assert draws.full_well_saturated.shape == (4, 2)
 
 
@@ -1062,21 +1115,25 @@ def test_primitive_rejects_missing_spectral_support():
     with pytest.raises(ValueError, match="connected"):
         photoelectron_response(
             SpectralGrid("wavenumber_cm1", grid().points),
-            scan(),
-            acceptance,
+            sample_optical_acceptance(
+                scan(), acceptance, 0.01 / (SpectralGrid("wavenumber_cm1", grid().points)).points
+            ),
             collecting_area_m2=1,
         )
     with pytest.raises(ValueError, match="QE callback"):
         photoelectron_response(
             grid(),
-            scan(),
-            acceptance,
+            sample_optical_acceptance(scan(), acceptance, 0.01 / (grid()).points),
             collecting_area_m2=1,
             quantum_efficiency=lambda r, w: np.ones(len(w)),
         )
     with pytest.raises(ValueError, match="shape"):
         photoelectron_response(
-            grid(), scan(), lambda r, w, a: np.ones((1, 1)), collecting_area_m2=1
+            grid(),
+            sample_optical_acceptance(
+                scan(), lambda r, w, a: np.ones((1, 1)), 0.01 / (grid()).points
+            ),
+            collecting_area_m2=1,
         )
 
 

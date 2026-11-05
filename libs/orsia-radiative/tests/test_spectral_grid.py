@@ -147,7 +147,7 @@ def test_one_grid_is_retained_through_spectroscopy_composition_and_transfer() ->
         compose_absorption_on_grid(atmosphere, wavenumber_grid(grid.points + 0.25), (component,))
     thermal_surface = SurfaceState(grid, emissivity=np.ones(2), temperature_k=290.0)
     thermal_scene = replace(scene, surface=thermal_surface)
-    assert transfer.thermal.schwarzschild_radiance(thermal_scene, optics=optics).grid is grid
+    assert transfer.thermal.thermal_radiance(thermal_scene, optics=optics).grid is grid
 
 
 def test_radiative_records_reject_wavelength_units_at_construction() -> None:

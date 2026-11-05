@@ -8,8 +8,8 @@ from numpy.typing import NDArray
 
 from ..acquisition import Acquisition
 from ..quadrature import validate_quadrature_order
-from .pixels import gaussian_pixel_fraction, psf_pixel_response
-from .psfs import PointSpreadFunction, select_psf
+from .pixels import pixel_acceptance
+from .psfs import GaussianPSF, SpatialDensity
 from .response import (
     ImagingOptics,
     SpectralParameter,
@@ -125,24 +125,21 @@ def dispersive_response(
         smile=smile,
         keystone=keystone,
     )
-    fraction = gaussian_pixel_fraction(bounds_m, centres, sigma_m)
-    efficiency = np.asarray(transmission, dtype=np.float64)
-    if not np.isfinite(efficiency).all() or np.any((efficiency < 0) | (efficiency > 1)):
-        raise ValueError("transmission must be finite and in [0, 1]")
-    return fraction * efficiency
+    return pixel_acceptance(
+        wavelength_m,
+        bounds_m,
+        centres,
+        spatial=GaussianPSF(sigma_m),
+        transmission=np.asarray(transmission, dtype=np.float64),
+        image_xy_m=image_xy_m,
+    )
 
 
 def dispersive_imager(
     *,
     focal_length_m: float,
     collecting_area_m2: float,
-    psf_sigma_m: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None = None,
-    psf: PointSpreadFunction | None = None,
+    spatial: SpatialDensity,
     pixel_order: int = 8,
     reference_m: float | None = None,
     dispersion: float | None = None,
@@ -157,7 +154,7 @@ def dispersive_imager(
     """Finite-pixel disperser with a polynomial or supplied centroid map.
 
     PSF selection and callback coordinates follow filter_imager. General PSFs
-    use pixel_order; Gaussian bindings retain analytic pixel integration.
+    use pixel_order; declared Gaussians retain analytic pixel integration.
     PSF field coordinates precede image_map; offsets use mapped centroids.
 
     Dispersion, smile and keystone are dimensionless; quadratic coefficient is
@@ -173,8 +170,7 @@ def dispersive_imager(
     Args:
         focal_length_m: Positive detector-plane focal length in metres.
         collecting_area_m2: Nonnegative pupil area in square metres.
-        psf_sigma_m: Optional analytic Gaussian scalar or (x,y) width in metres.
-        psf: Alternative borrowed point-spread density callback.
+        spatial: Declared Gaussian, prepared tabulated density or pure spatial callback.
         pixel_order: Gauss order for numerical finite-pixel integration.
         reference_m: Optional positive zero-dispersion wavelength in metres.
         dispersion: Optional dimensionless linear wavelength-to-x displacement.
@@ -191,7 +187,6 @@ def dispersive_imager(
     Raises:
         ValueError: PSF/map selection, geometry, quadrature or transmission is invalid.
     """
-    sigma, density = select_psf(psf_sigma_m, psf)
     validate_quadrature_order(pixel_order)
     constant_transmission = constant_or_default(transmission, 1)
     if not np.isfinite(constant_transmission) or not 0 <= constant_transmission <= 1:
@@ -232,25 +227,15 @@ def dispersive_imager(
         efficiency = spectral_value(transmission, wave, "transmission")
         if not np.isfinite(efficiency).all() or np.any((efficiency < 0) | (efficiency > 1)):
             raise ValueError("transmission must be finite and in [0, 1]")
-        if sigma is None:
-            assert density is not None
-            return psf_pixel_response(
-                wave,
-                acquisition.pixel_bounds_m[read],
-                centres,
-                image,
-                exposure,
-                psf=density,
-                pixel_order=pixel_order,
-                transmission=lambda x, y, w: efficiency,
-            )
-        return (
-            gaussian_pixel_fraction(
-                acquisition.pixel_bounds_m[read],
-                centres,
-                sigma,
-            )
-            * efficiency
+        return pixel_acceptance(
+            wave,
+            acquisition.pixel_bounds_m[read],
+            centres,
+            spatial=spatial,
+            transmission=efficiency,
+            image_xy_m=image,
+            exposure_index=exposure,
+            pixel_order=pixel_order,
         )
 
     return ImagingOptics(focal_length_m, collecting_area_m2, response, settings, throughput)

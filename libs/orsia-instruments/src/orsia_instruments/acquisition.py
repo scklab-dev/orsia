@@ -14,7 +14,7 @@ class ReadSchedule[T: np.floating | np.integer = np.floating | np.integer]:
     """Ordered sample/pixel/setting/port identities and exposure intervals in seconds.
 
     No optical geometry or quadrature is implied. Intervals are finite, positive
-    duration (reads,2) writable copies; sample IDs are unique within the set.
+    duration (reads,2) immutable snapshots; sample IDs are unique within the set.
     Other IDs may repeat. All IDs are bookkeeping, never physical parameters.
 
     Attributes:
@@ -45,7 +45,188 @@ class ReadSchedule[T: np.floating | np.integer = np.floating | np.integer]:
             raise ValueError("exposure bounds must be finite")
         if bounds.shape != (n, 2) or np.any(bounds[:, 1] <= bounds[:, 0]):
             raise ValueError("exposure bounds must be (reads,2) with positive duration")
-        object.__setattr__(self, "exposure_bounds_s", bounds)
+        object.__setattr__(
+            self,
+            "exposure_bounds_s",
+            np.frombuffer(bounds.tobytes(), dtype=bounds.dtype).reshape(bounds.shape),
+        )
+
+
+@dataclass(frozen=True, eq=False)
+class RasterReadSchedule:
+    """Physical reads mapped to their original complete native raster.
+
+    Selection retains original identities, native indices and full native shape.
+    Buffers are independent immutable snapshots. Dense reshape requires complete
+    coverage in C order; partial or permuted selections use a read axis.
+
+    Attributes:
+        reads: Immutable ordered read identities and exposure intervals.
+        native_shape: Full (frames,rows,columns) dimensions, including unselected pixels.
+        native_indices: Owned immutable int64 (reads,3) frame,row,column indices.
+    """
+
+    reads: ReadSchedule
+    native_shape: tuple[int, int, int]
+    native_indices: NDArray[np.int64]
+
+    def __post_init__(self) -> None:
+        shape = tuple(self.native_shape)
+        indices = np.copy(self.native_indices)
+        if len(shape) != 3 or any(n < 1 for n in shape):
+            raise ValueError("native shape must have three positive dimensions")
+        if (
+            indices.dtype != np.int64
+            or indices.shape != (len(self.reads.sample_ids), 3)
+            or np.any(indices < 0)
+            or np.any(indices >= shape)
+            or len(np.unique(indices, axis=0)) != len(indices)
+        ):
+            raise ValueError("native indices must be unique in-range int64 (reads,3)")
+        object.__setattr__(self, "native_shape", shape)
+        object.__setattr__(
+            self,
+            "native_indices",
+            np.frombuffer(indices.tobytes(), dtype=np.int64).reshape(indices.shape),
+        )
+
+    @property
+    def complete(self) -> bool:
+        """Return whether reads cover the full native raster in C order."""
+        if len(self.native_indices) != np.prod(self.native_shape):
+            return False
+        flat = np.ravel_multi_index(self.native_indices.T, self.native_shape)
+        return bool(np.array_equal(flat, np.arange(len(flat))))
+
+    @property
+    def value_shape(self) -> tuple[int, ...]:
+        """Return dense dimensions for complete rasters, otherwise a read axis."""
+        return self.native_shape if self.complete else (len(self.reads.sample_ids),)
+
+
+def raster_read_schedule(
+    exposure_bounds_s: NDArray[np.floating | np.integer],
+    shape: tuple[int, int],
+    *,
+    row_offsets_s: NDArray[np.float64] | None = None,
+    setting_ids: tuple[str, ...] | None = None,
+    port: str = "direct",
+) -> RasterReadSchedule:
+    """Build one immutable frame/row/column identity and timing correspondence.
+
+    Args:
+        exposure_bounds_s: Finite positive (frames,2) intervals in caller epoch seconds.
+        shape: Positive native detector (rows,columns) dimensions.
+        row_offsets_s: Optional finite (rows,) rolling offsets in seconds.
+        setting_ids: One setting per frame; defaults to decimal frame indices.
+        port: Nonempty optical output-port identity shared by reads.
+
+    Returns:
+        Complete native raster schedule in frame/row/column C order.
+
+    Raises:
+        ValueError: Shape, identities or timing is invalid.
+    """
+    exposures = np.copy(exposure_bounds_s)
+    if exposures.ndim != 2 or exposures.shape[1:] != (2,) or not len(exposures):
+        raise ValueError("exposure bounds must have nonempty (frames,2) shape")
+    if len(shape) != 2 or any(n < 1 for n in shape):
+        raise ValueError("detector shape must have two positive dimensions")
+    settings = tuple(map(str, range(len(exposures)))) if setting_ids is None else setting_ids
+    offsets = np.zeros(shape[0]) if row_offsets_s is None else row_offsets_s
+    if (
+        len(settings) != len(exposures)
+        or offsets.shape != (shape[0],)
+        or not np.isfinite(offsets).all()
+    ):
+        raise ValueError("settings and row offsets must match frames and rows")
+    native_shape = (len(exposures), *shape)
+    native = np.indices(native_shape, dtype=np.int64).reshape(3, -1).T
+    frame, row, column = native.T
+    reads = ReadSchedule(
+        tuple(f"s{f}-p{r * shape[1] + c}" for f, r, c in native),
+        tuple(f"r{r}-c{c}" for r, c in zip(row, column, strict=True)),
+        tuple(settings[f] for f in frame),
+        (port,) * len(frame),
+        exposures[frame] + offsets[row, None],
+    )
+    return RasterReadSchedule(reads, native_shape, native)
+
+
+def select_read_schedule(reads: ReadSchedule, indices: NDArray[np.int64]) -> ReadSchedule:
+    """Select ordered reads with original identities and timing.
+
+    Args:
+        reads: Immutable physical schedule to select.
+        indices: Nonempty unique in-range int64 read positions in requested order.
+
+    Returns:
+        Independent immutable selected schedule.
+
+    Raises:
+        ValueError: Indices are empty, repeated, malformed or outside the schedule.
+    """
+    if (
+        indices.dtype != np.int64
+        or indices.ndim != 1
+        or not len(indices)
+        or np.any(indices < 0)
+        or np.any(indices >= len(reads.sample_ids))
+        or len(np.unique(indices)) != len(indices)
+    ):
+        raise ValueError("read indices must be nonempty unique in-range int64")
+    return ReadSchedule(
+        *(
+            tuple(getattr(reads, name)[i] for i in indices)
+            for name in ("sample_ids", "pixel_ids", "setting_ids", "port_ids")
+        ),
+        reads.exposure_bounds_s[indices],
+    )
+
+
+def select_raster_reads(
+    schedule: RasterReadSchedule, indices: NDArray[np.int64]
+) -> RasterReadSchedule:
+    """Select raster reads while preserving native shape and physical identity.
+
+    Args:
+        schedule: Original immutable raster correspondence.
+        indices: Nonempty unique in-range int64 read positions in requested order.
+
+    Returns:
+        Selected immutable correspondence with original native indices.
+
+    Raises:
+        ValueError: Selection fails the physical read index contract.
+    """
+    return RasterReadSchedule(
+        select_read_schedule(schedule.reads, indices),
+        schedule.native_shape,
+        schedule.native_indices[indices],
+    )
+
+
+def check_raster_alignment(first: RasterReadSchedule, second: RasterReadSchedule) -> None:
+    """Require exact native read correspondence before combining measurements.
+
+    Args:
+        first: Reference native raster identities, order and exposure timing.
+        second: Supplied measurement or response schedule in the same physical order.
+
+    Raises:
+        ValueError: Native shapes, indices, identities or exposure timing disagree.
+    """
+    if (
+        first.native_shape != second.native_shape
+        or not np.array_equal(first.native_indices, second.native_indices)
+        or any(
+            getattr(first.reads, name) != getattr(second.reads, name)
+            for name in ("sample_ids", "pixel_ids", "setting_ids", "port_ids")
+        )
+    ):
+        raise ValueError("native raster read identities and order must agree")
+    if not np.array_equal(first.reads.exposure_bounds_s, second.reads.exposure_bounds_s):
+        raise ValueError("native exposure timing must agree")
 
 
 @dataclass(frozen=True, eq=False)
@@ -62,14 +243,16 @@ class Acquisition[T: np.floating | np.integer = np.floating | np.integer]:
     bounds (umin,umax,vmin,vmax), shape (N,4), enclose each read's entire sky patch,
     not merely the quadrature nodes; they enable whole-support coverage checks.
     All arrays are
-    independent writable copies preserving input dtype. The caller owns ray/pointing interpretation.
+    independent immutable snapshots preserving input dtype. The caller owns
+    ray/pointing interpretation.
 
     Attributes:
-        sample_ids: Unique ordered identifiers, one per read.
-        pixel_ids: Pixel identity for each read.
-        setting_ids: Instrument setting identity for each read.
-        port_ids: Optical port identity for each read.
-        exposure_bounds_s: (reads,2) ordered temporal support in seconds.
+        reads: Shared immutable identities, pixels, settings, ports and exposure intervals.
+        sample_ids: Derived unique ordered read identities from reads.
+        pixel_ids: Derived pixel identities from reads.
+        setting_ids: Derived optical setting identities from reads.
+        port_ids: Derived physical port identities from reads.
+        exposure_bounds_s: Derived (reads,2) intervals from reads, in seconds.
         times_s: (reads,nodes) quadrature times in caller epoch seconds.
         directions_uv: (reads,nodes,2) dimensionless scene directions.
         image_xy_m: (reads,nodes,2) focal-plane centroids in metres.
@@ -78,11 +261,7 @@ class Acquisition[T: np.floating | np.integer = np.floating | np.integer]:
         direction_bounds_uv: (reads,4) whole-patch scene direction support.
     """
 
-    sample_ids: tuple[str, ...]
-    pixel_ids: tuple[str, ...]
-    setting_ids: tuple[str, ...]
-    port_ids: tuple[str, ...]
-    exposure_bounds_s: NDArray[T]
+    reads: ReadSchedule[T]
     times_s: NDArray[T]
     directions_uv: NDArray[T]
     image_xy_m: NDArray[T]
@@ -91,16 +270,8 @@ class Acquisition[T: np.floating | np.integer = np.floating | np.integer]:
     direction_bounds_uv: NDArray[T]
 
     def __post_init__(self) -> None:
-        n = len(self.sample_ids)
-        for name in ("sample_ids", "pixel_ids", "setting_ids", "port_ids"):
-            values = tuple(getattr(self, name))
-            if len(values) != n or not all(values):
-                raise ValueError("read identities must be nonempty and match reads")
-            object.__setattr__(self, name, values)
-        if n == 0 or len(set(self.sample_ids)) != n:
-            raise ValueError("sample_ids must be nonempty and unique")
+        n = len(self.reads.sample_ids)
         for name in (
-            "exposure_bounds_s",
             "times_s",
             "directions_uv",
             "image_xy_m",
@@ -111,7 +282,9 @@ class Acquisition[T: np.floating | np.integer = np.floating | np.integer]:
             array = np.copy(getattr(self, name))
             if not np.isfinite(array).all():
                 raise ValueError(f"{name} must be finite")
-            object.__setattr__(self, name, array)
+            object.__setattr__(
+                self, name, np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(array.shape)
+            )
         if self.times_s.ndim != 2 or self.times_s.shape[0] != n or self.times_s.shape[1] == 0:
             raise ValueError("times_s must have shape (reads, nodes) with nonempty nodes")
         shape = self.times_s.shape
@@ -147,6 +320,31 @@ class Acquisition[T: np.floating | np.integer = np.floating | np.integer]:
         if np.any(self.pixel_bounds_m[:, [1, 3]] <= self.pixel_bounds_m[:, [0, 2]]):
             raise ValueError("pixels must have positive active area")
 
+    @property
+    def sample_ids(self) -> tuple[str, ...]:
+        """Return the shared read schedule's sample_ids."""
+        return self.reads.sample_ids
+
+    @property
+    def pixel_ids(self) -> tuple[str, ...]:
+        """Return the shared read schedule's pixel_ids."""
+        return self.reads.pixel_ids
+
+    @property
+    def setting_ids(self) -> tuple[str, ...]:
+        """Return the shared read schedule's setting_ids."""
+        return self.reads.setting_ids
+
+    @property
+    def port_ids(self) -> tuple[str, ...]:
+        """Return the shared read schedule's port_ids."""
+        return self.reads.port_ids
+
+    @property
+    def exposure_bounds_s(self) -> NDArray[T]:
+        """Return the shared read schedule's exposure_bounds_s."""
+        return self.reads.exposure_bounds_s
+
 
 @dataclass(frozen=True, kw_only=True)
 class LinearTrajectory:
@@ -171,26 +369,15 @@ class LinearTrajectory:
 def read_schedule[T: np.floating | np.integer](
     acquisition: Acquisition[T] | ReadSchedule[T],
 ) -> ReadSchedule[T]:
-    """Retain only read identities/timing; never fabricate optical geometry.
-
-    A ReadSchedule input is returned unchanged; an Acquisition produces a fresh
-    independent timing copy. Existing acquisition-bearing outputs are unchanged.
+    """Return the immutable identity/timing schedule without reconstructing geometry.
 
     Args:
-        acquisition: Full optical acquisition or geometry-free physical read schedule.
+        acquisition: Full sampled acquisition or geometry-free physical schedule.
 
     Returns:
-        Original ReadSchedule instance or a new schedule with copied exposure bounds.
+        The original ReadSchedule or the acquisition's shared immutable schedule.
     """
-    if isinstance(acquisition, ReadSchedule):
-        return acquisition
-    return ReadSchedule(
-        acquisition.sample_ids,
-        acquisition.pixel_ids,
-        acquisition.setting_ids,
-        acquisition.port_ids,
-        acquisition.exposure_bounds_s,
-    )
+    return acquisition if isinstance(acquisition, ReadSchedule) else acquisition.reads
 
 
 def along_track_exposure_bounds(
@@ -248,7 +435,7 @@ def along_track_read_schedule(
     from timing for a constant-speed along-track trajectory. The shared scan timing
     rule gives centre = time_origin + (target - offset) / speed; exposure_s is
     a positive scalar or (reads,) durations in seconds. Inputs are borrowed;
-    returned exposure intervals are an independent writable float64 snapshot.
+    returned exposure intervals are an independent immutable float64 snapshot.
     IDs follow the supplied order and ReadSchedule validates their uniqueness.
 
     Args:
@@ -300,7 +487,8 @@ def along_track_strip_templates(
     plane. exposure_s is a positive scalar or one duration per read in seconds.
     The caller supplies every read identity, stage/port assignment and offset;
     sequential and simultaneous read orders are both supported. Returned read
-    timing and detector bounds are independent writable float64 arrays.
+    timing is an independent immutable float64 snapshot; detector bounds are
+    independent writable float64 arrays.
 
     Args:
         sample_ids: Unique sample names, one per strip read.
@@ -423,7 +611,7 @@ def along_track_raster_reads(
     settings and ports are repeated exactly. Callbacks name each native physical
     read and pixel; callers retain row, column and simultaneous-exposure noise
     group identities separately. Inputs are borrowed; intervals are independent
-    writable float64 snapshots. Reuse with translated K requires stationary
+    immutable float64 snapshots. Reuse with translated K requires stationary
     scene and optics and complete spatial halos on the application lattice.
 
     Args:
@@ -468,11 +656,7 @@ def along_track_raster_reads(
 
 def rectangular_acquisition(
     *,
-    sample_ids: tuple[str, ...],
-    pixel_ids: tuple[str, ...],
-    setting_ids: tuple[str, ...],
-    port_ids: tuple[str, ...],
-    exposure_bounds_s: NDArray[np.float64],
+    reads: ReadSchedule[np.float64],
     pixel_bounds_m: NDArray[np.float64],
     direction_bounds_uv: tuple[float, float, float, float],
     pointing: Callable[[NDArray[np.float64]], NDArray[np.floating | np.integer]],
@@ -489,11 +673,7 @@ def rectangular_acquisition(
     support, with no inferred zero radiance outside it. Refine time/angular orders.
 
     Args:
-        sample_ids: Per-read sample identifiers for the selected exposure intervals.
-        pixel_ids: Per-read detector pixel identifiers.
-        setting_ids: Per-read optical setting identifiers.
-        port_ids: Per-read optical port identifiers.
-        exposure_bounds_s: (reads,2) start/end intervals in caller-epoch seconds.
+        reads: Immutable ordered identities and finite positive exposure intervals in seconds.
         pixel_bounds_m: (reads,4) detector xmin,xmax,ymin,ymax in metres.
         direction_bounds_uv: (umin,umax,vmin,vmax) accepted sky-direction patch.
         pointing: Time-array callable yielding (nodes,2) direction-cosine offsets.
@@ -517,7 +697,7 @@ def rectangular_acquisition(
     uv = np.stack(np.meshgrid(u, v, indexing="ij"), axis=-1).reshape(-1, 2)
     angular_weights = (wu[:, None] * wv).ravel() / np.sqrt(1 - (uv**2).sum(axis=1))
     times, directions, images, weights = [], [], [], []
-    for low, high in exposure_bounds_s:
+    for low, high in reads.exposure_bounds_s:
         t, wt = interval_quadrature(low, high, time_order)
         offsets = pointing(t)
         if offsets.shape != (time_order, 2):
@@ -527,17 +707,13 @@ def rectangular_acquisition(
         images.append((focal_length_m * (uv[None, :, :] - offsets[:, None, :])).reshape(-1, 2))
         weights.append((wt[:, None] * angular_weights).ravel())
     return Acquisition(
-        sample_ids,
-        pixel_ids,
-        setting_ids,
-        port_ids,
-        exposure_bounds_s,
+        reads,
         np.array(times),
         np.array(directions),
         np.array(images),
         np.array(weights),
         pixel_bounds_m,
-        np.tile(direction_bounds_uv, (len(sample_ids), 1)),
+        np.tile(direction_bounds_uv, (len(reads.sample_ids), 1)),
     )
 
 
@@ -572,8 +748,9 @@ def along_track_acquisition(
     the *entire* swept exposure, including interval endpoints, inside the unit disk.
     Weights deliberately use dOmega dt=dx dy dt/height**2, independently of the
     forward-disk measure in rectangular_acquisition. This local convention and
-    its physical accuracy are caller-selected; all returned arrays own storage.
-    Inputs are borrowed and unmodified; record validation occurs on each call.
+    its physical accuracy are caller-selected; returned node arrays are independent
+    immutable snapshots. The read schedule is shared. Inputs remain unmodified;
+    record validation occurs on each call.
 
     Args:
         reads: Ordered physical identities and exposure intervals in seconds.
@@ -592,14 +769,13 @@ def along_track_acquisition(
         cross_order: Optional distinct positive Gauss order on the cross axis.
 
     Returns:
-        Acquisition with owned exposure intervals, sampled directions, image
-        positions and physical dOmega dt weights for each read.
+        Acquisition sharing the immutable read schedule, with immutable sampled
+        directions, image positions and physical dOmega dt weights for each read.
 
     Raises:
         ValueError: Geometry, node orders or bounded patch is invalid.
     """
-    sample_ids, pixel_ids = reads.sample_ids, reads.pixel_ids
-    setting_ids, port_ids = reads.setting_ids, reads.port_ids
+    sample_ids = reads.sample_ids
     height_m, speed_m_s = trajectory.height_m, trajectory.speed_m_s
     time_origin_s = trajectory.time_origin_s
     n = len(sample_ids)
@@ -663,11 +839,7 @@ def along_track_acquisition(
             np.array((*limits, *(cross_offset_m[read] + cross_edges_m[[0, -1]]))) / height_m
         )
     return Acquisition(
-        sample_ids,
-        pixel_ids,
-        setting_ids,
-        port_ids,
-        exposures,
+        reads,
         np.array(times),
         np.array(directions),
         np.array(images),
@@ -675,9 +847,6 @@ def along_track_acquisition(
         pixel_bounds_m,
         np.array(supports),
     )
-
-
-linear_scan_acquisition = along_track_acquisition
 
 
 def ground_scroll_pointing(

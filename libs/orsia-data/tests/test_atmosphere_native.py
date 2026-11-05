@@ -17,6 +17,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def natural_free_threading():
+    assert os.environ.get("PYTHON_GIL") is None and "gil" not in sys._xoptions
+    assert not sys._is_gil_enabled()
+    yield
+    assert not sys._is_gil_enabled()
+
+
 def test_native_eccodes_generated_grib(tmp_path: Path) -> None:
     path = tmp_path / "synthetic.grib2"
     _write_grib(path)
@@ -69,6 +77,26 @@ def test_native_grib_valid_sentinel_without_bitmap(tmp_path: Path, name: str, un
     assert_allclose(_read_grib(path, name=name, units=units), [3329.25, 2954.25])
 
 
+def test_native_grib_inband_missing_without_bitmap(tmp_path: Path) -> None:
+    path = tmp_path / "synthetic.grib2"
+    _write_grib(
+        path,
+        changes={"packingType": "grid_complex", "bitmapPresent": 0, "missingValue": 9999.0},
+        values=np.array([9999.0, 108, 101, 109]),
+    )
+    eccodes = pytest.importorskip("eccodes")
+    with path.open("rb") as stream:
+        handle = eccodes.codes_grib_new_from_file(stream)
+        try:
+            assert eccodes.codes_get(handle, "bitmapPresent") == 0
+            assert eccodes.codes_get(handle, "missingValueManagementUsed") == 1
+            assert eccodes.codes_get(handle, "numberOfMissing") == 1
+        finally:
+            eccodes.codes_release(handle)
+    with pytest.raises(ValueError, match="in-band missing"):
+        _read_grib(path, latitude=10, longitude=0)
+
+
 @pytest.mark.parametrize(
     "changes,values",
     [
@@ -110,7 +138,7 @@ def test_native_grib_valid_sentinel_without_bitmap(tmp_path: Path, name: str, un
     ],
 )
 def test_native_grib_scan_order(
-    tmp_path: Path, changes: dict[str, int | float], values: NDArray[np.float64]
+    tmp_path: Path, changes: dict[str, int | float | str], values: NDArray[np.float64]
 ) -> None:
     path = tmp_path / "synthetic.grib2"
     _write_grib(path, changes=changes, values=values)
@@ -182,7 +210,7 @@ def _write_grib(
     *,
     levels: tuple[int, ...] = (1000, 500),
     short_name: str = "t",
-    changes: dict[str, int | float] | None = None,
+    changes: dict[str, int | float | str] | None = None,
     values: NDArray[np.float64] | None = None,
     mode: str = "wb",
 ) -> None:

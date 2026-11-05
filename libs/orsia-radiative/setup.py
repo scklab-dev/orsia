@@ -8,8 +8,8 @@ from setuptools import setup
 setup(
     ext_modules=[
         Pybind11Extension(
-            "orsia_radiative.transfer.native.propagation_native",
-            ["src/orsia_radiative/transfer/native/propagation_native.cpp"],
+            "orsia_radiative.transfer.native.transfer_native",
+            ["src/orsia_radiative/transfer/native/transfer_native.cpp"],
             depends=[
                 "src/orsia_radiative/transfer/native/orders_native.h",
                 "src/orsia_radiative/transfer/native/thermal_native.h",

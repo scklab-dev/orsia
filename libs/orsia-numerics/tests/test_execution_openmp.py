@@ -8,6 +8,11 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"),
+    reason="Real OpenMP pinned execution requires Linux CPU affinity",
+)
+
 
 @pytest.fixture(scope="module")
 def openmp_probe(tmp_path_factory: pytest.TempPathFactory) -> Path:

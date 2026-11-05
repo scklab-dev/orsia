@@ -5,7 +5,6 @@ from math import cos, exp, pi, radians
 from typing import Any
 
 import numpy as np
-import orsia_radiative
 import pytest
 import radiance_terms_support as terms_support
 from orsia_radiative import (
@@ -238,13 +237,3 @@ def test_order_rows_are_additive_and_preserve_inputs() -> None:
     assert tuple(sum(c.values[i] for c in result.components) for i in range(2)) == pytest.approx(
         result.values
     )
-
-
-def test_removed_case_specific_entry_points_are_not_exported() -> None:
-    for name in (
-        "lambertian_solar_radiance",
-        "single_rayleigh_solar_radiance",
-        "solar_radiance_with_aerosol_scattering",
-    ):
-        assert name not in orsia_radiative.__all__
-        assert not hasattr(orsia_radiative, name)

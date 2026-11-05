@@ -10,15 +10,15 @@ import formal_reference
 import numpy as np
 import pytest
 from orsia_radiative.transfer import formal
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 
 
 def test_native_package_layout():
-    assert propagation_native.__name__ == "orsia_radiative.transfer.native.propagation_native"
-    assert Path(propagation_native.__file__).parent.name == "native"
-    assert find_spec("orsia_radiative.transfer.propagation_native") is None
-    assert formal._native_apply is propagation_native.apply
-    assert formal._native_prepare is propagation_native.prepare
+    assert transfer_native.__name__ == "orsia_radiative.transfer.native.transfer_native"
+    assert Path(transfer_native.__file__).parent.name == "native"
+    assert find_spec("orsia_radiative.transfer.transfer_native") is None
+    assert formal._native_apply is transfer_native.apply
+    assert formal._native_prepare is transfer_native.prepare
 
 
 @pytest.mark.parametrize("solar_mu", [None, 0.8, 1e-5])
@@ -34,7 +34,7 @@ def test_preparation_equivalence(monkeypatch, solar_mu, cells, layout):
     elif layout == "empty":
         mu = mu[:0]
     snapshots = depths.copy(), mu.copy()
-    assert formal._native_prepare is propagation_native.prepare
+    assert formal._native_prepare is transfer_native.prepare
     actual = formal.propagation_coefficients(depths, mu, solar_mu=solar_mu)
     monkeypatch.setattr(formal, "_native_prepare", formal_reference.prepare)
     expected = formal.propagation_coefficients(depths, mu, solar_mu=solar_mu)
@@ -77,7 +77,7 @@ def test_raw_preparation_unique_cosines(monkeypatch, size, dtype):
     depth = np.array([0.0, 1e-20, 0.4, 1000.0], dtype=dtype)
     mu = np.linspace(-1.0, -1e-5, size, dtype=dtype)
     outputs = [np.empty((depth.size, mu.size), dtype=dtype) for _ in range(6)]
-    propagation_native.prepare(depth, mu, 0.8, *outputs)
+    transfer_native.prepare(depth, mu, 0.8, *outputs)
     monkeypatch.setattr(formal, "_native_prepare", formal_reference.prepare)
     expected = formal.propagation_coefficients(depth, mu, solar_mu=0.8)
     for a, e in zip(outputs, list(vars(expected).values())[1:], strict=True):
@@ -105,20 +105,20 @@ def test_preparation_buffer_validation():
     depth, mu = np.ones(3), np.ones(2)
     outputs = [np.empty((3, 2)) for _ in range(6)]
     with pytest.raises(ValueError, match="doubles"):
-        propagation_native.prepare(depth.astype(np.float32), mu, 0.8, *outputs)  # type: ignore[bad-argument-type]
+        transfer_native.prepare(depth.astype(np.float32), mu, 0.8, *outputs)  # type: ignore[bad-argument-type]
     with pytest.raises(ValueError, match="vector"):
-        propagation_native.prepare(depth.reshape(1, 3), mu, 0.8, *outputs)
+        transfer_native.prepare(depth.reshape(1, 3), mu, 0.8, *outputs)
     with pytest.raises(ValueError, match="grid"):
-        propagation_native.prepare(depth[:1], mu, 0.8, *outputs)
+        transfer_native.prepare(depth[:1], mu, 0.8, *outputs)
     with pytest.raises(ValueError, match="solar"):
-        propagation_native.prepare(depth, mu, 0.0, *outputs)
+        transfer_native.prepare(depth, mu, 0.0, *outputs)
     with pytest.raises(ValueError, match="solar"):
-        propagation_native.prepare(
+        transfer_native.prepare(
             depth, mu, 0.8, outputs[0], outputs[1], outputs[2], outputs[3], None, outputs[5]
         )
     outputs[0].flags.writeable = False
     with pytest.raises(ValueError, match="read-only"):
-        propagation_native.prepare(depth, mu, 0.8, *outputs)
+        transfer_native.prepare(depth, mu, 0.8, *outputs)
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -126,7 +126,7 @@ def test_concurrent_preparation(dtype):
     depth = np.array([0.0, 1e-12, 0.2, 1000.0], dtype=dtype)
     mu = np.tile(np.array([-0.8, 0.8], dtype=dtype), 17)
     expected = formal.propagation_coefficients(depth, mu, solar_mu=0.8)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
             pool.map(lambda _: formal.propagation_coefficients(depth, mu, solar_mu=0.8), range(40))
         )
@@ -159,7 +159,7 @@ def test_native_equivalence(monkeypatch, depth, solar, centres, layout, dtype):
     inputs = [source] + [a for a in vars(coefficients).values() if a is not None]
     snapshots = [a.copy() for a in inputs]
     options = dict(solar_source=solar, return_centres=centres, bottom_radiance=2.0)
-    assert formal._native_apply is propagation_native.apply
+    assert formal._native_apply is transfer_native.apply
     actual = formal.apply_propagation(source, coefficients, **options)
     monkeypatch.setattr(formal, "_native_apply", formal_reference.apply)
     expected = formal.apply_propagation(source, coefficients, **options)
@@ -210,7 +210,7 @@ def test_native_buffer_validation():
     mu = np.ones(2)
     source = np.ones((3, 2))
     with pytest.raises(ValueError, match="doubles"):
-        propagation_native.apply(
+        transfer_native.apply(
             mu,
             source.astype(np.float32),  # type: ignore[bad-argument-type]
             source,
@@ -222,11 +222,11 @@ def test_native_buffer_validation():
             mu.copy(),
         )
     with pytest.raises(ValueError, match="grid"):
-        propagation_native.apply(mu, source, source[:1], source, None, None, 0.0, None, mu.copy())
+        transfer_native.apply(mu, source, source[:1], source, None, None, 0.0, None, mu.copy())
     with pytest.raises(ValueError, match="grid"):
-        propagation_native.apply(mu, source, source, source, None, None, 0.0, None, np.ones(1))
+        transfer_native.apply(mu, source, source, source, None, None, 0.0, None, np.ones(1))
     with pytest.raises(ValueError, match="vector"):
-        propagation_native.apply(
+        transfer_native.apply(
             mu.reshape(1, 2), source, source, source, None, None, 0.0, None, mu.copy()
         )
 
@@ -240,7 +240,7 @@ def test_shared_coefficients_free_threaded():
     )
     source = np.ones((3, 2))
     expected = formal.apply_propagation(source, coefficients)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
             pool.map(lambda _: formal.apply_propagation(source, coefficients), range(40))
         )

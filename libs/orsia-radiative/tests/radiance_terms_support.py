@@ -69,8 +69,8 @@ def reflected_radiance(*args: Any, **kwargs: Any) -> RadianceDecomposition:
     )
 
 
-def schwarzschild_radiance(*args: Any, **kwargs: Any) -> RadianceDecomposition:
-    result = transfer.thermal.schwarzschild_radiance(*args, **kwargs)
+def thermal_radiance(*args: Any, **kwargs: Any) -> RadianceDecomposition:
+    result = transfer.thermal.thermal_radiance(*args, **kwargs)
     terms = transfer.thermal.schwarzschild_terms(*args, **kwargs)
     np.testing.assert_array_equal(sum(terms.values()), result.values)
     return RadianceDecomposition(

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 from orsia_inverse import GaussianEstimate, retrieval_diagnostics, solve_map
+from orsia_uncertainty import factor_covariance
 
 type Vector = NDArray[np.float64]
 
@@ -23,7 +24,7 @@ def test_affine_reference(method: Any, diagonal: bool, with_prior: bool) -> None
         else np.array([[2.0, 0.4, 0.1], [0.4, 3.0, 0.2], [0.1, 0.2, 1.0]])
     )
     sa = np.array([[1.0, 0.2], [0.2, 2.0]])
-    observation_covariance = np.diag(se).copy() if diagonal else se
+    observation_factor = np.diag(se).copy() if diagonal else se
     weights = np.linalg.inv(se)
     precision = k.T @ weights @ k
     rhs = k.T @ weights @ y
@@ -31,9 +32,15 @@ def test_affine_reference(method: Any, diagonal: bool, with_prior: bool) -> None
     if with_prior:
         precision += np.linalg.inv(sa)
         rhs += np.linalg.solve(sa, qa)
-        options = {"prior_mean": qa, "prior_covariance": sa}
+        options = {"prior_mean": qa, "prior_factor": factor_covariance(sa, method="cholesky")}
     expected = np.linalg.solve(precision, rhs)
-    result = _solve(k, y, observation_covariance=observation_covariance, method=method, **options)
+    result = _solve(
+        k,
+        y,
+        observation_factor=factor_covariance(observation_factor, method="cholesky"),
+        method=method,
+        **options,
+    )
     assert result.success and result.status > 0
     np.testing.assert_allclose(result.state, expected, atol=1e-10)
     np.testing.assert_allclose(result.prediction, k @ expected, atol=1e-10)
@@ -117,7 +124,7 @@ def test_affine_coordinate_transform_preserves_physical_solution_and_information
     k = np.array([[1.0, 2.0], [-1.0, 1.0], [2.0, 0.5]])
     y, qa = np.array([1.0, 2.0, -1.0]), np.array([0.4, -0.1])
     sa = np.array([[1.0, 0.2], [0.2, 2.0]])
-    base = _solve(k, y, prior_mean=qa, prior_covariance=sa)
+    base = _solve(k, y, prior_mean=qa, prior_factor=factor_covariance(sa, method="cholesky"))
     offset, d = np.array([0.3, -0.5]), np.diag([0.05, 7.0])
     invd = np.linalg.inv(d)
     transformed = solve_map(
@@ -127,7 +134,7 @@ def test_affine_coordinate_transform_preserves_physical_solution_and_information
         invd @ (-offset),
         **_options(3, 2),
         prior_mean=invd @ (qa - offset),
-        prior_covariance=invd @ sa @ invd,
+        prior_factor=factor_covariance(invd @ sa @ invd, method="cholesky"),
     )
     np.testing.assert_allclose(offset + d @ transformed.state, base.state, atol=1e-10)
     a = retrieval_diagnostics(base, include_gain=True, include_averaging_kernel=True)
@@ -152,7 +159,7 @@ def test_confusion_prior_information_and_underdetermined_states() -> None:
             k,
             np.array([1.0, 2.0]),
             prior_mean=np.zeros(2),
-            prior_covariance=np.full(2, variance),
+            prior_factor=factor_covariance(np.full(2, variance), method="cholesky"),
         )
         diagnosis = retrieval_diagnostics(estimate, include_averaging_kernel=True)
         assert (
@@ -172,7 +179,7 @@ def test_confusion_prior_information_and_underdetermined_states() -> None:
         np.zeros((2, 2)),
         np.ones(2),
         prior_mean=np.array([0.2, 0.3]),
-        prior_covariance=np.ones(2),
+        prior_factor=factor_covariance(np.ones(2), method="cholesky"),
     )
     diagnosis = retrieval_diagnostics(prior_only)
     assert diagnosis.available and diagnosis.measurement_rank == 0
@@ -183,13 +190,20 @@ def test_actual_error_and_signed_bias_transport_with_misspecified_weighting() ->
     k = np.array([[1.0, 0.3], [2.0, -1.0], [0.2, 1.0]])
     y = np.array([1.0, 2.0, 3.0])
     prior = np.ones(2)
-    estimate = _solve(k, y, prior_mean=np.zeros(2), prior_covariance=prior)
+    estimate = _solve(
+        k, y, prior_mean=np.zeros(2), prior_factor=factor_covariance(prior, method="cholesky")
+    )
     diagnostics = retrieval_diagnostics(estimate, include_gain=True)
     assert diagnostics.gain is not None
     actual = np.array([[2.0, 0.3, 0.0], [0.3, 1.0, 0.2], [0.0, 0.2, 1.0]])
     bias = np.array([0.1, -0.2, 0.3])
     transported = diagnostics.gain @ bias
-    shifted = _solve(k, y + bias, prior_mean=np.zeros(2), prior_covariance=prior)
+    shifted = _solve(
+        k,
+        y + bias,
+        prior_mean=np.zeros(2),
+        prior_factor=factor_covariance(prior, method="cholesky"),
+    )
     np.testing.assert_allclose(shifted.state - estimate.state, transported, atol=1e-12)
     propagated = diagnostics.gain @ actual @ diagnostics.gain.T
     draws = np.random.default_rng(307).multivariate_normal(np.zeros(3), actual, size=8000)
@@ -258,7 +272,7 @@ def test_budget_exhaustion_and_snapshot_ownership() -> None:
 def test_nonlinear_gaussian_ensemble_matches_local_posterior_at_small_noise() -> None:
     options = _options(1, 1)
     variance = 1e-4
-    options["observation_covariance"] = np.array([variance])
+    options["observation_factor"] = factor_covariance(np.array([variance]), method="cholesky")
     fun = np.exp
 
     def jac(q: Vector) -> Vector:
@@ -285,7 +299,7 @@ def test_nonlinear_gaussian_ensemble_matches_local_posterior_at_small_noise() ->
     "options, message",
     [
         ({"prior_mean": np.zeros(1)}, "together"),
-        ({"prior_covariance": np.ones(1)}, "together"),
+        ({"prior_factor": factor_covariance(np.ones(1), method="cholesky")}, "together"),
         ({"method": "dogbox"}, "method"),
         ({"ftol": 0.0}, "tolerances"),
         ({"xtol": np.nan}, "tolerances"),
@@ -389,7 +403,7 @@ def test_fun_jac_keywords_counts_cache_and_output_snapshots(method: Any, max_nfe
     np.testing.assert_allclose(result.jacobian, np.diag(np.exp(result.state)))
 
 
-@pytest.mark.parametrize("relative_path", ["README.md", "src/orsia_inverse/README.md"])
+@pytest.mark.parametrize("relative_path", ["README.md", "docs/estimation.md"])
 def test_documented_example(relative_path: str) -> None:
     document = Path(__file__).parents[1] / relative_path
     text = document.read_text()
@@ -402,7 +416,7 @@ def test_documented_example(relative_path: str) -> None:
 
 
 def _options(m: int, n: int) -> dict[str, Any]:
-    return {"observation_covariance": np.ones(m)}
+    return {"observation_factor": factor_covariance(np.ones(m), method="cholesky")}
 
 
 def _solve(k: Vector, y: Vector, **kwargs: Any) -> GaussianEstimate:
@@ -410,3 +424,41 @@ def _solve(k: Vector, y: Vector, **kwargs: Any) -> GaussianEstimate:
     options.update(kwargs)
     initial = options.pop("initial_state", np.zeros(k.shape[1]))
     return solve_map(lambda q: k @ q, lambda q: k, y, initial, **options)
+
+
+def test_retained_factors_reused_for_diagnostics_and_root_invariant_information(monkeypatch):
+    k = np.array([[1.0, 2.0], [2.0, -1.0], [0.5, 1.0]])
+    se = np.array([[2.0, 0.3, 0.1], [0.3, 3.0, 0.2], [0.1, 0.2, 1.0]])
+    sa = np.array([[4.0, 0.2], [0.2, 5.0]])
+    expected_precision = k.T @ np.linalg.solve(se, k) + np.linalg.inv(sa)
+    for method in ("eigh", "cholesky"):
+        observation = factor_covariance(se, method=method)
+        prior = factor_covariance(sa, method=method)
+        with monkeypatch.context() as patcher:
+
+            def forbidden(*args, **kwargs):
+                raise AssertionError("covariance preparation repeated")
+
+            patcher.setattr(np.linalg, "eigh", forbidden)
+            patcher.setattr(np.linalg, "eigvalsh", forbidden)
+            result = solve_map(
+                lambda q: k @ q,
+                lambda q: k,
+                np.array([1.0, 2.0, 3.0]),
+                np.zeros(2),
+                observation_factor=observation,
+                prior_mean=np.zeros(2),
+                prior_factor=prior,
+            )
+            diagnosis = retrieval_diagnostics(
+                result, include_gain=True, include_averaging_kernel=True
+            )
+        assert result.observation_factor is observation and result.prior_factor is prior
+        assert diagnosis.posterior_covariance is not None
+        assert diagnosis.gain is not None and diagnosis.averaging_kernel is not None
+        np.testing.assert_allclose(
+            diagnosis.posterior_covariance, np.linalg.inv(expected_precision), atol=1e-14
+        )
+        gain = np.linalg.solve(expected_precision, np.linalg.solve(se, k).T)
+        np.testing.assert_allclose(diagnosis.gain, gain, atol=1e-14)
+        np.testing.assert_allclose(diagnosis.averaging_kernel, gain @ k, atol=1e-14)

@@ -6,9 +6,8 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
+from orsia_uncertainty import CovarianceFactor, whiten
 from scipy.optimize import least_squares
-
-from .weighting import covariance_factor, whiten
 
 type Vector = NDArray[np.float64]
 
@@ -31,9 +30,9 @@ class GaussianEstimate:
         prediction: Final model observations (m,) in measurement units.
         residual: Prediction minus observations (m,) in measurement units.
         jacobian: Final (m,n) derivative of prediction with respect to state.
-        observation_covariance: Fixed (m,) variances or (m,m) covariance.
+        observation_factor: Immutable covariance factor in observation order, size m.
         prior_mean: Optional dimensionless prior state (n,).
-        prior_covariance: Optional (n,) variances or (n,n) prior covariance.
+        prior_factor: Optional immutable prior covariance factor, size n.
         lower_bounds: Dimensionless (n,) lower state limits.
         upper_bounds: Dimensionless (n,) upper state limits.
         active_mask: Backend (n,) indicator for active fitted bounds.
@@ -56,9 +55,9 @@ class GaussianEstimate:
     prediction: Vector
     residual: Vector
     jacobian: Vector
-    observation_covariance: Vector
+    observation_factor: CovarianceFactor
     prior_mean: Vector | None
-    prior_covariance: Vector | None
+    prior_factor: CovarianceFactor | None
     lower_bounds: Vector
     upper_bounds: Vector
     active_mask: NDArray[np.int64]
@@ -83,9 +82,9 @@ def solve_map(
     observations: Vector,
     initial_state: Vector,
     *,
-    observation_covariance: Vector,
+    observation_factor: CovarianceFactor,
     prior_mean: Vector | None = None,
-    prior_covariance: Vector | None = None,
+    prior_factor: CovarianceFactor | None = None,
     lower_bounds: Vector | None = None,
     upper_bounds: Vector | None = None,
     method: Literal["trf", "lm"] = "trf",
@@ -99,8 +98,8 @@ def solve_map(
     fun(q) returns model values F(q), not residuals, with shape (m,).
     jac(q) returns only their Jacobian dF/dq with shape (m,n), not a tuple.
     Both take q with shape (n,); inputs/outputs are finite float64 in the
-    supplied observation/state vector orders. Covariances are float64 variance
-    vectors (m,) / (n,) or dense matrices (m,m) / (n,n), not standard deviations.
+    supplied observation/state vector orders. Covariance factors are prepared
+    with orsia_uncertainty.factor_covariance in matching observation/state order.
     They must be positive definite with minimum/maximum eigenvalue ratio >1e-12.
     This function constructs the whitened residuals and prior term internally.
     q, its prior and bounds are dimensionless caller-defined coordinates.
@@ -127,9 +126,9 @@ def solve_map(
         jac: Prediction Jacobian of shape (m,n) for the same state order.
         observations: Finite observed values (m,) in model output units.
         initial_state: Finite dimensionless starting state (n,).
-        observation_covariance: Fixed (m,) variances or (m,m) covariance.
+        observation_factor: Immutable covariance factor in observation order, size m.
         prior_mean: Optional dimensionless prior state, paired with its covariance.
-        prior_covariance: Optional (n,) variances or (n,n) covariance.
+        prior_factor: Optional immutable prior covariance factor, size n.
         lower_bounds: Optional (n,) lower state limits; default is unbounded.
         upper_bounds: Optional (n,) upper state limits; default is unbounded.
         method: Trust-region reflective (trf) or Levenberg-Marquardt (lm).
@@ -151,7 +150,7 @@ def solve_map(
     n, m = initial_state.size, observations.size
     _validate_array(observations, (m,), "observations")
     _validate_array(initial_state, (n,), "initial_state")
-    if (prior_mean is None) != (prior_covariance is None):
+    if (prior_mean is None) != (prior_factor is None):
         raise ValueError("prior mean and covariance must be supplied together")
     if method not in ("trf", "lm"):
         raise ValueError("method must be 'trf' or 'lm'")
@@ -171,17 +170,18 @@ def solve_map(
     if method == "lm" and prior_mean is None and m < n:
         raise ValueError("LM requires at least as many augmented residuals as parameters")
     y = np.copy(observations)
-    observation_covariance = np.copy(observation_covariance)
-    observation_factor = covariance_factor(observation_covariance, m, "observation_covariance")
-    prior_factor = np.empty((0, n), dtype=np.float64)
+    if observation_factor.size != m:
+        raise ValueError("observation_factor size must match observations")
+    whiten(observation_factor, np.zeros(m))
+    prior_whitening = np.empty((0, n), dtype=np.float64)
     qa: Vector | None = None
-    if prior_mean is not None and prior_covariance is not None:
+    if prior_mean is not None and prior_factor is not None:
         _validate_array(prior_mean, (n,), "prior_mean")
         qa = np.copy(prior_mean)
-        prior_covariance = np.copy(prior_covariance)
-        factor = covariance_factor(prior_covariance, n, "prior_covariance")
-        prior_factor = whiten(factor, np.eye(n))
-        _validate_array(prior_factor, (n, n), "prior whitening factor")
+        if prior_factor.size != n:
+            raise ValueError("prior_factor size must match state")
+        prior_whitening = whiten(prior_factor, np.eye(n))
+        _validate_array(prior_whitening, (n, n), "prior whitening factor")
 
     cached_state: Vector | None = None
     cached_prediction: Vector | None = None
@@ -212,9 +212,9 @@ def solve_map(
     def residual(q: Vector) -> Vector:
         values, _ = evaluate(q, False)
         measurement = whiten(observation_factor, values - y)
-        prior = prior_factor @ (q - qa) if qa is not None else np.empty(0)
+        prior = prior_whitening @ (q - qa) if qa is not None else np.empty(0)
         result = np.concatenate((measurement, prior))
-        _validate_array(result, (m + prior_factor.shape[0],), "whitened residual")
+        _validate_array(result, (m + prior_whitening.shape[0],), "whitened residual")
         if not np.isfinite(result @ result):
             raise ValueError("residual cost overflow")
         return result
@@ -222,8 +222,8 @@ def solve_map(
     def derivative(q: Vector) -> Vector:
         _, jacobian = evaluate(q, True)
         assert jacobian is not None
-        result = np.vstack((whiten(observation_factor, jacobian), prior_factor))
-        _validate_array(result, (m + prior_factor.shape[0], n), "whitened jacobian")
+        result = np.vstack((whiten(observation_factor, jacobian), prior_whitening))
+        _validate_array(result, (m + prior_whitening.shape[0], n), "whitened jacobian")
         return result
 
     fitted = least_squares(
@@ -249,9 +249,9 @@ def solve_map(
         prediction=prediction,
         residual=np.copy(prediction - y),
         jacobian=jacobian,
-        observation_covariance=observation_covariance,
+        observation_factor=observation_factor,
         prior_mean=qa,
-        prior_covariance=prior_covariance,
+        prior_factor=prior_factor,
         lower_bounds=lower,
         upper_bounds=upper,
         active_mask=active_mask,

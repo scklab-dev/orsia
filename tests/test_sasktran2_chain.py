@@ -5,7 +5,8 @@ import sys
 import numpy as np
 from numpy.typing import NDArray
 from orsia_instruments import (
-    DetectorMaps,
+    DetectorProperties,
+    GaussianPSF,
     exposure_sequence,
     filter_imager,
     regular_pixel_bounds,
@@ -26,6 +27,7 @@ from orsia_radiative import (
     transfer,
     wavenumber_grid,
 )
+from orsia_uncertainty import factor_covariance
 
 
 def test_charge_linear_scaling():
@@ -84,7 +86,7 @@ def test_analytic_radiance_instrument_inverse_closure():
             lambda state: model[:, None],
             observation,
             np.array([initial]),
-            observation_covariance=np.ones(observation.size),
+            observation_factor=factor_covariance(np.ones(observation.size), method="cholesky"),
         )
         assert estimate.success
         np.testing.assert_allclose(estimate.state, [1.0], rtol=0, atol=1e-7)
@@ -108,7 +110,7 @@ def _charge(
         optics=filter_imager(
             focal_length_m=0.02,
             collecting_area_m2=1e-8,
-            psf_sigma_m=30e-6,
+            spatial=GaussianPSF(30e-6),
             filter=lambda wavelength: np.ones_like(wavelength),
             throughput=0.8,
         ),
@@ -117,6 +119,17 @@ def _charge(
             duration_s=0.01,
             direction_bounds_uv=(-0.004, 0.004, -0.004, 0.004),
         ),
-        detector=DetectorMaps(quantum_efficiency=0.7),
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=30e-6, active_size_m=28e-6),
+            pitch_m=None,
+            quantum_efficiency=0.7,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
         angular_order=order,
     ).photoelectrons.ravel()

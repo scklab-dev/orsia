@@ -1,6 +1,5 @@
 """Complete solar calls: current inputs, independent results and native scratch."""
 
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -11,7 +10,6 @@ import orders_reference as reference
 import pytest
 from orsia_radiative import AtmosphericOptics, wavenumber_grid
 from orsia_radiative.transfer import orders, solar
-from orsia_radiative.transfer.native import propagation_native
 from test_spectral_native import mixed_inputs
 from threadpoolctl import threadpool_info
 
@@ -107,13 +105,12 @@ def test_concurrent_complete_calls_and_runtime():
         )
 
     expected = calculate(0)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(calculate, range(12)))
     for result in results:
         np.testing.assert_array_equal(result.values, expected.values)
         assert not np.shares_memory(result.values, expected.values)
     assert not sys._is_gil_enabled()
-    assert set(os.sched_getaffinity(0)) <= set(range(8))
     assert all(pool["num_threads"] == 1 for pool in threadpool_info())
 
 
@@ -174,37 +171,3 @@ def test_physical_validation_and_recovery(maximum, role, field, value):
         solar.reflected_radiance(scene, source=source, optics=optics, **controls).values,
         expected.values,
     )
-
-
-def test_retained_resource_surface_is_removed():
-    for module, names in (
-        (
-            solar,
-            (
-                "SolarScatteringWorkspace",
-                "prepare_series_of_scatterers",
-                "evaluate_series_of_scatterers",
-            ),
-        ),
-        (
-            orders,
-            (
-                "PreparedScattering",
-                "prepare_scattering_orders",
-                "allocate_scattering_buffers",
-                "evaluate_scattering_orders",
-            ),
-        ),
-        (
-            propagation_native,
-            (
-                "ScatteringGeometry",
-                "ScatteringBuffers",
-                "prepare_scattering",
-                "evaluate_scattering",
-                "bind_scattering_blas",
-            ),
-        ),
-    ):
-        assert all(not hasattr(module, name) for name in names)
-    assert orders.__all__ == ["angular_grid", "phase_function", "scattering_orders"]

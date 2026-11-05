@@ -95,10 +95,6 @@ def change_gas(scene: RadiativeScene, factor: float, species: str = "X") -> Radi
 def test_transfer_exposes_complete_solar_boundary() -> None:
     assert transfer.__all__ == ["solar", "thermal"]
     assert transfer.solar.__all__ == ["reflected_radiance"]
-    assert not hasattr(transfer.solar, "scattering_orders")
-    assert not hasattr(transfer.solar, "allocate_solar_buffers")
-    for removed in ("direct_beam", "single_scattering", "single_scattering_terms"):
-        assert not hasattr(transfer.solar, removed)
     assert importlib.import_module("orsia_radiative.transfer") is transfer
     assert importlib.import_module("orsia_radiative.transfer.solar") is transfer.solar
     for name in transfer.solar.__all__:
@@ -106,7 +102,6 @@ def test_transfer_exposes_complete_solar_boundary() -> None:
         parameters = inspect.signature(function).parameters
         for required in ("scene", "source", "optics"):
             assert parameters[required].default is inspect.Parameter.empty
-        assert "surface_coupling" not in parameters
         assert (
             not {"sources", "absorption", "rayleigh", "aerosol", "scattering"} & parameters.keys()
         )
@@ -114,10 +109,7 @@ def test_transfer_exposes_complete_solar_boundary() -> None:
     evaluation = inspect.signature(transfer.solar.reflected_radiance).parameters
     assert evaluation["source"].kind is inspect.Parameter.KEYWORD_ONLY
     assert evaluation["optics"].kind is inspect.Parameter.KEYWORD_ONLY
-    for name in ("ScatteringComponent", "update_optical_inputs", "CollimatedSource", "solar_sos"):
-        assert not hasattr(orsia_radiative, name)
     assert importlib.import_module("orsia_radiative.transfer.thermal") is transfer.thermal
-    assert importlib.util.find_spec("orsia_radiative.sos") is None
 
 
 @pytest.mark.parametrize("max_order", [0, 1, 2])

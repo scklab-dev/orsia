@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 from orsia_uncertainty import (
+    factor_covariance,
     propagate_bias,
     propagate_covariance,
     sample_gaussian,
@@ -100,7 +101,7 @@ def native_difference(
         ValueError: Physical read or source identities differ between evaluations.
     """
     for name in ("sample_ids", "pixel_ids", "setting_ids", "port_ids"):
-        if getattr(nominal.acquisition, name) != getattr(perturbed.acquisition, name):
+        if getattr(nominal.reads, name) != getattr(perturbed.reads, name):
             raise ValueError("perturbations must preserve physical-read identities")
     if nominal.contributions.keys() != perturbed.contributions.keys():
         raise ValueError("perturbations must preserve source identities")
@@ -211,7 +212,7 @@ def native_tolerance_budget(
     Raises:
         ValueError: Named axes, derivatives or supplied covariances are invalid.
     """
-    n, p = len(nominal.acquisition.sample_ids), len(parameter_names)
+    n, p = len(nominal.reads.sample_ids), len(parameter_names)
     matrix = jacobian
     noise = detector_covariance_e2
     if (
@@ -231,7 +232,7 @@ def native_tolerance_budget(
     bias = propagate_bias(parameter_bias, matrix)
     instrumental = propagate_covariance(parameter_covariance, matrix)
     return NativeSignalBudget(
-        nominal.acquisition.sample_ids, parameter_names, matrix, bias, instrumental, detector
+        nominal.reads.sample_ids, parameter_names, matrix, bias, instrumental, detector
     )
 
 
@@ -276,10 +277,13 @@ def monte_carlo_native(
     ):
         raise ValueError("Monte Carlo needs >=2 draws and matching parameter dimensions")
     nominal = evaluate(parameters)
-    draws = sample_gaussian(parameter_covariance, rng, count) + parameter_bias
+    draws = (
+        sample_gaussian(factor_covariance(parameter_covariance, method="eigh"), rng, count)
+        + parameter_bias
+    )
     keys = tuple(parameters)
     values = np.array(tuple(parameters.values()), dtype=np.float64)
-    outputs = np.empty((count, len(nominal.acquisition.sample_ids)))
+    outputs = np.empty((count, len(nominal.reads.sample_ids)))
     for i, draw in enumerate(draws):
         trial = evaluate(dict(zip(keys, values + draw, strict=True)))
         outputs[i] = native_difference(nominal, trial)
@@ -312,7 +316,7 @@ def analogue_dn_budget(
             charge/analogue DN reaches a saturation or clipping threshold.
     """
     if electron_budget.unit != "electron" or electron_budget.sample_ids != (
-        nominal.acquisition.sample_ids
+        nominal.reads.sample_ids
     ):
         raise ValueError("electron budget and nominal physical reads must agree")
     if isinstance(electronics, DetectorOperatingPoints) and np.any(electronics.nonlinearity):
@@ -383,20 +387,21 @@ def monte_carlo_dn(
     ):
         raise ValueError("DN sampling needs draws and matching parameter dimensions")
     nominal = evaluate(parameters)
-    draws = sample_gaussian(parameter_covariance, rng, count) + parameter_bias
+    draws = (
+        sample_gaussian(factor_covariance(parameter_covariance, method="eigh"), rng, count)
+        + parameter_bias
+    )
     keys = tuple(parameters)
     values = np.array(tuple(parameters.values()), dtype=np.float64)
-    shape = (count, len(nominal.acquisition.sample_ids))
+    shape = (count, len(nominal.reads.sample_ids))
     dn = np.empty(shape, dtype=np.int64)
     well = np.empty(shape, dtype=np.bool_)
     adc = np.empty(shape, dtype=np.bool_)
     for i, draw in enumerate(draws):
         trial = evaluate(dict(zip(keys, values + draw, strict=True)))
         native_difference(nominal, trial)
-        if not np.array_equal(
-            nominal.acquisition.exposure_bounds_s, trial.acquisition.exposure_bounds_s
-        ):
+        if not np.array_equal(nominal.reads.exposure_bounds_s, trial.reads.exposure_bounds_s):
             raise ValueError("physical exposure intervals must match for DN sampling")
         result = sample_readout(trial, electronics, rng)
         dn[i], well[i], adc[i] = result.dn[0], result.full_well_saturated[0], result.adc_clipped[0]
-    return DetectorReadings(nominal.acquisition, dn, well, adc)
+    return DetectorReadings(nominal.reads, dn, well, adc)

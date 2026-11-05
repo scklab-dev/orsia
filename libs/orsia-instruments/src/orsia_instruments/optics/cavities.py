@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..quadrature import validate_quadrature_order
-from .psfs import PointSpreadFunction
+from .psfs import SpatialDensity
 from .response import (
     ImagingOptics,
     SpectralParameter,
@@ -119,13 +119,7 @@ def cavity_imager(
     *,
     focal_length_m: float,
     collecting_area_m2: float,
-    psf_sigma_m: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None = None,
-    psf: PointSpreadFunction | None = None,
+    spatial: SpatialDensity,
     spacing_m: float
     | np.floating
     | np.integer
@@ -146,7 +140,7 @@ def cavity_imager(
     PSF selection and callback coordinates follow filter_imager.
     Explicit order transmission is a constant or wavelength-only callable, such
     as a function evaluating tabulated_transmission against a fixed table. The
-    callable's result may broadcast to the requested wavelength vector (legacy contract).
+    callable's result may broadcast to the requested wavelength vector.
     Index (>0), reflectivity ([0,1)) and coating phase (finite radians) also accept
     wavelength-only functions, returning the wavelength vector's exact shape. The optional
     spacing_offset_m(x_m,y_m) adds a finite scalar detector-plane thickness to
@@ -160,8 +154,7 @@ def cavity_imager(
     Args:
         focal_length_m: Imager focal length in metres.
         collecting_area_m2: Entrance collecting area in square metres.
-        psf_sigma_m: Gaussian width in metres, scalar or (x, y), for analytic pixels.
-        psf: Alternative borrowed spatial intensity-density callback.
+        spatial: Declared Gaussian, prepared tabulated density or pure spatial callback.
         spacing_m: Positive cavity spacing in metres, scalar or per exposure.
         order_transmission: Bounded constant or wavelength-only order selection.
         refractive_index: Positive constant or wavelength-only cavity index.
@@ -211,11 +204,10 @@ def cavity_imager(
     return imaging_optics(
         focal_length_m,
         collecting_area_m2,
-        psf_sigma_m,
+        spatial,
         throughput,
         law,
         {"spacing_m": spacing},
-        psf=psf,
-        spatial=spacing_offset_m is not None,
+        spatial_transmission=spacing_offset_m is not None,
         pixel_order=pixel_order,
     )

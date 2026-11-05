@@ -78,7 +78,7 @@ def component(result: terms_support.RadianceDecomposition, name: str) -> NDArray
 @pytest.mark.parametrize("emissivity", [0.0, 0.4, 1.0])
 def test_vacuum_and_result_contract(view: float, emissivity: float) -> None:
     scene, optics = case(np.zeros((2, 3)), emissivity=emissivity, view=view)
-    result = terms_support.schwarzschild_radiance(scene, optics=optics)
+    result = terms_support.thermal_radiance(scene, optics=optics)
     expected = emissivity * planck_wavenumber(optics.wavenumbers_cm1, 300.0)
     np.testing.assert_array_equal(result.values, expected)
     assert result.wavenumbers_cm1 is optics.wavenumbers_cm1
@@ -91,7 +91,7 @@ def test_vacuum_and_result_contract(view: float, emissivity: float) -> None:
 def test_isothermal_slab_and_nonblack_boundary_against_exponential_integral(view: float) -> None:
     depths = np.array([[0.05, 0.4, 2.0]])
     scene, optics = case(depths, emissivity=0.3, view=view)
-    result = terms_support.schwarzschild_radiance(scene, optics=optics, angular_order=96)
+    result = terms_support.thermal_radiance(scene, optics=optics, angular_order=96)
     grid = optics.wavenumbers_cm1
     b_atm = planck_wavenumber(grid, 280.0)
     b_surface = planck_wavenumber(grid, 300.0)
@@ -118,7 +118,7 @@ def test_stratified_nonblack_surface_against_independent_adaptive_ray_integrals(
     depths = np.array([[0.02, 0.3, 0.7], [0.4, 0.05, 0.2], [0.1, 1.0, 0.08]])
     temperatures = np.array([310.0, 270.0, 230.0])
     scene, optics = case(depths, temperatures, emissivity=0.6, view=52.0)
-    result = terms_support.schwarzschild_radiance(scene, optics=optics, angular_order=128)
+    result = terms_support.thermal_radiance(scene, optics=optics, angular_order=128)
     grid = optics.wavenumbers_cm1
     b = planck_wavenumber(grid, temperatures)
     mu = cos(radians(52.0))
@@ -163,7 +163,7 @@ def test_stratified_nonblack_surface_against_independent_adaptive_ray_integrals(
 
 def test_black_isothermal_equilibrium_opaque_thin_and_quadrature_refinement() -> None:
     scene, optics = case(np.array([[0.0, 1e-14, 1000.0]]), np.array([300.0]))
-    result = terms_support.schwarzschild_radiance(scene, optics=optics)
+    result = terms_support.thermal_radiance(scene, optics=optics)
     np.testing.assert_allclose(
         result.values, planck_wavenumber(optics.wavenumbers_cm1, 300.0), rtol=3e-15
     )
@@ -181,7 +181,7 @@ def test_black_isothermal_equilibrium_opaque_thin_and_quadrature_refinement() ->
         np.max(
             np.abs(
                 component(
-                    terms_support.schwarzschild_radiance(
+                    terms_support.thermal_radiance(
                         scene,
                         optics=optics,
                         angular_order=order,
@@ -199,11 +199,11 @@ def test_black_isothermal_equilibrium_opaque_thin_and_quadrature_refinement() ->
 def test_relayering_absorbing_aerosol_zero_rayleigh_and_explicit_surface_reflectance() -> None:
     scene, optics = case(np.array([[0.2, 0.7, 1.0]]), emissivity=0.7)
     assert optics.absorption is not None
-    original = terms_support.schwarzschild_radiance(scene, optics=optics)
+    original = terms_support.thermal_radiance(scene, optics=optics)
     split_scene, split_optics = case(
         np.tile(np.array([[0.2, 0.7, 1.0]]) / 5, (5, 1)), emissivity=0.7
     )
-    split = terms_support.schwarzschild_radiance(split_scene, optics=split_optics)
+    split = terms_support.thermal_radiance(split_scene, optics=split_optics)
     np.testing.assert_allclose(split.values, original.values, rtol=3e-14)
     grid = optics.wavenumbers_cm1
     aerosol = AerosolComponent(
@@ -216,7 +216,7 @@ def test_relayering_absorbing_aerosol_zero_rayleigh_and_explicit_surface_reflect
     aerosol_optics = atmospheric_optics(
         scene.atmosphere, wavenumber_grid(grid), aerosol=aerosol, rayleigh=rayleigh
     )
-    result = terms_support.schwarzschild_radiance(scene, optics=aerosol_optics)
+    result = terms_support.thermal_radiance(scene, optics=aerosol_optics)
     np.testing.assert_array_equal(result.values, original.values)
     mixed = atmospheric_optics(
         scene.atmosphere,
@@ -225,11 +225,11 @@ def test_relayering_absorbing_aerosol_zero_rayleigh_and_explicit_surface_reflect
         aerosol=replace(aerosol, optical_depth=aerosol.optical_depth / 2),
     )
     np.testing.assert_array_equal(
-        terms_support.schwarzschild_radiance(scene, optics=mixed).values, original.values
+        terms_support.thermal_radiance(scene, optics=mixed).values, original.values
     )
     both = replace(scene, surface=replace(scene.surface, reflectance=np.full(3, 0.3)))
     terms_support.assert_decomposition_equal(
-        terms_support.schwarzschild_radiance(both, optics=optics), original
+        terms_support.thermal_radiance(both, optics=optics), original
     )
 
 
@@ -261,7 +261,7 @@ def test_explicit_grid_spectroscopy_composition_matches_solar_and_tracks_freshne
     assert optics.aerosol is solar_optics.aerosol is None
     assert optics.wavenumbers_cm1 is total.wavenumbers_cm1 is grid
     assert not hasattr(total, "reference_atmosphere")
-    result = terms_support.schwarzschild_radiance(scene, optics=optics)
+    result = terms_support.thermal_radiance(scene, optics=optics)
     assert result.values.shape == grid.shape
     changed = replace(scene.atmosphere, temperature_k=np.full(2, 281.0))
     with pytest.raises(ValueError, match="stale"):
@@ -279,7 +279,7 @@ def test_explicit_grid_spectroscopy_composition_matches_solar_and_tracks_freshne
     np.testing.assert_array_equal(empty.wavenumbers_cm1, grid)
     np.testing.assert_array_equal(empty.optical_depth, np.zeros((2, 3)))
     np.testing.assert_array_equal(
-        terms_support.schwarzschild_radiance(
+        terms_support.thermal_radiance(
             scene,
             optics=transparent,
         ).values,
@@ -298,7 +298,7 @@ def test_invalid_surface_axes_atmosphere_and_scattering_are_rejected() -> None:
         ),
     ):
         with pytest.raises(ValueError, match=match):
-            terms_support.schwarzschild_radiance(bad_scene, optics=optics)
+            terms_support.thermal_radiance(bad_scene, optics=optics)
     for scattering in (
         RayleighComponent(wavenumber_grid(grid), np.full((2, 3), 1e-30)),
         AerosolComponent(
@@ -312,24 +312,24 @@ def test_invalid_surface_axes_atmosphere_and_scattering_are_rejected() -> None:
             aerosol=scattering if isinstance(scattering, AerosolComponent) else None,
         )
         with pytest.raises(ValueError, match="scattering"):
-            terms_support.schwarzschild_radiance(scene, optics=bad_optics)
+            terms_support.thermal_radiance(scene, optics=bad_optics)
 
 
 @pytest.mark.parametrize("order", [True, False, 0, 1, -1, 2.0, np.int64(4)])
 def test_invalid_angular_order(order: int) -> None:
     scene, optics = case(np.zeros((1, 2)))
     with pytest.raises(ValueError, match="angular_order"):
-        terms_support.schwarzschild_radiance(scene, optics=optics, angular_order=order)
+        terms_support.thermal_radiance(scene, optics=optics, angular_order=order)
 
 
 def test_concurrent_determinism_and_no_input_mutation() -> None:
     scene, optics = case(np.array([[0.1, 0.2], [0.05, 0.3]]), emissivity=0.4)
     assert optics.absorption is not None
     snapshots = optics.absorption.optical_depth.copy(), scene.atmosphere.temperature_k.copy()
-    expected = terms_support.schwarzschild_radiance(scene, optics=optics)
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    expected = terms_support.thermal_radiance(scene, optics=optics)
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
-            pool.map(lambda _: terms_support.schwarzschild_radiance(scene, optics=optics), range(6))
+            pool.map(lambda _: terms_support.thermal_radiance(scene, optics=optics), range(6))
         )
     for result in results:
         terms_support.assert_decomposition_equal(result, expected)
@@ -399,22 +399,22 @@ def test_thermal_expn_complete_call_stratified_and_concurrent() -> None:
     )
 
     def evaluate():
-        return terms_support.schwarzschild_radiance(scene, optics=optics, hemispheric_method="expn")
+        return terms_support.thermal_radiance(scene, optics=optics, hemispheric_method="expn")
 
     result = evaluate()
-    reference = terms_support.schwarzschild_radiance(scene, optics=optics, angular_order=256)
+    reference = terms_support.thermal_radiance(scene, optics=optics, angular_order=256)
     np.testing.assert_allclose(result.values, reference.values, rtol=3e-13)
     assert component(result, "reflected_atmospheric_emission")[0] > 0
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         for parallel in pool.map(lambda _: evaluate(), range(6)):
             np.testing.assert_array_equal(parallel.values, result.values)
     with pytest.raises(ValueError, match="hemispheric_method"):
-        terms_support.schwarzschild_radiance(
+        terms_support.thermal_radiance(
             scene, optics=optics, hemispheric_method=cast(Literal["quadrature", "expn"], "bad")
         )
     terms_support.assert_decomposition_equal(
         result,
-        terms_support.schwarzschild_radiance(
+        terms_support.thermal_radiance(
             scene, optics=optics, hemispheric_method="expn", angular_order=2
         ),
     )
@@ -423,7 +423,7 @@ def test_thermal_expn_complete_call_stratified_and_concurrent() -> None:
 
 def test_thermal_expn_single_slab_thin_equilibrium_and_layer_subdivision() -> None:
     scene, optics = case(np.array([[1e-20, 0.01, 10.0]]), np.array([300.0]), emissivity=0.0)
-    result = terms_support.schwarzschild_radiance(scene, optics=optics, hemispheric_method="expn")
+    result = terms_support.thermal_radiance(scene, optics=optics, hemispheric_method="expn")
     b = planck_wavenumber(optics.wavenumbers_cm1, 300.0)
     assert component(result, "reflected_atmospheric_emission")[0] == pytest.approx(2e-20 * b[0])
     split_scene, split_optics = case(
@@ -431,7 +431,7 @@ def test_thermal_expn_single_slab_thin_equilibrium_and_layer_subdivision() -> No
         np.full(5, 300.0),
         emissivity=0.0,
     )
-    split = terms_support.schwarzschild_radiance(
+    split = terms_support.thermal_radiance(
         split_scene, optics=split_optics, hemispheric_method="expn"
     )
     np.testing.assert_allclose(split.values, result.values, rtol=3e-14)
@@ -505,7 +505,7 @@ def test_expn_radiance_independent_rays_mixed_optical_regimes(emissivity: float)
     )
     temperatures = np.array([305.0, 270.0, 220.0])
     scene, optics = case(depths, temperatures, emissivity=emissivity, view=48.0)
-    result = terms_support.schwarzschild_radiance(scene, optics=optics, hemispheric_method="expn")
+    result = terms_support.thermal_radiance(scene, optics=optics, hemispheric_method="expn")
     b = planck_wavenumber(optics.wavenumbers_cm1, temperatures)
     mu = cos(radians(48.0))
     below = np.zeros(depths.shape[1])

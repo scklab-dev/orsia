@@ -2,13 +2,15 @@
 
 import numpy as np
 from orsia_instruments import (
-    DetectorMaps,
+    DetectorProperties,
+    GaussianPSF,
     combine_image_source_paths,
     exposure_sequence,
     filter_imager,
     image_charge,
     image_photoelectrons,
     image_readout,
+    raster_read_schedule,
     regular_pixel_bounds,
     uniform_radiance_field,
 )
@@ -23,11 +25,17 @@ def test_source_paths_and_detector_only() -> None:
         row_delay_s=0.001,
         direction_bounds_uv=(-0.003, 0.003, -0.003, 0.003),
     )
-    detector = DetectorMaps(
+    detector = DetectorProperties(
+        pixel_bounds_m=pixels,
+        pitch_m=None,
         quantum_efficiency=0,  # Replaced by the explicit spectral QE, never multiplied.
         bias_dn=100,
         read_noise_electrons=1,
         dark_electrons_per_s=2,
+        full_well_electrons=1e6,
+        electrons_per_dn=1,
+        nonlinearity=0,
+        adc_bits=16,
     )
 
     def qe(indices, wavelengths_m):
@@ -54,7 +62,7 @@ def test_source_paths_and_detector_only() -> None:
         optics = filter_imager(
             focal_length_m=0.02,
             collecting_area_m2=1e-8,
-            psf_sigma_m=30e-6,
+            spatial=GaussianPSF(30e-6),
             filter=lambda w, transmission=transmission: np.full_like(w, transmission),
         )
         paths.append(
@@ -73,8 +81,15 @@ def test_source_paths_and_detector_only() -> None:
         # Already integrated means; detector QE and exposure remain optical-path properties.
         return image_charge(
             {"external": np.full((2, 2, 3), 4.0)},
-            exposure_bounds_s=exposures.bounds_s,
-            row_delay_s=exposures.row_delay_s,
+            schedule=raster_read_schedule(
+                exposures.bounds_s,
+                (2, 3),
+                row_offsets_s=np.arange(
+                    2,
+                    dtype=np.float64,
+                )
+                * (exposures.row_delay_s),
+            ),
         )
 
     images = image_readout(

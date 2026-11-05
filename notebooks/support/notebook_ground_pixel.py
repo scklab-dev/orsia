@@ -16,6 +16,7 @@ from orsia_instruments import (
     DetectorElectronics,
     DetectorResponse,
     ExpectedElectrons,
+    GaussianPSF,
     LinearTrajectory,
     RadianceField,
     ReadSchedule,
@@ -38,6 +39,7 @@ from orsia_instruments import (
     sample_readout,
     spatial_filter_imager,
 )
+from orsia_inverse.linear import solve_linear
 from orsia_radiative import Radiance, SpectralDomain, SpectralGrid
 from orsia_uncertainty import propagate_covariance
 from scipy.special import ndtr
@@ -321,12 +323,19 @@ def reconstruction(
         basis = np.eye(8)[bins]
         difference = np.concatenate((np.eye(32), -np.eye(32)), axis=1)
         matrix = difference @ physical @ basis
-        weights = np.linalg.pinv(matrix, rcond=1e-10) @ difference
+        estimator = solve_linear(
+            matrix,
+            np.zeros(matrix.shape[0]),
+            covariance=np.ones(matrix.shape[0]),
+            rcond=1e-10,
+            max_bytes=10_000_000,
+        )
+        weights = estimator.gain @ difference
         diagnostics = dict(
             method="balanced-port eight-bin least squares",
             bins_nm=np.linspace(1645, 1655, 9).tolist(),
-            basis_rank=int(np.linalg.matrix_rank(matrix)),
-            condition_number=float(np.linalg.cond(matrix)),
+            basis_rank=estimator.rank,
+            condition_number=estimator.condition,
             rcond=1e-10,
             apodization="unity",
             basis_closure_max=float(np.max(np.abs(weights @ physical @ basis - np.eye(8)))),
@@ -642,7 +651,7 @@ def _optics(layout, read, settings, pixel_order):
     common = dict(
         focal_length_m=settings.focal_length_m,
         collecting_area_m2=np.pi * (settings.diameter_m / 2) ** 2,
-        psf_sigma_m=settings.psf_sigma_m,
+        spatial=GaussianPSF(settings.psf_sigma_m),
         throughput=settings.throughput,
         pixel_order=pixel_order,
     )

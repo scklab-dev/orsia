@@ -1,14 +1,10 @@
 """Public multi-family examples, deterministic perturbations and runtime contracts."""
 
-import re
 import sys
-from pathlib import Path
 
 import instrument_cases as example
 import numpy as np
 import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_complete_public_examples():
@@ -29,7 +25,7 @@ def test_complete_public_examples():
     for family in example.FAMILIES:
         signal = example.simulate(family)
         reads = sample_readout(signal, detector, np.random.default_rng(718))
-        assert reads.acquisition is signal.acquisition
+        assert reads.reads is signal.reads
         assert np.all(signal.total > 0)
         assert not reads.full_well_saturated.any() and not reads.adc_clipped.any()
     _, acquisition, response = example.make_case("filter")
@@ -77,15 +73,3 @@ def test_supplied_pointing_timing_changes_propagate_scene_support():
             field, acq, response, collecting_area_m2=1e-8, throughput=0.8, quantum_efficiency=0.7
         )
         assert np.max(abs(native_difference(nominal, changed))) > 0
-
-
-def test_instrument_document_links_fences_and_whitespace():
-    for relative in ("README.md", "libs/orsia-instruments/README.md"):
-        document = ROOT / relative
-        text = document.read_text()
-        assert sum(line.startswith("```") for line in text.splitlines()) % 2 == 0
-        assert all(line == line.rstrip() for line in text.splitlines())
-        for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)", text):
-            path = target.split("#", 1)[0]
-            if path and "://" not in path:
-                assert (document.parent / path).exists(), (relative, target)

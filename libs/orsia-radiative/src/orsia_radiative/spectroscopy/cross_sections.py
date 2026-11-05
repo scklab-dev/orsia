@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 
 from orsia_radiative.atmosphere import Atmosphere
 from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid, wavenumber_grid
+from orsia_radiative.spectral.interpolation import spectral_interpolation_weights
 from orsia_radiative.spectroscopy.components import AbsorptionComponent, _gas
 
 
@@ -56,33 +57,15 @@ def cross_sections(
     sampling = wavenumber_grid(wavenumbers_cm1)
     wavenumbers_cm1 = sampling.points
     grid = wavenumbers_cm1
-    source_grid = inputs.wavenumbers_cm1
-    if not np.all((grid >= source_grid[0]) & (grid <= source_grid[-1])):
-        raise ValueError("spectral extrapolation is not supported")
-    # Compute the target-grid interpolation plan once and reuse it for every layer.
-    left_indices = np.minimum(
-        np.searchsorted(source_grid, grid, side="right") - 1, source_grid.size - 2
+    left_indices, right_indices, left_weights, fractions = spectral_interpolation_weights(
+        inputs.grid, sampling
     )
-    widths = source_grid[left_indices + 1] - source_grid[left_indices]
-    fractions = (grid - source_grid[left_indices]) / widths
-    left_weights = (source_grid[left_indices + 1] - grid) / widths
-    if inputs.grid.domain is not None:
-        if not inputs.grid.domain.contains(grid):
-            raise ValueError("cross-section target outside declared spectral support")
-        lower_bounds = np.array([low for low, _ in inputs.grid.domain.intervals])
-        intervals = np.searchsorted(lower_bounds, source_grid, side="right") - 1
-        if np.any(
-            (fractions > 0)
-            & (fractions < 1)
-            & (intervals[left_indices] != intervals[left_indices + 1])
-        ):
-            raise ValueError("cross-section interpolation crosses a declared spectral gap")
     rows = np.empty((inputs.temperature_k.size, grid.size), dtype=np.float64)
     for row, source_values in zip(rows, inputs.cross_sections_m2_per_molecule, strict=True):
         # Nonnegative weighted terms avoid cancellation across large dynamic
         # ranges; exact nodes have weights 0/1 and preserve the tabulated value.
         row[:] = (
-            left_weights * source_values[left_indices] + fractions * source_values[left_indices + 1]
+            left_weights * source_values[left_indices] + fractions * source_values[right_indices]
         )
     return PreparedCrossSections(inputs, sampling, rows)
 

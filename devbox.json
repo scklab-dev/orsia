@@ -5,15 +5,22 @@
     "just":          "1.57.0",
     "ripgrep":       "15.2.0",
     "uv":            "0.11.28",
+    "rustup":        "1.28.2",
     "gfortran":      "15.2.0",
     "netcdffortran": "4.4.5",
     "eccodes":       "2.48.0"
   },
   "env": {
     "UV_PYTHON_PREFERENCE": "only-managed",
-    "CXXFLAGS":             "-mtls-dialect=gnu",
     "OMP_NUM_THREADS":      "1",
     "OPENBLAS_NUM_THREADS": "1",
-    "MKL_NUM_THREADS":      "1"
+    "MKL_NUM_THREADS":      "1",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  },
+  "shell": {
+    "init_hook": [
+      "export RUSTUP_HOME=\"$DEVBOX_PROJECT_ROOT/.devbox/rustup\" CARGO_HOME=\"$DEVBOX_PROJECT_ROOT/.devbox/cargo\" RUSTUP_TOOLCHAIN=nightly-2025-10-24",
+      "if [ \"$(uname -s)\" = Linux ] && [ \"$(uname -m)\" = x86_64 ]; then export CXXFLAGS=\"${CXXFLAGS:+$CXXFLAGS }-mtls-dialect=gnu\"; fi"
+    ]
   }
 }

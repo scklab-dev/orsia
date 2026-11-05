@@ -11,7 +11,9 @@ from orsia_radiative.atmosphere.layers import (
     pressure_level_layer_means,
     remap_layer_columns,
 )
+from orsia_radiative.bands import RadianceCube, SpectralBand, spectral_band
 from orsia_radiative.geometry import ObservationGeometry
+from orsia_radiative.irradiance import SpectralIrradiance
 from orsia_radiative.optics.absorption import (
     Absorption,
     compose_absorption,
@@ -31,10 +33,12 @@ from orsia_radiative.optics.scattering import (
     RayleighComponent,
     ScatteringProperties,
     aerosol_component,
+    angstrom_optical_depth,
     rayleigh_component,
+    rayleigh_from_air_columns,
 )
 from orsia_radiative.profiles import LayerProfileBasis, evaluate_profile
-from orsia_radiative.radiance import Radiance, SpectralIrradiance
+from orsia_radiative.radiance import Radiance
 from orsia_radiative.radiometry import scale_spectral_irradiance
 from orsia_radiative.scene import RadiativeScene
 from orsia_radiative.solar.source import SolarSource, solar_irradiance, solar_source
@@ -73,11 +77,29 @@ from orsia_radiative.spectroscopy.line_tables import (
     line_set,
 )
 from orsia_radiative.spectroscopy.lines import Line, LineSet, line_absorption
+from orsia_radiative.spectroscopy.measurements import (
+    CrossSectionMeasurements,
+    CrossSectionSpectrum,
+    CrossSectionTemperatures,
+    interpolate_cross_section_measurements,
+    measurement_absorption,
+)
+from orsia_radiative.spectroscopy.references import LineSpectroscopy, evaluate_line_absorption
 from orsia_radiative.surface import SurfaceState
 
 from . import transfer
 
 __all__ = [
+    "LineSpectroscopy",
+    "evaluate_line_absorption",
+    "CrossSectionSpectrum",
+    "CrossSectionMeasurements",
+    "CrossSectionTemperatures",
+    "measurement_absorption",
+    "interpolate_cross_section_measurements",
+    "RadianceCube",
+    "SpectralBand",
+    "spectral_band",
     "gas_columns_from_fraction",
     "geometric_height",
     "hydrostatic_atmosphere",
@@ -114,6 +136,7 @@ __all__ = [
     "SurfaceState",
     "WaterContinuumReference",
     "aerosol_component",
+    "angstrom_optical_depth",
     "compose_absorption",
     "compose_absorption_on_grid",
     "compose_atmospheric_optics",
@@ -129,6 +152,7 @@ __all__ = [
     "solar_irradiance",
     "cross_sections",
     "rayleigh_component",
+    "rayleigh_from_air_columns",
     "rayleigh_phase",
     "reverse_spectral_points",
     "scale_spectral_irradiance",

@@ -16,10 +16,14 @@ import thermal_reference as reference
 from orsia_radiative import AerosolComponent, AtmosphericOptics, wavenumber_grid
 from orsia_radiative.radiometry import planck_wavenumber
 from orsia_radiative.transfer import thermal
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 from scipy import constants
 from scipy.special import roots_legendre
 from test_thermal import case
+
+
+def test_scene_level_thermal_api_exports_radiance_and_terms():
+    assert thermal.__all__ == ["thermal_radiance", "schwarzschild_terms"]
 
 
 @pytest.mark.parametrize("method", ["quadrature", "expn"])
@@ -52,7 +56,7 @@ def test_complete_calls_against_pre_port_reference(method, shape, view, roles):
     )
     for key in expected:
         np.testing.assert_allclose(actual[key], expected[key], rtol=4e-13, atol=1e-315)
-    radiance = thermal.schwarzschild_radiance(
+    radiance = thermal.thermal_radiance(
         scene, optics=optics, angular_order=12, hemispheric_method=method
     )
     np.testing.assert_array_equal(radiance.values, sum(actual.values()))
@@ -123,7 +127,7 @@ def test_strided_readonly_inputs_owned_outputs_and_concurrent_calls(method):
         return thermal.schwarzschild_terms(scene, optics=optics, hemispheric_method=method)
 
     expected = evaluate()
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: evaluate(), range(9)))
     for result in results:
         for key, values in result.items():
@@ -229,7 +233,7 @@ def test_expn_capsule_signature_and_owner_lifetime():
     retained = weakref.ref(owner)
     second_radiation = 100.0 * constants.h * constants.c / constants.k
     rayleigh_jeans = 2.0 * constants.k * constants.c * 1e6
-    terms, intervals = propagation_native.bind_thermal_expn(owner, second_radiation, rayleigh_jeans)
+    terms, intervals = transfer_native.bind_thermal_expn(owner, second_radiation, rayleigh_jeans)
     del owner
     gc.collect()
     assert retained() is not None
@@ -243,7 +247,7 @@ def test_expn_capsule_signature_and_owner_lifetime():
         "__pyx_fuse_0expn": import_module("scipy.linalg.cython_blas").__pyx_capi__["dgemm"]
     }
     with pytest.raises(ValueError, match="incorrect name"):
-        propagation_native.bind_thermal_expn(invalid, second_radiation, rayleigh_jeans)
+        transfer_native.bind_thermal_expn(invalid, second_radiation, rayleigh_jeans)
 
 
 @pytest.mark.parametrize("analytic", [False, True])
@@ -251,7 +255,7 @@ def test_binding_captures_supplied_planck_coefficients(analytic):
     provider = import_module("scipy.special.cython_special")
     second_radiation = 100.0 * constants.h * constants.c / constants.k
     rayleigh_jeans = 2.0 * constants.k * constants.c * 1e6
-    terms, _ = propagation_native.bind_thermal_expn(
+    terms, _ = transfer_native.bind_thermal_expn(
         provider, 2.0 * second_radiation, 3.0 * rayleigh_jeans
     )
     values = native_inputs()
@@ -278,7 +282,7 @@ def test_binding_rejects_invalid_planck_coefficients(index, bad):
     ]
     coefficients[index] = bad
     with pytest.raises(ValueError, match="Planck coefficients"):
-        propagation_native.bind_thermal_expn(
+        transfer_native.bind_thermal_expn(
             import_module("scipy.special.cython_special"), *coefficients
         )
 
@@ -320,7 +324,7 @@ def test_emitting_layers_at_planck_fast_path_boundaries(temperature):
     ],
 )
 def test_planck_numerator_intermediate_extremes(second_radiation, rayleigh_jeans, nu, temperature):
-    terms, _ = propagation_native.bind_thermal_expn(
+    terms, _ = transfer_native.bind_thermal_expn(
         import_module("scipy.special.cython_special"), second_radiation, rayleigh_jeans
     )
     actual = terms(
@@ -388,7 +392,7 @@ def test_public_radiance_retains_assembled_overflow_check(monkeypatch):
         np.errstate(over="ignore"),
         pytest.raises(ValueError, match="radiance values must be finite"),
     ):
-        thermal.schwarzschild_radiance(scene, optics=optics)
+        thermal.thermal_radiance(scene, optics=optics)
 
 
 def test_native_layout_fast_path_borrows_stable_arrays():

@@ -1,4 +1,4 @@
-"""Offline service composition, bounded token refresh and compatibility imports."""
+"""Offline service composition, bounded token refresh and named-service composition."""
 
 import io
 import json
@@ -207,28 +207,3 @@ def test_earthdata_supplier_client_and_trust(monkeypatch, tmp_path):
         static.__enter__()
     with pytest.raises(ValueError):
         EarthdataAuth("bad token").get_token()
-
-
-def test_compatibility_imports_are_same_operations():
-    import orsia_data as public
-    from orsia_data import acquisition, providers, terrain
-    from orsia_data.atmosphere import providers as atmospheric
-    from orsia_data.services import ads, cds, copernicus_dem, hitran, lisird, nomads
-    from orsia_data.services.cdse import odata
-    from orsia_data.services.earthdata import cmr
-    from orsia_data.solar.lisird import fetch_solar_spectrum
-    from orsia_data.spectroscopy.hitran import fetch_hitran_lines
-
-    assert public.download_cdse is providers.download_cdse is odata.download_cdse
-    assert public.search_earthdata is providers.search_earthdata is cmr.search_earthdata
-    assert public.retrieve_file is providers.retrieve_file is acquisition.retrieve_file
-    assert public.download_cams is atmospheric.download_cams is ads.download_cams
-    assert public.download_era5 is atmospheric.download_era5 is cds.download_era5
-    assert public.download_gfs is atmospheric.download_gfs is nomads.download_gfs
-    assert (
-        public.download_copernicus_dem
-        is terrain.download_copernicus_dem
-        is copernicus_dem.download_copernicus_dem
-    )
-    assert fetch_solar_spectrum is public.fetch_solar_spectrum is lisird.fetch_solar_spectrum
-    assert fetch_hitran_lines is public.fetch_hitran_lines is hitran.fetch_hitran_lines

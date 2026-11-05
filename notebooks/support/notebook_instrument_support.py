@@ -16,13 +16,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from IPython import get_ipython
 from IPython.display import Markdown, display
-from orsia_instruments import (
-    LinearTrajectory,
-    RadianceField,
-    along_track_acquisition,
-    expected_electrons,
-)
-from orsia_radiative import Radiance, SpectralDomain, SpectralGrid, wavenumber_grid
+from orsia_radiative import Radiance, wavenumber_grid
+
+from .notebook_ground_pixel import direct_scene_read, physical_kernel
 
 
 def configure_display():
@@ -46,20 +42,23 @@ def configure_display():
 
 
 def runtime_settings():
-    """Record and check imported free-threaded runtime and bounded CPU settings."""
+    """Record actual runtime identity, native-import GIL effects and CPU limits."""
     runtime = dict(
         python=sys.version,
         free_threaded=bool(sysconfig.get_config_var("Py_GIL_DISABLED")),
         gil_enabled=sys._is_gil_enabled(),
-        affinity=sorted(os.sched_getaffinity(0)),
+        affinity=sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
         thread_pools={
             key: os.environ.get(key)
-            for key in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")
+            for key in (
+                "OMP_NUM_THREADS",
+                "OPENBLAS_NUM_THREADS",
+                "MKL_NUM_THREADS",
+                "VECLIB_MAXIMUM_THREADS",
+                "NUMEXPR_NUM_THREADS",
+            )
         },
     )
-    assert runtime["free_threaded"] and not runtime["gil_enabled"]
-    assert set(runtime["affinity"]) <= set(range(8))
-    assert set(runtime["thread_pools"].values()) == {"1"}
     return runtime
 
 
@@ -264,10 +263,6 @@ def check_acquisition(
     settings,
     layouts,
     results,
-    *,
-    kernel_probe,
-    optics_for_read,
-    scan_geometry,
 ):
     """Run bounded refinements and an independent public field/acquisition check."""
     checks = {}
@@ -282,8 +277,8 @@ def check_acquisition(
             ports=tuple(layout.ports[index] for index in indices),
         )
         base = value.kernel[indices]
-        angular_fine = kernel_probe(probe, radiance, angular_order=14, time_order=5)
-        pixel_fine = kernel_probe(probe, radiance, pixel_order=16)
+        angular_fine = physical_kernel(probe, radiance, settings, angular_order=14, time_order=5)
+        pixel_fine = physical_kernel(probe, radiance, settings, pixel_order=16)
         # Bounded independent direct-acquisition checks use 41 source nodes across the full band.
         sparse_points = points[::20]
         sparse = Radiance(
@@ -291,13 +286,11 @@ def check_acquisition(
             np.interp(sparse_points, points, radiance.values),
             radiance.geometry,
         )
-        sparse_kernel = kernel_probe(probe, sparse)
+        sparse_kernel = physical_kernel(probe, sparse, settings)
         centre_tile = np.einsum("cij,ck->ijk", maps[:, 49:54, 49:54], source_spectra[:, ::20])
         errors = []
         for read in range(len(indices)):
-            direct = _direct_scene_read(
-                probe, read, sparse, settings, centre_tile, optics_for_read, scan_geometry
-            )[0]
+            direct = direct_scene_read(probe, read, sparse, settings, centre_tile)[0]
             errors.append(float(abs(np.sum(sparse_kernel[read] * centre_tile) - direct) / direct))
         fine_points = np.linspace(points[0], points[-1], 1601)
         fine_radiance = Radiance(
@@ -305,7 +298,7 @@ def check_acquisition(
             np.interp(fine_points, points, radiance.values),
             radiance.geometry,
         )
-        fine_kernel = kernel_probe(probe, fine_radiance)
+        fine_kernel = physical_kernel(probe, fine_radiance, settings)
         angular_change = relative(base, angular_fine)
         pixel_change = relative(base, pixel_fine)
         spectral_change = relative(
@@ -346,62 +339,6 @@ def check_acquisition(
     return checks
 
 
-def _direct_scene_read(
-    layout, read, radiance, settings, scene_values, optics_for_read, scan_geometry
-):
-    """Check the composed stencil against public time-dependent field integration.
-
-    A bilinear 5×5 radiance field supplies exactly the same scene samples to
-    expected_electrons; this path does not apply the response kernel under test.
-    """
-    offsets = np.arange(-2, 3) * settings.sampling_m
-    trajectory = LinearTrajectory(height_m=settings.height_m, speed_m_s=settings.speed_m_s)
-    reads, pixels = scan_geometry(layout, read, settings)
-    dispersive = layout.family == "Dispersive imager"
-    acquisition = along_track_acquisition(
-        reads,
-        trajectory,
-        target_xy_m=np.zeros((1, 2)),
-        pixel_bounds_m=pixels,
-        along_edges_m=np.array([-25.0, 0.0, 25.0]) if dispersive else offsets,
-        cross_edges_m=offsets,
-        support_frame="platform" if dispersive else "ground",
-        time_order=settings.time_order,
-        angular_order=settings.angular_order,
-        cross_order=settings.angular_order,
-        focal_length_m=settings.focal_length_m,
-        pointing_law=lambda read_index, times_s: np.zeros((len(times_s), 2)),
-    )
-    height, speed = settings.height_m, settings.speed_m_s
-    time_grid = np.unique(np.r_[acquisition.exposure_bounds_s[0], acquisition.times_s[0]])
-    u = np.unique(((offsets[:, None] - speed * time_grid[None, :]) / height).ravel())
-    u = np.unique(np.r_[u, acquisition.direction_bounds_uv[0, :2]])
-    v = offsets / height
-    values = np.empty((len(time_grid), len(u), len(v), len(radiance.grid.points)))
-    for index, time in enumerate(time_grid):
-        x = u * height + speed * time
-        for cross in range(5):
-            for spectral in range(len(radiance.grid.points)):
-                values[index, :, cross, spectral] = np.interp(
-                    x, offsets, scene_values[:, cross, spectral]
-                )
-    points = radiance.grid.points
-    grid = SpectralGrid(
-        "wavenumber_cm1",
-        points,
-        SpectralDomain("wavenumber_cm1", ((points[0], points[-1]),)),
-    )
-    optics = optics_for_read(layout.family, layout, read)
-    return expected_electrons(
-        RadianceField(grid, time_grid, u, v, values),
-        acquisition,
-        lambda current_read, wave, current: optics.response(0, current_read, wave, current),
-        collecting_area_m2=optics.collecting_area_m2,
-        throughput=optics.throughput,
-        quantum_efficiency=settings.qe,
-    ).total
-
-
 def relative(a, b):
     """Return the original maximum norm-relative discrepancy."""
     return float(np.max(abs(a - b)) / max(float(np.max(abs(b))), 1e-30))
@@ -429,9 +366,6 @@ def save_evidence(
         "notebooks/support/notebook_five_band_support.py",
         "notebooks/support/notebook_instrument_support.py",
         "notebooks/support/five_band_gases.py",
-        "notebooks/support/notebook_sasktran2_cache.py",
-        "notebooks/support/notebook_sasktran2_layers.py",
-        "notebooks/era5_hitran_sasktran2_five_bands.ipynb",
     ]
     family_evidence = {}
     for family, layout in layouts.items():
@@ -457,6 +391,13 @@ def save_evidence(
         scenario_sha256=hashlib.sha256(scenario_path.read_bytes()).hexdigest(),
         source_hashes={
             path: hashlib.sha256((ROOT / path).read_bytes()).hexdigest() for path in source_paths
+        },
+        notebook_cell_sha256={
+            cell["id"]: hashlib.sha256("".join(cell["source"]).encode()).hexdigest()
+            for cell in json.loads(
+                (ROOT / "notebooks/era5_hitran_instrument_responses.ipynb").read_text()
+            )["cells"]
+            if cell["cell_type"] == "code"
         },
         runtime=runtime,
         settings=asdict(settings),

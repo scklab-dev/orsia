@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 
 
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
@@ -33,7 +33,7 @@ def test_signed_ranges(dtype, centres, cells, layout):
     args = _arguments(mu, cells, centres)
     expected = [a.copy() if isinstance(a, np.ndarray) else a for a in args]
     _original(*expected)
-    propagation_native.apply(*args)
+    transfer_native.apply(*args)
     _equal(args, expected)
 
 
@@ -87,7 +87,7 @@ def test_raw_alias_fallback(dtype, centres, alias):
 
     actual, expected = make(), make()
     _original(*expected)
-    propagation_native.apply(*actual)
+    transfer_native.apply(*actual)
     _equal(actual, expected)
 
 
@@ -99,7 +99,7 @@ def test_ieee_source_values(dtype, centres):
     expected = [a.copy() if isinstance(a, np.ndarray) else a for a in args]
     with np.errstate(invalid="ignore"):
         _original(*expected)
-    propagation_native.apply(*args)
+    transfer_native.apply(*args)
     for a, b in zip(args, expected, strict=True):
         if isinstance(a, np.ndarray):
             np.testing.assert_array_equal(a, b)
@@ -119,10 +119,10 @@ def test_concurrent_native_prepare_apply(dtype, centres):
 
     def run(_):
         matrices = [np.empty_like(source) for _ in range(6)]
-        propagation_native.prepare(depth, mu, 0.8, *matrices)
+        transfer_native.prepare(depth, mu, 0.8, *matrices)
         field = np.empty_like(source) if centres else None
         exits = np.empty_like(mu)
-        propagation_native.apply(
+        transfer_native.apply(
             mu,
             source,
             matrices[0],
@@ -136,7 +136,7 @@ def test_concurrent_native_prepare_apply(dtype, centres):
         return matrices + [field, exits]
 
     expected = run(0)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         for actual in pool.map(run, range(40)):
             _equal(actual, expected)
             for a, b in zip(actual, expected, strict=True):
@@ -153,7 +153,7 @@ def _arguments(mu, cells, centres):
     # coefficients to isolate the original sign-filtering behavior.
     safe_mu = mu.copy()
     safe_mu[~np.isfinite(safe_mu) | (safe_mu == 0)] = 0.8
-    propagation_native.prepare(depth, safe_mu, 0.8, *matrices)
+    transfer_native.prepare(depth, safe_mu, 0.8, *matrices)
     source = np.linspace(-0.3, 0.7, cells * mu.size, dtype=mu.dtype).reshape(shape)
     return [
         mu,

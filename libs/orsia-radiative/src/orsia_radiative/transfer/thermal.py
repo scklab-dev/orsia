@@ -15,7 +15,7 @@ from orsia_radiative.optics.atmosphere import AtmosphericOptics, validate_scene_
 from orsia_radiative.radiance import Radiance
 from orsia_radiative.scene import RadiativeScene
 
-from .native import propagation_native as _native
+from .native import transfer_native as _native
 
 _native_terms, _native_intervals = _native.bind_thermal_expn(
     import_module("scipy.special.cython_special"),
@@ -24,14 +24,14 @@ _native_terms, _native_intervals = _native.bind_thermal_expn(
 )
 
 
-def schwarzschild_radiance(
+def thermal_radiance(
     scene: RadiativeScene,
     *,
     optics: AtmosphericOptics,
     angular_order: int = 32,
     hemispheric_method: Literal["quadrature", "expn"] = "quadrature",
 ) -> Radiance:
-    """Top-of-atmosphere LTE radiance; see ``schwarzschild_terms`` for physics.
+    """Compute top-of-atmosphere LTE thermal radiance for a scene.
 
     Return owned spectral radiance values on the optics grid and scene geometry,
     without a retained source, method identity, decomposition or diagnostics.
@@ -183,4 +183,4 @@ def _e3_difference(below: NDArray[np.float64], depth: NDArray[np.float64]) -> ND
     )
 
 
-__all__ = ["schwarzschild_radiance", "schwarzschild_terms"]
+__all__ = ["thermal_radiance", "schwarzschild_terms"]

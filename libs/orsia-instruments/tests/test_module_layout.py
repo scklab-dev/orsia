@@ -2,37 +2,63 @@
 
 import ast
 import importlib
+import inspect
+from dataclasses import MISSING, fields
 from pathlib import Path
 
+import numpy as np
 import orsia_instruments as instruments
 import pytest
 
 # Explicit inventory of the root contract, including additive capabilities.
 ROOT_EXPORTS = {
+    "optics.camera": (
+        "ImagerSizing FilterStrip FilterCamera sized_focal_length filter_strip filter_camera "
+        "FocalPlaneImager focal_plane_imager"
+    ),
+    "imaging.geolocation": (
+        "SurfaceProjection SurfaceAcquisitionGrid "
+        "frame_exposure_bounds camera_acquisition_grid ground_integration_bounds "
+        "wgs84_surface_projection_from_camera spectrometer_acquisition_grid"
+    ),
+    "imaging.response.band": "NativeBandResponse group_native_bands",
+    "imaging.response.joint": (
+        "SpatialSpectralResponse spatial_spectral_response stack_frame_electrons"
+    ),
+    "imaging.radiometry": (
+        "SurfaceRadiance SurfaceRadianceCoverage FrameMeasurements frame_response simulate_frames"
+    ),
+    "imaging.calibration": (
+        "CalibratedFrames calibrate_frames CalibratedElectrons calibrate_frame_electrons"
+    ),
+    "imaging.reconstruction": "reconstruct_radiance_cube",
     "acquisition": (
-        "Acquisition ReadSchedule LinearTrajectory "
-        "ground_fixed_pointing ground_scroll_pointing linear_scan_acquisition "
+        "Acquisition ReadSchedule LinearTrajectory RasterReadSchedule "
+        "raster_read_schedule select_read_schedule select_raster_reads "
+        "ground_fixed_pointing ground_scroll_pointing "
         "read_schedule rectangular_acquisition along_track_acquisition "
         "along_track_exposure_bounds along_track_read_schedule "
         "raster_exposure_bounds along_track_raster_reads "
         "along_track_strip_templates"
     ),
     "charge": "ExpectedElectrons combine_source_paths",
-    "line_of_sight": "LineOfSightSamples PlatformState sample_lines_of_sight sphere_intersections",
+    "los": (
+        "LineOfSightSamples sample_lines_of_sight "
+        "RadianceCoverage LineOfSightRadiance sample_line_of_sight_radiance"
+    ),
     "detector": (
-        "DetectorElectronics DetectorMaps DetectorOperatingPoints DetectorReadings "
+        "DetectorElectronics DetectorProperties DetectorOperatingPoints DetectorReadings "
+        "detector_operating_points "
         "correct_digital_readings digitize electron_covariance electron_moments "
-        "pixel_quantum_efficiency sample_readout"
+        "pixel_quantum_efficiency sample_readout regular_pixel_bounds regular_detector"
     ),
-    "imaging.acquisition": (
-        "ExposureSequence exposure_sequence image_acquisition regular_pixel_bounds"
-    ),
-    "imaging.charge": (
+    "imaging.acquisition": ("ExposureSequence exposure_sequence image_acquisition"),
+    "imaging.photodetection": (
         "ImageIndices ImagePhotoelectrons ImageQuantumEfficiency "
         "combine_image_source_paths image_photoelectrons image_charge"
     ),
     "imaging.measurements": "ImageMeasurements",
-    "imaging.response": (
+    "imaging.response.instrument": (
         "GroundGrid SceneRadiance DetectorResponse InstrumentResponse "
         "detector_response instrument_response "
         "gaussian_cross_track_response gaussian_along_track_response "
@@ -40,23 +66,26 @@ ROOT_EXPORTS = {
     ),
     "imaging.readout": "image_readout",
     "imaging.simulation": "simulate_images",
-    "integration": (
-        "QuantumEfficiency expected_electrons photoelectron_response sampled_optical_response "
+    "photoelectrons": (
+        "OpticalAcceptance QuantumEfficiency expected_electrons photoelectron_response "
+        "sample_optical_acceptance "
         "line_of_sight_expected_electrons"
     ),
     "optics.response": "ImageResponse ImagingOptics OpticalResponse",
-    "optics.psfs": "PointSpreadFunction gaussian_psf tabulated_psf",
-    "optics.pixels": ("gaussian_pixel_fraction modulated_pixel_response tabulated_pixel_response"),
+    "optics.psfs": (
+        "PointSpreadFunction GaussianPSF TabulatedPSF SpatialDensity gaussian_psf airy_psf"
+    ),
+    "optics.pixels": ("gaussian_pixel_fraction pixel_acceptance"),
     "optics.filters": (
         "gaussian_filter lorentzian_filter super_gaussian_filter rectangular_filter "
         "longpass_filter shortpass_filter notch_filter lvf_centre tabulated_transmission "
         "filter_imager spatial_filter_imager lvf_imager"
     ),
     "optics.dispersion": "polynomial_image_map dispersive_response dispersive_imager",
+    "optics.spectrometer": "DispersiveSpectrometer dispersive_spectrometer",
     "optics.two_beam": "two_beam_ports interferometric_imager",
     "optics.cavities": "cavity_transmission cavity_imager",
     "scene": "RadianceField sample_radiance uniform_radiance_field",
-    "line_of_sight_radiance": "RadianceCoverage LineOfSightRadiance sample_line_of_sight_radiance",
     "tolerances": (
         "NativeSignalBudget analogue_dn_budget central_difference monte_carlo_dn "
         "monte_carlo_native native_difference native_sensitivities native_tolerance_budget"
@@ -70,48 +99,6 @@ def test_root_export_inventory_matches_canonical_owners():
     assert set(instruments.__all__) == set(names)
 
 
-@pytest.mark.parametrize(
-    "old_name",
-    [
-        "PhysicalReads",
-        "physical_reads",
-        "along_track_physical_reads",
-        "DatedObservationRays",
-        "dated_ray_acquisition",
-        "RayScene",
-        "RayCoverage",
-        "sample_ray_scene",
-        "ray_expected_electrons",
-    ],
-)
-def test_old_line_of_sight_exports_are_removed(old_name):
-    assert not hasattr(instruments, old_name)
-    assert old_name not in instruments.__all__
-
-
-@pytest.mark.parametrize("old_module", ["dated_rays", "ray_scene"])
-def test_old_line_of_sight_modules_are_removed(old_module):
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module(f"orsia_instruments.{old_module}")
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        "GroundResponse",
-        "ground_response",
-        "apply_ground_response",
-        "FactorizedSceneRadiance",
-        "apply_scene_response",
-        "along_track_instrument_response",
-        "optical_response",
-    ],
-)
-def test_instrument_response_uses_renamed_root_contract(name):
-    assert not hasattr(instruments, name)
-    assert name not in instruments.__all__
-
-
 @pytest.mark.parametrize("module,names", ROOT_EXPORTS.items())
 def test_root_exports_are_the_canonical_objects(module, names):
     canonical = importlib.import_module(f"orsia_instruments.{module}")
@@ -121,66 +108,130 @@ def test_root_exports_are_the_canonical_objects(module, names):
         assert value.__module__ == canonical.__name__
 
 
+def test_detector_properties_name_and_removed_export():
+    canonical = importlib.import_module("orsia_instruments.detector")
+    assert instruments.DetectorProperties is canonical.DetectorProperties
+    assert instruments.DetectorProperties.__name__ == "DetectorProperties"
+    assert not hasattr(instruments, "DetectorMaps")
+    assert not hasattr(canonical, "DetectorMaps")
+    assert "DetectorMaps" not in instruments.__all__
+
+
+def test_detector_properties_has_ten_required_fields():
+    names = (
+        "pixel_bounds_m",
+        "pitch_m",
+        "quantum_efficiency",
+        "dark_electrons_per_s",
+        "read_noise_electrons",
+        "full_well_electrons",
+        "electrons_per_dn",
+        "bias_dn",
+        "nonlinearity",
+        "adc_bits",
+    )
+    parameters = inspect.signature(instruments.DetectorProperties).parameters
+    assert tuple(parameters) == names
+    assert tuple(field.name for field in fields(instruments.DetectorProperties)) == names
+    for parameter in parameters.values():
+        assert parameter.default is inspect.Parameter.empty
+    for field in fields(instruments.DetectorProperties):
+        assert field.default is MISSING
+        assert field.default_factory is MISSING
+
+
+def test_detector_properties_requires_values_for_empty_construction():
+    with pytest.raises(TypeError, match="missing 10 required positional arguments"):
+        instruments.DetectorProperties()  # pyrefly: ignore[missing-argument]
+
+
 @pytest.mark.parametrize(
-    "module,old_name",
-    (
-        ("imaging.response", "apply_instrument_response"),
-        ("imaging.charge", "external_image_photoelectrons"),
-    ),
-)
-def test_renamed_instrument_functions_have_only_canonical_names(module, old_name):
-    canonical = importlib.import_module(f"orsia_instruments.{module}")
-    assert not hasattr(canonical, old_name)
-    assert not hasattr(instruments, old_name)
-    assert old_name not in instruments.__all__
-
-
-def test_quadrature_has_no_root_alias():
-    assert not hasattr(instruments, "interval_quadrature")
-    assert "interval_quadrature" not in instruments.__all__
-
-
-@pytest.mark.parametrize(
-    "module",
+    "omitted",
     [
-        "arrays",
-        "responses",
-        "psfs",
-        "tabulations",
-        "image_charge",
-        "image_sequence",
-        "imaging_optics",
-        "imaging.ground",
+        "pixel_bounds_m",
+        "pitch_m",
+        "quantum_efficiency",
+        "dark_electrons_per_s",
+        "read_noise_electrons",
+        "full_well_electrons",
+        "electrons_per_dn",
+        "bias_dn",
+        "nonlinearity",
+        "adc_bits",
     ],
 )
-def test_removed_facades_are_not_importable(module):
-    with pytest.raises(ModuleNotFoundError, match=f"orsia_instruments.{module}"):
-        importlib.import_module(f"orsia_instruments.{module}")
+def test_detector_properties_requires_each_field(omitted):
+    arguments = dict(
+        pixel_bounds_m=np.array([[[-1.0, 1.0, -1.0, 1.0]]]),
+        pitch_m=None,
+        quantum_efficiency=0.7,
+        dark_electrons_per_s=2,
+        read_noise_electrons=3,
+        full_well_electrons=1e6,
+        electrons_per_dn=2,
+        bias_dn=100,
+        nonlinearity=0,
+        adc_bits=16,
+    )
+    del arguments[omitted]
+    with pytest.raises(TypeError, match=f"required positional argument: '{omitted}'"):
+        instruments.DetectorProperties(**arguments)
 
 
-def test_imaging_package_has_no_compatibility_exports():
-    package = importlib.import_module("orsia_instruments.imaging")
-    for names in ROOT_EXPORTS.values():
-        for name in names.split():
+@pytest.mark.parametrize(
+    "name",
+    [
+        "image_photoelectrons",
+        "image_readout",
+        "simulate_images",
+        "calibrate_frames",
+    ],
+)
+def test_detector_is_a_required_keyword_argument(name):
+    function = getattr(instruments, name)
+    parameters = inspect.signature(function).parameters
+    detector = parameters["detector"]
+    assert detector.kind is inspect.Parameter.KEYWORD_ONLY
+    assert detector.default is inspect.Parameter.empty
+    assert detector.annotation is instruments.DetectorProperties
+    arguments = {
+        parameter.name: object()
+        for parameter in parameters.values()
+        if parameter.default is inspect.Parameter.empty and parameter.name != "detector"
+    }
+    if name == "calibrate_frames":
+        arguments["use_expectation"] = True
+    with pytest.raises(TypeError, match="required keyword-only argument: 'detector'"):
+        function(**arguments)
+
+
+@pytest.mark.parametrize(
+    "module", ["line_of_sight", "line_of_sight_radiance", "imaging.band_response"]
+)
+def test_obsolete_module_paths_are_unavailable(module):
+    name = f"orsia_instruments.{module}"
+    with pytest.raises(ModuleNotFoundError) as error:
+        importlib.import_module(name)
+    assert error.value.name == name
+
+
+def test_response_package_keeps_exports_in_concrete_modules():
+    package = importlib.import_module("orsia_instruments.imaging.response")
+    assert package.__file__ is not None
+    assert Path(package.__file__).name == "__init__.py"
+    assert not (Path(instruments.__file__).parent / "imaging/response.py").exists()
+    for module in ("imaging.response.instrument", "imaging.response.band"):
+        for name in ROOT_EXPORTS[module].split():
             assert not hasattr(package, name)
 
 
 def test_internal_imports_follow_domain_boundaries_without_cycles():
     root = Path(instruments.__file__).parent
-    wrappers = {
-        "arrays",
-        "responses",
-        "psfs",
-        "tabulations",
-        "image_charge",
-        "image_sequence",
-        "imaging_optics",
-    }
     graph = {}
     for path in root.rglob("*.py"):
         relative = path.relative_to(root).with_suffix("")
         name = ".".join(relative.parts)
-        if path.name == "__init__.py" or name in wrappers:
+        if path.name == "__init__.py":
             continue
         package = "orsia_instruments" + ("." + name.rsplit(".", 1)[0] if "." in name else "")
         dependencies = set()
@@ -189,13 +240,13 @@ def test_internal_imports_follow_domain_boundaries_without_cycles():
                 continue
             target = importlib.util.resolve_name("." * node.level + (node.module or ""), package)
             target = target.removeprefix("orsia_instruments.")
-            assert target not in wrappers | {"orsia_instruments", "imaging", "optics"}
+            assert target not in {"orsia_instruments", "imaging", "imaging.response", "optics"}
             if name.startswith("optics."):
                 assert not target.startswith("imaging.")
             if name in {"charge", "detector"}:
-                assert target != "integration" and not target.startswith(("imaging.", "optics."))
+                assert target != "photoelectrons" and not target.startswith(("imaging.", "optics."))
             if name == "imaging.readout":
-                assert target != "integration" and not target.startswith("optics.")
+                assert target != "photoelectrons" and not target.startswith("optics.")
             dependencies.add(target)
         graph[name] = dependencies
 

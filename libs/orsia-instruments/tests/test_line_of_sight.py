@@ -1,9 +1,13 @@
 """Synthetic sight-line geometry, full-support radiance and detector composition."""
 
+import os
+import sys
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import numpy as np
 import pytest
+from orsia_geometry import axis_rotations, compute_lines_of_sight, sphere_intersections
 from orsia_instruments import (
     DetectorElectronics,
     ExpectedElectrons,
@@ -14,22 +18,27 @@ from orsia_instruments import (
     read_schedule,
     sample_lines_of_sight,
     sample_readout,
-    sphere_intersections,
 )
 from orsia_radiative import SpectralDomain, SpectralGrid
 from scipy.constants import c, h
 from scipy.integrate import quad
 
+EPOCH = datetime(2016, 12, 31, 23, 59, 59, tzinfo=UTC)
 
-def state(times):
-    angle = 0.1 * times
-    rotation = np.zeros((len(times), 3, 3))
-    rotation[:, 0, 0] = rotation[:, 1, 1] = np.cos(angle)
-    rotation[:, 1, 0] = np.sin(angle)
-    rotation[:, 0, 1] = -np.sin(angle)
-    rotation[:, 2, 2] = 1
+
+def trajectory(times):
+    # Synthetic straight-line GCRS motion; velocity is its analytic derivative.
     position = np.column_stack((2 + 0.1 * times, np.zeros_like(times), np.zeros_like(times)))
-    return position, rotation
+    velocity = np.broadcast_to([0.1, 0.0, 0.0], position.shape).copy()
+    return position, velocity
+
+
+def platform_attitude(times):
+    return axis_rotations(np.array([0.0, 0.0, 1.0]), 0.1 * times)
+
+
+def instrument_attitude(times):
+    return np.broadcast_to(MOUNT, (len(times), 3, 3)).copy()
 
 
 MOUNT = np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]], dtype=float)
@@ -54,9 +63,12 @@ def case(time_order=3, angular_order=3, fov=FOV):
         reads,
         pixel_bounds_m=PIXELS,
         fov_bounds_uv=fov,
-        platform_state=state,
+        epoch=EPOCH,
+        validity_s=(0.0, 1.5),
+        trajectory=trajectory,
+        platform_attitude=platform_attitude,
+        instrument_attitude=instrument_attitude,
         mount_offset_p_m=np.array([0.2, 0.1, 0.0]),
-        mount_rotation_p_i=MOUNT,
         focal_length_m=1,
         time_order=time_order,
         angular_order=angular_order,
@@ -73,7 +85,7 @@ def coverage(rays, grid):
     bounds = rays.acquisition.exposure_bounds_s
     assert bounds.shape == (2, 2) and grid.domain is not None
     assert rays.acquisition.direction_bounds_uv.shape == (2, 4)
-    assert rays.support_directions_e.shape[-2:] == (4, 3)
+    assert rays.support_directions_gcrs.shape[-2:] == (4, 3)
     return (
         (bounds[:, 0] >= 0)
         & (bounds[:, 1] <= 1.5)
@@ -96,29 +108,32 @@ def test_dated_geometry_and_sphere_hits_are_independent_of_scene():
     np.testing.assert_array_equal(acq.exposure_bounds_s, [[0, 1], [0.5, 1.5]])
     np.testing.assert_array_equal(rays.support_times_s[:, [0, -1]], acq.exposure_bounds_s)
     assert rays.support_times_s.shape == (2, 3)
-    assert np.linalg.norm(rays.directions_e, axis=-1).min() == pytest.approx(1)
+    assert np.linalg.norm(rays.directions_gcrs, axis=-1).min() == pytest.approx(1)
     mid = acq.times_s[0, 0]
-    p, rot = state(np.array([mid]))
+    p, velocity = trajectory(np.array([mid]))
+    rot = platform_attitude(np.array([mid]))
+    np.testing.assert_array_equal(velocity, [[0.1, 0, 0]])
     expected_origin = p[0] + rot[0] @ np.array([0.2, 0.1, 0])
     expected_direction = rot[0] @ MOUNT @ np.array([0, 0, 1])
-    np.testing.assert_allclose(rays.origins_e_m[0, 0], expected_origin, atol=1e-15)
-    np.testing.assert_allclose(rays.directions_e[0, 0], expected_direction, atol=1e-15)
+    np.testing.assert_allclose(rays.origins_gcrs_m[0, 0], expected_origin, atol=1e-15)
+    np.testing.assert_allclose(rays.directions_gcrs[0, 0], expected_direction, atol=1e-15)
     np.testing.assert_allclose(acq.image_xy_m[0, 0], [0, 0], atol=1e-15)
-    end_position, end_attitude = state(np.array([1.5]))
+    end_position, _ = trajectory(np.array([1.5]))
+    end_attitude = platform_attitude(np.array([1.5]))
     np.testing.assert_allclose(
-        rays.support_origins_e_m[1, -1, 0],
+        rays.support_origins_gcrs_m[1, -1, 0],
         end_position[0] + end_attitude[0] @ np.array([0.2, 0.1, 0]),
     )
     u, v = FOV[1, [1, 3]]
     corner = np.array([u, v, np.sqrt(1 - u**2 - v**2)])
     np.testing.assert_allclose(
-        rays.support_directions_e[1, -1, 3], end_attitude[0] @ MOUNT @ corner
+        rays.support_directions_gcrs[1, -1, 3], end_attitude[0] @ MOUNT @ corner
     )
-    hit, points = sphere_intersections(rays, radius_m=1)
+    hit, points = sphere_intersections(rays.origins_gcrs_m, rays.directions_gcrs, radius_m=1)
     np.testing.assert_array_equal(hit, [[True], [False]])
     np.testing.assert_allclose(np.linalg.norm(points[0, 0]), 1, atol=1e-14)
     assert np.isnan(points[1]).all()
-    assert np.isfinite(rays.directions_e[1]).all()  # miss still has a valid scene ray
+    assert np.isfinite(rays.directions_gcrs[1]).all()  # miss still has a valid scene ray
 
 
 def test_full_support_coverage_rejects_short_time_and_fov_boundaries():
@@ -128,7 +143,7 @@ def test_full_support_coverage_rejects_short_time_and_fov_boundaries():
     def short_coverage(current, grid):
         calls.append(True)
         return (current.acquisition.exposure_bounds_s[:, 1] <= 1.4) & (
-            np.max(current.support_directions_e[..., 2], axis=(1, 2)) <= 0.7
+            np.max(current.support_directions_gcrs[..., 2], axis=(1, 2)) <= 0.7
         )
 
     with pytest.raises(ValueError, match="entire line-of-sight support"):
@@ -170,7 +185,10 @@ def test_uniform_scene_charge_quadrature_sources_and_seeded_dn():
         low, GRID, uniform_scene, coverage, acceptance, **kwargs
     )
     np.testing.assert_allclose(signal.total, coarse.total, rtol=3e-4)
-    assert signal.acquisition is high.acquisition
+    assert signal.reads is not high.acquisition
+    np.testing.assert_array_equal(
+        signal.reads.exposure_bounds_s, high.acquisition.exposure_bounds_s
+    )
     assert signal.reads.sample_ids == ("read-0", "read-1")
     assert np.all(signal.total > 0)
     spectral = np.trapezoid(1 / GRID.points, GRID.points)
@@ -228,8 +246,8 @@ def test_ray_time_spectral_scene_keeps_node_dependencies():
         collecting_area_m2=1e-3,
     )
     origins, directions, times, points = seen[0]
-    np.testing.assert_allclose(origins, rays.origins_e_m)
-    np.testing.assert_allclose(directions, rays.directions_e)
+    np.testing.assert_allclose(origins, rays.origins_gcrs_m)
+    np.testing.assert_allclose(directions, rays.directions_gcrs)
     np.testing.assert_allclose(times, rays.acquisition.times_s)
     np.testing.assert_array_equal(points, GRID.points)
     spectral = np.trapezoid((points / 5000) / (h * c * 100 * points), points)
@@ -252,9 +270,9 @@ def test_ray_time_spectral_scene_keeps_node_dependencies():
 
 def test_validation_and_owned_rays():
     rays = case(time_order=1, angular_order=1)
-    other = replace(rays, origins_e_m=rays.origins_e_m)
-    other.origins_e_m[:] = 0
-    assert rays.origins_e_m[0, 0, 0] > 2
+    other = replace(rays, origins_gcrs_m=rays.origins_gcrs_m)
+    other.origins_gcrs_m[:] = 0
+    assert rays.origins_gcrs_m[0, 0, 0] > 2
     with pytest.raises(ValueError, match="FOV"):
         case(fov=np.array([[-0.1, 1.0, 0.0, 0.1], [0.75, 0.8, 0, 0.01]]))
     with pytest.raises(ValueError, match="proper"):
@@ -262,9 +280,14 @@ def test_validation_and_owned_rays():
             read_schedule(rays.acquisition),
             pixel_bounds_m=PIXELS,
             fov_bounds_uv=FOV,
-            platform_state=state,
+            epoch=EPOCH,
+            validity_s=(0.0, 1.5),
+            trajectory=trajectory,
+            platform_attitude=platform_attitude,
+            instrument_attitude=lambda t: np.broadcast_to(
+                np.diag([1.0, 1.0, -1.0]), (len(t), 3, 3)
+            ),
             mount_offset_p_m=np.zeros(3),
-            mount_rotation_p_i=np.diag([1, 1, -1]),
             focal_length_m=1,
         )
     with pytest.raises(ValueError, match="scene radiance"):
@@ -276,3 +299,211 @@ def test_validation_and_owned_rays():
             acceptance,
             collecting_area_m2=1,
         )
+
+
+def test_independent_noncommuting_scan_and_platform_preserve_support_and_weights():
+    reference = case(time_order=2, angular_order=2)
+    reads = read_schedule(reference.acquisition)
+    seen = []
+
+    def moving_instrument(times):
+        seen.append(times.copy())
+        return MOUNT @ axis_rotations(np.array([1.0, 0.0, 0.0]), 0.3 * times)
+
+    offset = np.array([0.2, 0.1, -0.4])
+    rays = sample_lines_of_sight(
+        reads,
+        pixel_bounds_m=PIXELS,
+        fov_bounds_uv=FOV,
+        epoch=EPOCH,
+        validity_s=(0.0, 1.5),
+        trajectory=trajectory,
+        platform_attitude=platform_attitude,
+        instrument_attitude=moving_instrument,
+        mount_offset_p_m=offset,
+        focal_length_m=1.0,
+        time_order=2,
+        angular_order=2,
+    )
+    assert rays.epoch == EPOCH
+    assert len(seen) == 2
+    np.testing.assert_array_equal(np.array(seen), rays.support_times_s)
+    np.testing.assert_array_equal(rays.support_times_s[:, [0, -1]], reads.exposure_bounds_s)
+    for name in ("times_s", "directions_uv", "image_xy_m", "weights_sr_s"):
+        np.testing.assert_array_equal(
+            getattr(rays.acquisition, name), getattr(reference.acquisition, name)
+        )
+    for i in range(2):
+        t = rays.acquisition.times_s[i]
+        position, _ = trajectory(t)
+        platform = platform_attitude(t)
+        relative = moving_instrument(t)
+        uv = rays.acquisition.directions_uv[i]
+        sensor = np.column_stack((uv, np.sqrt(1 - np.sum(uv**2, axis=-1))))
+        expected_origins = position + np.einsum("tij,j->ti", platform, offset)
+        expected_directions = np.einsum("tij,tjk,tk->ti", platform, relative, sensor)
+        np.testing.assert_allclose(rays.origins_gcrs_m[i], expected_origins, atol=1e-15)
+        np.testing.assert_allclose(rays.directions_gcrs[i], expected_directions, atol=1e-15)
+        assert not np.allclose(platform @ relative, relative @ platform)
+        corners = np.array([[FOV[i, a], FOV[i, b]] for a, b in ((0, 2), (0, 3), (1, 2), (1, 3))])
+        corner_i = np.column_stack((corners, np.sqrt(1 - np.sum(corners**2, axis=-1))))
+        origins, directions = compute_lines_of_sight(
+            rays.support_times_s[i],
+            epoch=EPOCH,
+            validity_s=(0.0, 1.5),
+            trajectory=trajectory,
+            platform_attitude=platform_attitude,
+            instrument_attitude=moving_instrument,
+            directions_i=corner_i,
+            mount_offset_p_m=offset,
+        )
+        np.testing.assert_array_equal(rays.support_origins_gcrs_m[i], origins)
+        np.testing.assert_array_equal(rays.support_directions_gcrs[i], directions)
+
+
+@pytest.mark.parametrize(
+    "validity", [(0.1, 1.4), (0.0, 1.4), (0.1, 1.5), (1.0, 0.0), (0.0, np.nan)]
+)
+def test_complete_exposures_checked_before_any_callback(validity):
+    reference = case(time_order=1, angular_order=1)
+    calls = []
+
+    def unavailable(times):
+        calls.append(times.copy())
+        raise AssertionError("unsupported callback must not run")
+
+    # The interior nodes at 0.5 and 1.0 fit (0.1,1.4); endpoints do not.
+    with pytest.raises(ValueError, match="complete exposures"):
+        sample_lines_of_sight(
+            read_schedule(reference.acquisition),
+            pixel_bounds_m=PIXELS,
+            fov_bounds_uv=FOV,
+            epoch=EPOCH,
+            validity_s=validity,
+            trajectory=unavailable,
+            platform_attitude=unavailable,
+            instrument_attitude=unavailable,
+            mount_offset_p_m=np.zeros(3),
+            focal_length_m=1.0,
+            time_order=1,
+            angular_order=1,
+        )
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"epoch": datetime(2020, 1, 1)},
+        {"mount_offset_p_m": np.zeros(2)},
+        {"mount_offset_p_m": np.array([np.nan, 0, 0])},
+        {"focal_length_m": 0},
+        {"time_order": 1.5},
+        {"angular_order": 0},
+        {"trajectory": lambda t: (np.zeros((len(t), 3)), np.zeros((len(t), 2)))},
+    ],
+)
+def test_sampling_validates_time_geometry_and_trajectory(changes):
+    reference = case(time_order=1, angular_order=1)
+    options = dict(
+        pixel_bounds_m=PIXELS,
+        fov_bounds_uv=FOV,
+        epoch=EPOCH,
+        validity_s=(0.0, 1.5),
+        trajectory=trajectory,
+        platform_attitude=platform_attitude,
+        instrument_attitude=instrument_attitude,
+        mount_offset_p_m=np.zeros(3),
+        focal_length_m=1.0,
+        time_order=1,
+        angular_order=1,
+    )
+    with pytest.raises(ValueError):
+        sample_lines_of_sight(read_schedule(reference.acquisition), **(options | changes))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"epoch": datetime(2020, 1, 1)},
+        {"support_times_s": np.zeros(2)},
+        {"support_times_s": np.zeros((2, 2))},
+        {"support_times_s": np.array([[0.0, 1.0, 0.5, 1.0], [0.5, 1.0, 0.7, 1.5]])},
+        {"origins_gcrs_m": np.zeros((2, 1, 2))},
+        {"directions_gcrs": np.zeros((2, 1, 3))},
+    ],
+)
+def test_ray_record_validates_shapes_unit_directions_and_order(changes):
+    with pytest.raises(ValueError):
+        replace(case(time_order=1, angular_order=1), **changes)
+
+
+@pytest.mark.skipif(
+    os.environ.get("ORSIA_TEST_ORBITAL") != "1",
+    reason="run just test-orbital for native frame/time integration",
+)
+def test_terrestrial_state_and_attitude_are_transformed_before_instrument_sampling():
+    from orsia_geometry import frame_rotations, transform_states
+
+    reads = ReadSchedule(("dated",), ("pixel",), ("setting",), ("direct",), np.array([[0.0, 3.0]]))
+    offset = np.array([10.0, 5.0, 2.0])
+    position_itrf = np.array([7e6, 0.0, 0.0])
+    seen = []
+
+    def rotation(times):
+        return frame_rotations(
+            times, epoch=EPOCH, validity_s=(0.0, 3.0), from_frame="ITRF", to_frame="GCRS"
+        )
+
+    def dated_trajectory(times):
+        seen.append(times.copy())
+        return transform_states(
+            times,
+            np.broadcast_to(position_itrf, (len(times), 3)).copy(),
+            np.zeros((len(times), 3)),
+            epoch=EPOCH,
+            validity_s=(0.0, 3.0),
+            from_frame="ITRF",
+            to_frame="GCRS",
+        )
+
+    rays = sample_lines_of_sight(
+        reads,
+        pixel_bounds_m=PIXELS[:1],
+        fov_bounds_uv=FOV[:1],
+        epoch=EPOCH,
+        validity_s=(0.0, 3.0),
+        trajectory=dated_trajectory,
+        platform_attitude=rotation,
+        instrument_attitude=instrument_attitude,
+        mount_offset_p_m=offset,
+        focal_length_m=1.0,
+        time_order=3,
+        angular_order=2,
+    )
+    assert not sys._is_gil_enabled()
+    # Three physical SI seconds cross the leap second at the end of 2016.
+    expected_end_rotation = frame_rotations(
+        np.array([0.0]),
+        epoch=datetime(2017, 1, 1, 0, 0, 1, tzinfo=UTC),
+        validity_s=(0.0, 0.0),
+        from_frame="ITRF",
+        to_frame="GCRS",
+    )
+    np.testing.assert_array_equal(rotation(np.array([3.0])), expected_end_rotation)
+    np.testing.assert_array_equal(seen[0], rays.support_times_s[0])
+    assert seen[0][0] == 0.0 and seen[0][-1] == 3.0
+    times = rays.acquisition.times_s[0]
+    rotations = rotation(times)
+    position, velocity = dated_trajectory(times)
+    assert np.linalg.norm(velocity, axis=-1).min() > 400.0
+    assert not np.allclose(position, position_itrf)
+    expected_origins = np.einsum("tij,j->ti", rotations, position_itrf + offset)
+    uv = rays.acquisition.directions_uv[0]
+    sensor = np.column_stack((uv, np.sqrt(1 - np.sum(uv**2, axis=-1))))
+    expected_directions = np.einsum("tij,jk,tk->ti", rotations, MOUNT, sensor)
+    np.testing.assert_allclose(rays.origins_gcrs_m[0], expected_origins, atol=2e-9, rtol=0)
+    np.testing.assert_allclose(rays.directions_gcrs[0], expected_directions, atol=1e-15, rtol=0)
+    np.testing.assert_array_equal(
+        read_schedule(rays.acquisition).exposure_bounds_s, reads.exposure_bounds_s
+    )

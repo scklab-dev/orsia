@@ -8,6 +8,8 @@ from orsia_instruments import (
     DetectorElectronics,
     DetectorOperatingPoints,
     ExpectedElectrons,
+    ReadSchedule,
+    TabulatedPSF,
     analogue_dn_budget,
     combine_source_paths,
     digitize,
@@ -18,9 +20,10 @@ from orsia_instruments import (
     monte_carlo_native,
     native_sensitivities,
     native_tolerance_budget,
+    pixel_acceptance,
     pixel_quantum_efficiency,
+    read_schedule,
     sample_readout,
-    tabulated_pixel_response,
     tabulated_transmission,
 )
 from orsia_uncertainty import validate_covariance
@@ -32,11 +35,13 @@ def two_reads():
     a = acquisition()
     return replace(
         a,
-        sample_ids=("a", "b"),
-        pixel_ids=("p", "q"),
-        setting_ids=("s", "s"),
-        port_ids=("+", "+"),
-        exposure_bounds_s=np.repeat(a.exposure_bounds_s, 2, axis=0),
+        reads=ReadSchedule(
+            ("a", "b"),
+            ("p", "q"),
+            ("s", "s"),
+            ("+", "+"),
+            np.repeat(a.exposure_bounds_s, 2, axis=0),
+        ),
         times_s=np.repeat(a.times_s, 2, axis=0),
         directions_uv=np.repeat(a.directions_uv, 2, axis=0),
         image_xy_m=np.repeat(a.image_xy_m, 2, axis=0),
@@ -91,14 +96,17 @@ def test_tabulated_passband_leaks_support_and_photon_path():
         combine_source_paths(path_scene, path_scene)
     with pytest.raises(ValueError, match="identities"):
         combine_source_paths(
-            path_scene, replace(internal, acquisition=replace(acquisition(), sample_ids=("other",)))
+            path_scene,
+            replace(internal, reads=replace(read_schedule(acquisition()), sample_ids=("other",))),
         )
     with pytest.raises(ValueError, match="intervals"):
         combine_source_paths(
             path_scene,
             replace(
                 internal,
-                acquisition=replace(acquisition(), exposure_bounds_s=np.array([[0.0, 3.0]])),
+                reads=replace(
+                    read_schedule(acquisition()), exposure_bounds_s=np.array([[0.0, 3.0]])
+                ),
             ),
         )
 
@@ -111,13 +119,15 @@ def test_tilted_table_mass_finite_pixel_and_convergence():
     density = (1 + x[:, None] * y[None, :] / 2) / 4
 
     def response(*, pixel_order=12, **overrides):
-        return tabulated_pixel_response(
-            wavelength_m=np.array([1e-6, 2e-6]),
-            bounds_m=overrides.get("bounds_m", np.array([0.0, 0.5, 0.0, 0.5])),
-            image_xy_m=overrides.get("image_xy_m", np.zeros((2, 2))),
-            x_offsets_m=overrides.get("x_offsets_m", x),
-            y_offsets_m=overrides.get("y_offsets_m", y),
-            density_per_m2=overrides.get("density_per_m2", density),
+        return pixel_acceptance(
+            np.array([1e-6, 2e-6]),
+            overrides.get("bounds_m", np.array([0.0, 0.5, 0.0, 0.5])),
+            overrides.get("image_xy_m", np.zeros((2, 2))),
+            spatial=TabulatedPSF(
+                overrides.get("x_offsets_m", x),
+                overrides.get("y_offsets_m", y),
+                overrides.get("density_per_m2", density),
+            ),
             transmission=lambda xp, yp, wl: np.ones(2),
             pixel_order=pixel_order,
         )
@@ -132,9 +142,9 @@ def test_tilted_table_mass_finite_pixel_and_convergence():
     centres[:, 1, 0] = 0.2
     shifted = response(image_xy_m=centres, pixel_order=20)
     assert not np.allclose(shifted[:, 0], shifted[:, 1])
-    with pytest.raises(ValueError, match="unit physical mass"):
+    with pytest.raises(ValueError, match="mass"):
         response(density_per_m2=2 * density)
-    with pytest.raises(ValueError, match="under-resolved"):
+    with pytest.raises(ValueError, match="fraction exceeds one"):
         response(
             bounds_m=[-1.0, 1.0, -1.0, 1.0],
             x_offsets_m=[-1.0, 0.0, 1.0],
@@ -145,13 +155,11 @@ def test_tilted_table_mass_finite_pixel_and_convergence():
     # Supplied table with smooth separable density converges to independent integral.
     xx = np.linspace(-2, 2, 121)
     d = np.exp(-(xx[:, None] ** 2) - xx[None, :] ** 2) / np.pi
-    w = tabulated_pixel_response(
+    w = pixel_acceptance(
         np.array([1e-6]),
         [0.0, 0.6, -0.5, 0.4],
         np.zeros((1, 2)),
-        xx,
-        xx,
-        d,
+        spatial=TabulatedPSF(xx, xx, d),
         transmission=lambda px, py, wl: np.ones(1),
         pixel_order=32,
     )
@@ -165,10 +173,10 @@ def test_tilted_table_mass_finite_pixel_and_convergence():
 
 def test_nonuniform_operating_point_qe_noise_covariance_nonlinearity():
     acq = two_reads()
-    qe = pixel_quantum_efficiency(acq, {"p": 0.5, "q": 1.0})
+    qe = pixel_quantum_efficiency(read_schedule(acq), {"p": 0.5, "q": 1.0})
     np.testing.assert_array_equal(qe, [[0.5], [1.0]])
     with pytest.raises(ValueError, match="exactly"):
-        pixel_quantum_efficiency(acq, {"p": 0.5})
+        pixel_quantum_efficiency(read_schedule(acq), {"p": 0.5})
     fixed = DetectorOperatingPoints(
         np.array([2.0, 3.0]),
         np.array([1.0, 2.0]),
@@ -178,12 +186,12 @@ def test_nonuniform_operating_point_qe_noise_covariance_nonlinearity():
         np.array([0.25, -0.25]),
         12,
     )
-    signal = ExpectedElectrons(acq, {"scene": np.array([9.0, 19.0])})
+    signal = ExpectedElectrons(read_schedule(acq), {"scene": np.array([9.0, 19.0])})
     mean, variance = electron_moments(signal, fixed)
     np.testing.assert_allclose(mean, [13, 25])
     np.testing.assert_allclose(variance, [14, 29])
     inputs = np.array([[20.0, 50.0], [100.0, 200.0]])
-    readings = digitize(acq, inputs, np.zeros_like(inputs), fixed)
+    readings = digitize(read_schedule(acq), inputs, np.zeros_like(inputs), fixed)
     np.testing.assert_array_equal(readings.dn, [[20, 32], [72, 58]])
     assert readings.full_well_saturated[1].all()
     assert not readings.adc_clipped.any()
@@ -213,8 +221,8 @@ def test_nonuniform_operating_point_qe_noise_covariance_nonlinearity():
         electron_covariance(signal, homogeneous), electron_covariance(signal, same)
     )
     np.testing.assert_array_equal(
-        digitize(acq, inputs, np.zeros_like(inputs), homogeneous).dn,
-        digitize(acq, inputs, np.zeros_like(inputs), same).dn,
+        digitize(read_schedule(acq), inputs, np.zeros_like(inputs), homogeneous).dn,
+        digitize(read_schedule(acq), inputs, np.zeros_like(inputs), same).dn,
     )
     np.testing.assert_array_equal(
         sample_readout(signal, homogeneous, np.random.default_rng(4), realisations=10).dn,
@@ -224,7 +232,7 @@ def test_nonuniform_operating_point_qe_noise_covariance_nonlinearity():
 
 def test_common_noise_ensemble_and_reproducibility():
     acq = two_reads()
-    signal = ExpectedElectrons(acq, {"scene": np.full(2, 1000.0)})
+    signal = ExpectedElectrons(read_schedule(acq), {"scene": np.full(2, 1000.0)})
     electronic = DetectorElectronics(full_well_electrons=1e7, adc_bits=32)
     groups = dict(row_ids=("same", "same"), row_noise_electrons=10.0)
     cov = electron_covariance(signal, electronic, **groups)
@@ -246,7 +254,9 @@ def test_tolerance_linear_analytic_monte_carlo_and_identity_rejection():
 
     def evaluate(values):
         x, y = values["band"], values["pointing"]
-        return ExpectedElectrons(acq, {"scene": np.array([100 + 2 * x + 3 * y, 200 - x + 4 * y])})
+        return ExpectedElectrons(
+            read_schedule(acq), {"scene": np.array([100 + 2 * x + 3 * y, 200 - x + 4 * y])}
+        )
 
     nominal, j = native_sensitivities(
         evaluate, {"band": 0.0, "pointing": 0.0}, {"band": 1e-3, "pointing": 1e-3}
@@ -293,7 +303,7 @@ def test_tolerance_linear_analytic_monte_carlo_and_identity_rejection():
         100,
     )
     assert draws.dn.shape == (100, 2)
-    assert draws.acquisition.sample_ids == ("a", "b")
+    assert draws.reads.sample_ids == ("a", "b")
     assert not draws.full_well_saturated.any()
     with pytest.raises(ValueError, match="axes"):
         native_tolerance_budget(nominal, ("only",), j, bias, covariance, np.eye(2))
@@ -304,7 +314,9 @@ def test_tolerance_linear_analytic_monte_carlo_and_identity_rejection():
     with pytest.raises(ValueError, match="identities"):
         native_sensitivities(
             lambda values: (
-                replace(evaluate(values), acquisition=replace(acq, sample_ids=("other", "b")))
+                replace(
+                    evaluate(values), reads=replace(read_schedule(acq), sample_ids=("other", "b"))
+                )
                 if values["band"] != 0
                 else evaluate(values)
             ),
@@ -318,7 +330,7 @@ def test_nonlinear_linearisation_limit_and_dn_sampling_saturation():
 
     def nonlinear(parameters):
         p = parameters["offset"]
-        return ExpectedElectrons(acq, {"scene": np.array([80 + 4 * p + 3 * p**2])})
+        return ExpectedElectrons(read_schedule(acq), {"scene": np.array([80 + 4 * p + 3 * p**2])})
 
     nominal, coarse = native_sensitivities(nonlinear, {"offset": 1.0}, {"offset": 0.1})
     _, fine = native_sensitivities(nonlinear, {"offset": 1.0}, {"offset": 0.01})
@@ -355,7 +367,7 @@ def test_nonlinear_linearisation_limit_and_dn_sampling_saturation():
 
 
 def test_array_tolerance_budget_diagonal_equivalence_and_independent_snapshots():
-    nominal = ExpectedElectrons(two_reads(), {"scene": np.array([100.0, 200.0])})
+    nominal = ExpectedElectrons(read_schedule(two_reads()), {"scene": np.array([100.0, 200.0])})
     jacobian = np.array([[2.0, 3.0], [-1.0, 4.0]])
     bias = np.array([0.1, -0.2])
     variances = np.array([0.01, 0.02])
@@ -390,7 +402,9 @@ def test_array_tolerance_budget_diagonal_equivalence_and_independent_snapshots()
 
 def test_array_parameter_laws_reject_invalid_bias_and_covariance_shapes():
     def evaluate(parameters):
-        return ExpectedElectrons(acquisition(), {"scene": np.array([100.0 + parameters["offset"]])})
+        return ExpectedElectrons(
+            read_schedule(acquisition()), {"scene": np.array([100.0 + parameters["offset"]])}
+        )
 
     for bias, covariance in (
         (np.zeros(2), np.ones(1)),

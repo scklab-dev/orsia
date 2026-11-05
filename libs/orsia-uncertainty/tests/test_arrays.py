@@ -7,14 +7,13 @@ import pytest
 from numpy.typing import NDArray
 from orsia_uncertainty import (
     covariance_product,
-    covariance_solver,
-    gaussian_sampler,
+    factor_covariance,
     propagate_covariance,
     propagate_vector,
     sample_gaussian,
     solve_covariance,
     validate_covariance,
-    whitener,
+    whiten,
 )
 
 
@@ -27,9 +26,11 @@ def test_reference_apply_solve_snapshot_and_noncontiguous_inputs(diagonal: bool)
     vector = np.array([2.0, -1.0])
     applied = covariance_product(covariance, vector)
     np.testing.assert_array_equal(applied, [8.0, -3.0] if diagonal else [7.0, -1.0])
-    solved = solve_covariance(covariance, applied)
+    solved = solve_covariance(factor_covariance(covariance, method="eigh"), applied)
     np.testing.assert_allclose(solved, vector, atol=1e-15)
-    np.testing.assert_allclose(covariance_solver(covariance)(applied), vector, atol=1e-15)
+    np.testing.assert_allclose(
+        solve_covariance(factor_covariance(covariance, method="eigh"), applied), vector, atol=1e-15
+    )
     for result in (covariance, applied, solved):
         assert result.flags.writeable
         assert not np.shares_memory(result, source)
@@ -64,12 +65,8 @@ def test_numerical_validation_at_every_covariance_boundary(
 ) -> None:
     for operation in (
         validate_covariance,
-        covariance_solver,
-        gaussian_sampler,
-        whitener,
-        lambda c: sample_gaussian(c, np.random.default_rng(1), 2),
+        lambda c: factor_covariance(c, method="eigh"),
         lambda c: covariance_product(c, np.ones(2)),
-        lambda c: solve_covariance(c, np.ones(2)),
         lambda c: propagate_covariance(c, np.eye(2)),
     ):
         with pytest.raises(ValueError, match=message):
@@ -82,20 +79,22 @@ def test_singular_and_ill_conditioned_can_apply_transport_and_sample(diagonal: b
         covariance = values if diagonal else np.diag(values)
         np.testing.assert_array_equal(covariance_product(covariance, np.ones(2)), values)
         np.testing.assert_allclose(propagate_covariance(covariance, np.eye(2)), np.diag(values))
-        assert sample_gaussian(covariance, np.random.default_rng(1), 3).shape == (3, 2)
+        assert sample_gaussian(
+            factor_covariance(covariance, method="eigh"), np.random.default_rng(1), 3
+        ).shape == (3, 2)
         with pytest.raises(ValueError, match="singular or ill-conditioned"):
-            solve_covariance(covariance, np.ones(2))
+            solve_covariance(factor_covariance(covariance, method="eigh"), np.ones(2))
         with pytest.raises(ValueError, match="singular or ill-conditioned"):
-            covariance_solver(covariance)
+            whiten(factor_covariance(covariance, method="eigh"), np.ones(2))
         with pytest.raises(ValueError, match="singular or ill-conditioned"):
-            whitener(covariance)
+            whiten(factor_covariance(covariance, method="eigh"), np.ones(2))
 
 
 @pytest.mark.parametrize("diagonal", [False, True])
 def test_apply_and_solve_reject_invalid_vectors(diagonal: bool) -> None:
     covariance = np.ones(2) if diagonal else np.eye(2)
     for vector in (np.ones(3), np.ones((2, 1)), np.array([1.0, np.nan]), np.full(2, np.inf)):
-        for operation in (covariance_product, solve_covariance):
+        for operation in (covariance_product,):
             with pytest.raises(ValueError, match="vector"):
                 operation(covariance, vector)
 
@@ -115,25 +114,12 @@ def test_transport_checks_dimensions_finiteness_and_new_numerical_anomalies() ->
             propagate_vector(np.ones(2) * 1e200, np.eye(2) * 1e200)
 
 
-def test_units_and_index_meanings_are_not_part_of_the_core_api() -> None:
-    import orsia_uncertainty as uncertainty
-
-    for name in (
-        "ArrayLayout",
-        "Covariance",
-        "DiagonalCovariance",
-        "SignedBias",
-        "Contribution",
-        "UncertaintySource",
-    ):
-        assert not hasattr(uncertainty, name)
+def test_covariance_computation_uses_supplied_axis_order() -> None:
     # Equal-shaped arrays are computed in their supplied order, without semantic checks.
     covariance = np.diag([2.0, 5.0])
     jacobian = np.array([[1.0, 2.0]])
     np.testing.assert_allclose(propagate_covariance(covariance, jacobian), [[22.0]])
     np.testing.assert_allclose(propagate_covariance(covariance[::-1, ::-1], jacobian), [[13.0]])
-    with pytest.raises(TypeError):
-        propagate_covariance(covariance, jacobian, target_layout=None)  # type: ignore[unexpected-keyword]
 
 
 def test_backend_failure_is_explicit() -> None:
@@ -142,9 +128,6 @@ def test_backend_failure_is_explicit() -> None:
     ):
         with pytest.raises(ValueError, match="eigenvalue check"):
             validate_covariance(np.eye(2))
-    with patch.object(np.linalg, "solve", side_effect=np.linalg.LinAlgError):
-        with pytest.raises(ValueError, match="solve failed"):
-            solve_covariance(np.eye(2), np.ones(2))
     with patch.object(np.linalg, "eigh", side_effect=np.linalg.LinAlgError):
         with pytest.raises(ValueError, match="factorisation failed"):
-            covariance_solver(np.eye(2))
+            factor_covariance(np.eye(2), method="eigh")

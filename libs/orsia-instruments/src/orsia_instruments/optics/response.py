@@ -4,7 +4,7 @@ Factories snapshot settings; callbacks remain borrowed, pure and pointwise in wa
 These bounded paraxial models are not optical design solvers."""
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import overload
 
@@ -13,8 +13,8 @@ from numpy.typing import NDArray
 
 from ..acquisition import Acquisition
 from ..quadrature import validate_quadrature_order
-from .pixels import gaussian_pixel_fraction, modulated_pixel_response, psf_pixel_response
-from .psfs import PointSpreadFunction, select_psf
+from .pixels import pixel_acceptance
+from .psfs import SpatialDensity
 
 type OpticalResponse = Callable[[int, NDArray[np.float64], Acquisition], NDArray[np.float64]]
 
@@ -25,193 +25,96 @@ type ImageResponse = Callable[[int, int, NDArray[np.float64], Acquisition], NDAr
 type SpectralParameter = float | Callable[[NDArray[np.float64]], NDArray[np.float64]]
 
 
-@dataclass(frozen=True, eq=False)
-class _OpticalModel:
-    """A physical image response with its fixed geometry, losses and coordinates."""
-
-    focal_length_m: float
-    collecting_area_m2: float
-    response: ImageResponse
-    settings: Mapping[
-        str, float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer]
-    ]
-    throughput: float = 1
-    port: str = "direct"
-
-    def __post_init__(self) -> None:
-        if not np.isfinite(self.focal_length_m) or self.focal_length_m <= 0:
-            raise ValueError("focal length must be finite and positive")
-        if not np.isfinite(self.collecting_area_m2) or self.collecting_area_m2 < 0:
-            raise ValueError("collecting area must be finite and in [0, inf]")
-        if not np.isfinite(self.throughput) or not 0 <= self.throughput <= 1:
-            raise ValueError("throughput must be finite and in [0, 1]")
-        settings = {name: exposure_setting(value, name) for name, value in self.settings.items()}
-        if not self.port:
-            raise ValueError("a physical output port is required")
-        object.__setattr__(self, "settings", MappingProxyType(settings))
-
-
 @dataclass(frozen=True, eq=False, init=False)
 class ImagingOptics:
-    """Optical model exposing a description derived from its construction.
+    """Bind a physical image response to its fixed optical description.
 
-    The legacy constructor (focal_length_m, collecting_area_m2, response, settings,
-    throughput=1, port='direct') remains available for custom responses. The pure
+    Factories and custom responses use the same explicit constructor. The pure
     borrowed response(exposure,read,wavelengths_m,acquisition) returns accepted
-    (nodes,wavelengths) fractions excluding area, throughput and QE. Its consistency
-    with a custom description is caller-owned; arbitrary closures cannot be proven.
+    (nodes,wavelengths) fractions excluding area, throughput and QE. A custom
+    callback's agreement with its description remains caller-owned.
 
-    Factories bind snapshotted settings to the response and this description as one
-    model. Public attributes cannot be replaced, but settings arrays are writable;
-    callers must not mutate them independently of the response. Rebuild through
-    a factory to change physics; dataclasses.replace cannot replace individual
-    attributes while silently retaining a stale response. replace(optics) may copy
-    the unchanged model. No synchronization or mutable configuration is provided.
+    Public attributes are fixed after construction. Rebuild with the relevant
+    factory to change physics. Fields have init=False, so dataclasses.replace
+    cannot replace a description independently of its response. Settings are
+    independent immutable value snapshots; keep array shape/dtype metadata
+    unchanged. Callbacks remain borrowed, pure, stable and pointwise in wavelength.
 
     Attributes:
-        focal_length_m: Positive focal length in metres.
-        collecting_area_m2: Nonnegative entrance-pupil area in square metres.
-        response: Borrowed callable returning per-read accepted spectral fractions.
-        settings: Named optical values with scalar or exposure-vector shapes.
-        throughput: Dimensionless transmission in [0,1] after optical acceptance.
-        port: Physical output-port identity for the model.
+        focal_length_m: Positive projection focal length in metres.
+        collecting_area_m2: Nonnegative pupil collecting area in square metres.
+        response: Borrowed per-read accepted-fraction callback.
+        settings: Named immutable scalar or exposure-vector optical setting snapshots.
+        throughput: Dimensionless post-response transmission in [0,1].
+        port: Nonempty physical output-port identity.
     """
 
-    _model: _OpticalModel
+    focal_length_m: float = field(init=False)
+    collecting_area_m2: float = field(init=False)
+    response: ImageResponse = field(init=False)
+    settings: Mapping[
+        str, float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer]
+    ] = field(init=False)
+    throughput: float = field(init=False)
+    port: str = field(init=False)
 
     def __init__(
         self,
-        focal_length_m: float | None = None,
-        collecting_area_m2: float | None = None,
-        response: ImageResponse | None = None,
+        focal_length_m: float,
+        collecting_area_m2: float,
+        response: ImageResponse,
         settings: Mapping[
             str,
             float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer],
-        ]
-        | None = None,
-        throughput: float | None = None,
-        port: str | None = None,
-        *,
-        _model: _OpticalModel | None = None,
+        ],
+        throughput: float = 1,
+        port: str = "direct",
     ) -> None:
-        """Hold an imaging law and its physical description as one consistent model.
+        """Construct the response and its numerical description together.
 
         Args:
             focal_length_m: Positive detector-plane focal length in metres.
-            collecting_area_m2: Nonnegative projected collecting area in square metres.
-            response: Borrowed optical accepted-fraction callback.
-            settings: Named scalar or per-exposure optical setting values.
-            throughput: Additional optical transmission fraction, defaulting to one.
-            port: Read-port identity, defaulting to "direct".
-            _model: Internal already assembled model used instead of public fields.
+            collecting_area_m2: Nonnegative projected pupil area in square metres.
+            response: Pure borrowed optical accepted-fraction callback.
+            settings: Finite scalar or per-exposure optical settings to snapshot.
+            throughput: Post-response transmission fraction in [0,1].
+            port: Nonempty output-port identity.
 
         Raises:
-            TypeError: Required public optical fields are absent.
-            ValueError: Public fields conflict with the supplied assembled model.
+            ValueError: Focal length, area, throughput, port or settings are invalid.
         """
-        if _model is not None:
-            if any(
-                v is not None
-                for v in (focal_length_m, collecting_area_m2, response, settings, throughput, port)
-            ):
-                raise ValueError(
-                    "rebuild the optical model; its description cannot be replaced independently"
-                )
-            model = _model
-        else:
-            if (
-                focal_length_m is None
-                or collecting_area_m2 is None
-                or response is None
-                or settings is None
-            ):
-                raise TypeError("focal length, collecting area, response and settings are required")
-            model = _OpticalModel(
-                focal_length_m,
-                collecting_area_m2,
-                response,
-                settings,
-                1 if throughput is None else throughput,
-                "direct" if port is None else port,
-            )
-        object.__setattr__(self, "_model", model)
-
-    @property
-    def focal_length_m(self) -> float:
-        """Expose the optical projection's focal length.
-
-        Returns:
-            Focal length in metres.
-        """
-        return self._model.focal_length_m
-
-    @property
-    def collecting_area_m2(self) -> float:
-        """Expose the pupil area used before throughput losses.
-
-        Returns:
-            Effective collecting area in square metres.
-        """
-        return self._model.collecting_area_m2
-
-    @property
-    def response(self) -> ImageResponse:
-        """Access the optical model's per-read response law.
-
-        Returns:
-            Borrowed callable evaluating accepted pixel fractions for each read.
-        """
-        return self._model.response
-
-    @property
-    def settings(
-        self,
-    ) -> Mapping[
-        str, float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer]
-    ]:
-        """Access the optical settings retained from construction.
-
-        Returns:
-            Mapping of physical parameter names to recorded settings.
-        """
-        return self._model.settings
-
-    @property
-    def throughput(self) -> float:
-        """Access throughput applied after accepted optical fractions.
-
-        Returns:
-            Dimensionless throughput factor.
-        """
-        return self._model.throughput
-
-    @property
-    def port(self) -> str:
-        """Access the output-port identity carried into detector readings.
-
-        Returns:
-            Physical output-port identifier.
-        """
-        return self._model.port
+        if not np.isfinite(focal_length_m) or focal_length_m <= 0:
+            raise ValueError("focal length must be finite and positive")
+        if not np.isfinite(collecting_area_m2) or collecting_area_m2 < 0:
+            raise ValueError("collecting area must be finite and in [0, inf]")
+        if not np.isfinite(throughput) or not 0 <= throughput <= 1:
+            raise ValueError("throughput must be finite and in [0, 1]")
+        if not port:
+            raise ValueError("a physical output port is required")
+        copied = {}
+        for name, value in settings.items():
+            array = exposure_setting(value, name)
+            # Immutable bytes prevent writeability from being re-enabled by callers.
+            copied[name] = np.frombuffer(array.tobytes(), dtype=array.dtype).reshape(array.shape)
+        object.__setattr__(self, "focal_length_m", focal_length_m)
+        object.__setattr__(self, "collecting_area_m2", collecting_area_m2)
+        object.__setattr__(self, "response", response)
+        object.__setattr__(self, "settings", MappingProxyType(copied))
+        object.__setattr__(self, "throughput", throughput)
+        object.__setattr__(self, "port", port)
 
 
 def imaging_optics(
     focal_length: float,
     area: float,
-    psf_sigma: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None,
+    spatial: SpatialDensity,
     throughput: float,
     transmission: Callable[[int, float, float, NDArray[np.float64]], NDArray[np.float64]],
     settings: Mapping[
         str, float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer]
     ],
     *,
-    psf: PointSpreadFunction | None = None,
-    spatial: bool = False,
+    spatial_transmission: bool = False,
     pixel_order: int = 8,
     port: str = "direct",
 ) -> ImagingOptics:
@@ -228,13 +131,11 @@ def imaging_optics(
     Args:
         focal_length: Projection focal length in metres.
         area: Pupil collecting area in square metres.
-        psf_sigma: Scalar or per-exposure Gaussian width in metres; use None
-            when ``psf`` supplies the spatial law.
+        spatial: Declared Gaussian, prepared tabulated density or pure spatial callback.
         throughput: Dimensionless post-response transmission factor.
         transmission: Borrowed fraction law of exposure, x, y and wavelength.
         settings: Physical optical settings retained with the model.
-        psf: Optional borrowed spatial density law in inverse square metres.
-        spatial: Integrate position-dependent transmission jointly with the PSF.
+        spatial_transmission: Integrate a position-dependent transmission jointly with density.
         pixel_order: Positive spatial quadrature order for integrated responses.
         port: Physical output-port identifier for resulting measurements.
 
@@ -244,7 +145,6 @@ def imaging_optics(
     Raises:
         ValueError: PSF representation or quadrature order is invalid.
     """
-    sigma, density = select_psf(psf_sigma, psf)
     validate_quadrature_order(pixel_order)
 
     def response(
@@ -252,33 +152,20 @@ def imaging_optics(
     ) -> NDArray[np.float64]:
         bounds = acquisition.pixel_bounds_m[read]
         centres = acquisition.image_xy_m[read]
-        if sigma is None:
-            assert density is not None
-            mapped = np.broadcast_to(centres[:, None, :], (len(centres), len(wave), 2))
-            # Evaluate a uniform filter once, retaining its shape/range checks.
-            uniform = None if spatial else transmission(exposure, 0, 0, wave)
-            return psf_pixel_response(
-                wave,
-                bounds,
-                mapped,
-                centres,
-                exposure,
-                psf=density,
-                pixel_order=pixel_order,
-                transmission=lambda x, y, w: (
-                    transmission(exposure, x, y, w) if uniform is None else uniform
-                ),
-            )
-        if not spatial:
-            fraction = gaussian_pixel_fraction(bounds, centres, sigma)
-            return fraction[:, None] * transmission(exposure, 0, 0, wave)
-        return modulated_pixel_response(
+        transmission_law = (
+            (lambda x, y, w: transmission(exposure, x, y, w))
+            if spatial_transmission
+            else transmission(exposure, 0, 0, wave)
+        )
+        return pixel_acceptance(
             wave,
             bounds,
             centres,
-            sigma_m=sigma,
+            spatial=spatial,
+            transmission=transmission_law,
+            image_xy_m=centres,
+            exposure_index=exposure,
             pixel_order=pixel_order,
-            transmission=lambda x, y, wavelength: transmission(exposure, x, y, wavelength),
         )
 
     return ImagingOptics(focal_length, area, response, settings, throughput, port)

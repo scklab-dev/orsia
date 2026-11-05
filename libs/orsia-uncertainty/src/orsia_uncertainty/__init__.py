@@ -1,29 +1,29 @@
 """Generic covariance and linear uncertainty operations."""
 
 from .covariance import (
+    CovarianceFactor,
     covariance_product,
-    covariance_solver,
+    factor_covariance,
     propagate_covariance,
     propagate_vector,
+    sample_gaussian,
     solve_covariance,
     validate_covariance,
-    whitener,
+    whiten,
 )
 from .operations import (
     combine_contributions,
     empirical_covariance,
-    gaussian_sampler,
     propagate_bias,
-    sample_gaussian,
 )
 
 __all__ = [
     "covariance_product",
     "combine_contributions",
     "empirical_covariance",
-    "gaussian_sampler",
-    "covariance_solver",
-    "whitener",
+    "CovarianceFactor",
+    "factor_covariance",
+    "whiten",
     "propagate_bias",
     "propagate_covariance",
     "propagate_vector",

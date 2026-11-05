@@ -5,14 +5,15 @@ from dataclasses import replace
 import numpy as np
 import pytest
 from orsia_instruments import (
-    DetectorMaps,
     DetectorOperatingPoints,
+    DetectorProperties,
     ExpectedElectrons,
     ReadSchedule,
     exposure_sequence,
     image_acquisition,
     image_charge,
     image_readout,
+    raster_read_schedule,
     regular_pixel_bounds,
 )
 from orsia_instruments.optics.dispersion import polynomial_image_map
@@ -32,9 +33,10 @@ def test_physical_read_copies_preserve_dtype_and_ownership(dtype, layout):
     retained = reads.exposure_bounds_s
     np.testing.assert_array_equal(retained, expected)
     assert retained.dtype == source.dtype
-    assert retained.flags.writeable
+    assert not retained.flags.writeable
     assert not np.shares_memory(retained, source)
-    retained[0, 0] = -1
+    with pytest.raises(ValueError):
+        retained[0, 0] = -1
     np.testing.assert_array_equal(source, expected)
     if source.flags.writeable:
         source[:] = 100
@@ -45,7 +47,10 @@ def test_physical_read_copies_preserve_dtype_and_ownership(dtype, layout):
 def test_charge_and_settings_use_numpy_copies(dtype):
     source = np.arange(12, dtype=dtype).reshape(1, 2, 6)[:, :, ::2]
     expected = source.copy()
-    charge = image_charge({"source": source}, exposure_bounds_s=np.array([[0, 1]]))
+    charge = image_charge(
+        {"source": source},
+        schedule=raster_read_schedule(np.array([[0, 1]]), source.shape[1:]),
+    )
     source[:] = 100
     retained = charge.signal.contributions["source"]
     assert retained.dtype == dtype
@@ -57,7 +62,21 @@ def test_charge_and_settings_use_numpy_copies(dtype):
     settings[:] = 4
     np.testing.assert_array_equal(described.settings["opd_m"], [2])
     assert np.asarray(described.settings["opd_m"]).dtype == dtype
-    measured = image_readout(described)
+    measured = image_readout(
+        described,
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=1),
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     assert measured.photoelectrons.dtype == charge.signal.total.dtype
     assert measured.photoelectrons.flags.writeable
     with pytest.raises(ValueError, match="finite"):
@@ -85,7 +104,18 @@ def test_physical_validation_remains_at_consumers(bad):
     with pytest.raises(ValueError, match="finite"):
         regular_pixel_bounds((1, 1), pitch_m=1, centre_xy_m=[bad, 0])
     with pytest.raises(ValueError, match="finite"):
-        DetectorMaps(bias_dn=bad)
+        DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            bias_dn=bad,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            nonlinearity=0,
+            adc_bits=16,
+        )
     zeros, ones = np.zeros(1), np.ones(1)
     with pytest.raises(ValueError, match="finite"):
         DetectorOperatingPoints(zeros, zeros, ones, ones, np.array([bad]), zeros)
@@ -93,10 +123,23 @@ def test_physical_validation_remains_at_consumers(bad):
 
 def test_detector_maps_and_constant_pointing_preserve_dtype():
     source = np.array([[1, 2]], dtype=np.float32)
-    detector = DetectorMaps(bias_dn=source)
+    detector = DetectorProperties(
+        pixel_bounds_m=regular_pixel_bounds((1, 2), pitch_m=1),
+        pitch_m=None,
+        bias_dn=source,
+        quantum_efficiency=1,
+        dark_electrons_per_s=0,
+        read_noise_electrons=0,
+        full_well_electrons=1e6,
+        electrons_per_dn=1,
+        nonlinearity=0,
+        adc_bits=16,
+    )
     source[:] = 0
     retained = np.asarray(detector.bias_dn)
-    assert retained.dtype == np.float32 and retained.flags.writeable
+    assert retained.dtype == np.float32 and not retained.flags.writeable
+    with pytest.raises(ValueError, match="read-only"):
+        retained[:] = 10
     np.testing.assert_array_equal(retained, [[1, 2]])
     assert not np.shares_memory(retained, source)
     pointing = np.zeros(2, dtype=np.float32)
@@ -118,10 +161,10 @@ def test_image_acquisition_snapshots_strided_inputs():
     offsets = np.array([0.0, 99.0, 0.25, 99.0])[::2]
     expected_exposures, expected_pixels = exposures.copy(), pixels.copy()
     acquisition = image_acquisition(
-        exposure_bounds_s=exposures,
-        setting_ids=("a", "b"),
+        schedule=raster_read_schedule(
+            exposures, pixels.shape[:2], setting_ids=("a", "b"), row_offsets_s=offsets
+        ),
         pixel_bounds_m=pixels,
-        row_offsets_s=offsets,
         direction_bounds_uv=(-0.1, 0.1, -0.1, 0.1),
         pointing=lambda t: np.zeros((len(t), 2)),
         focal_length_m=1.0,
@@ -137,7 +180,7 @@ def test_image_acquisition_snapshots_strided_inputs():
             acquisition.exposure_bounds_s[i], expected_exposures[setting] + row * 0.25
         )
         np.testing.assert_array_equal(acquisition.pixel_bounds_m[i], expected_pixels[row, 0])
-    assert acquisition.exposure_bounds_s.flags.writeable
+    assert not acquisition.exposure_bounds_s.flags.writeable
     assert not np.shares_memory(acquisition.exposure_bounds_s, exposures)
     assert not np.shares_memory(acquisition.pixel_bounds_m, pixels)
 

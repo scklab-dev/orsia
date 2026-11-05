@@ -77,8 +77,18 @@ def test_density_jacobians_reject_finite_inputs_whose_conversion_overflows() -> 
                 operation(np.array([10000.0, 20000.0]), np.full(2, 1e308))
 
 
-def test_public_readme_example() -> None:
-    readme = Path(__file__).resolve().parents[1] / "README.md"
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "README.md",
+        "docs/state-and-spectra.md",
+        "docs/columns.md",
+        "docs/spectroscopy.md",
+        "docs/transfer.md",
+    ],
+)
+def test_public_documented_examples(relative_path: str) -> None:
+    document = Path(__file__).resolve().parents[1] / relative_path
     namespace: dict[str, object] = {}
-    for block in readme.read_text(encoding="utf-8").split("```python\n")[1:]:
+    for block in document.read_text(encoding="utf-8").split("```python\n")[1:]:
         exec(block.split("```", 1)[0], namespace)

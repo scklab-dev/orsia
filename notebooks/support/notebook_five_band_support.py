@@ -1,4 +1,4 @@
-"""Local input verification, timing and display for the five-band notebook.
+"""Local input verification, reference adaptation, timing and notebook display.
 
 Scientific preparation and complete Orsia solver calls remain in the notebook.
 The persistent reference cache owns its identity and invalidation contract.
@@ -35,6 +35,55 @@ def verify_inputs(path):
     provenance = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in input_paths}
     print(f"Local inputs verified; {len(manifest['sha256'])} checksums matched.")
     return manifest, base, input_paths, provenance
+
+
+def sasktran2_inputs(scene, optics, source, *, mu0, muv, emissivity, surface_temperature_k):
+    """Expose the notebook's evaluated scene in the existing reference-worker schema.
+
+    ``scene`` supplies the bottom-to-top atmosphere and Lambertian surface;
+    ``optics`` supplies dimensionless (layer, point) absorption and Rayleigh
+    depths plus optional aerosol extinction, scattering and HG asymmetry on its
+    cm-1 grid. Aerosol extinction already includes aerosol absorption.
+    ``source`` supplies beam-normal irradiance per cm-1,
+    or is None for dark thermal transport. ``mu0`` and ``muv`` are the declared
+    solar/view zenith cosines. ``emissivity`` and ``surface_temperature_k`` retain
+    the thermal settings in every worker input, including inactive solar fields.
+    Thermal reflectance follows the opaque-surface emissivity convention.
+
+    Return the worker's named arrays/scalars, borrowing evaluated arrays and
+    allocating only uniform boundary vectors. The caller keeps inputs stable
+    during reference access; the existing cache owns serialization and identity.
+    """
+    atmosphere = scene.atmosphere
+    points = optics.grid.points.size
+    is_thermal = source is None
+    if is_thermal:
+        irradiance = np.zeros(points)
+        albedo = 1 - scene.surface.emissivity
+    else:
+        irradiance = source.irradiance.values
+        albedo = scene.surface.reflectance
+    shared = dict(
+        height_m=atmosphere.height_boundaries_m,
+        temperature_k=atmosphere.temperature_k,
+        wavenumbers_cm1=optics.grid.points,
+        absorption_depth=optics.absorption.optical_depth,
+        rayleigh_depth=optics.rayleigh.optical_depth,
+        thermal=is_thermal,
+        mu0=mu0,
+        muv=muv,
+        irradiance=irradiance,
+        albedo=albedo,
+        emissivity=np.full(points, emissivity),
+        surface_temperature_k=surface_temperature_k,
+    )
+    if optics.aerosol is not None:
+        shared.update(
+            aerosol_extinction_depth=optics.aerosol.optical_depth,
+            aerosol_scattering_depth=optics.aerosol.scattering_depth,
+            aerosol_asymmetry=optics.aerosol.asymmetry,
+        )
+    return shared
 
 
 def time_orsia(calculate, *, runs):
@@ -89,7 +138,7 @@ def show_agreement(results):
     ]
     for name, record in results.items():
         a = np.asarray(record["orsia"])
-        b = np.asarray(record["reference"][-1]["radiance"])
+        b = np.asarray(record["reference"]["radiance"])
         relative = np.divide(a - b, b, out=np.full_like(b, np.nan), where=b != 0)
         rows.append(
             f"| {name} | {np.max(np.abs(a - b)):.6g} | {100 * np.nanmax(np.abs(relative)):.6g} |"
@@ -112,7 +161,7 @@ def show_timing(results, runs):
     dates = []
     for name, record in results.items():
         ot = record["orsia_timing"]
-        sk = record["reference"][-1]
+        sk = record["reference"]
         st = sk["timing"]
         rows.append(
             f"| {name} | {ot['median_seconds']:.6g} | {st['median_seconds']:.6g} | "
@@ -130,7 +179,7 @@ def show_timing(results, runs):
     fig, axes = plt.subplots(2, 3, figsize=(12, 8), layout="constrained")
     fig.suptitle(f"Calculation time comparison: median of {runs} warm calls; min-max ranges")
     for ax, (name, record) in zip(axes.flat, results.items(), strict=False):
-        sk = record["reference"][-1]
+        sk = record["reference"]
         timings = [record["orsia_timing"], sk["timing"]]
         sk_label = "SASKTRAN2\n" + sk["cache"]["timing_provenance"]
         orsia_label = (

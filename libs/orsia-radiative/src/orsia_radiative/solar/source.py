@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
-from orsia_radiative.radiance import SpectralIrradiance
+from orsia_radiative.irradiance import SpectralIrradiance
 from orsia_radiative.solar.spectrum import SolarIrradianceSpectrum
 from orsia_radiative.spectral.conversions import density_per_nm_to_per_cm1
 from orsia_radiative.spectral.grid import (

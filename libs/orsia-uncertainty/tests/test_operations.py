@@ -9,6 +9,7 @@ from numpy.typing import NDArray
 from orsia_uncertainty import (
     combine_contributions,
     empirical_covariance,
+    factor_covariance,
     propagate_bias,
     propagate_covariance,
     propagate_vector,
@@ -119,22 +120,29 @@ def test_any_nonzero_cross_block_still_validates_joint_law() -> None:
 
 def test_gaussian_seeded_centred_singular_laws_and_rng_ownership() -> None:
     covariance = np.array([[2.0, 2.0], [2.0, 2.0]])
-    draws = sample_gaussian(covariance, np.random.default_rng(99), 20000)
+    draws = sample_gaussian(
+        factor_covariance(covariance, method="eigh"), np.random.default_rng(99), 20000
+    )
     np.testing.assert_array_equal(
-        draws, sample_gaussian(covariance, np.random.default_rng(99), 20000)
+        draws,
+        sample_gaussian(
+            factor_covariance(covariance, method="eigh"), np.random.default_rng(99), 20000
+        ),
     )
     np.testing.assert_array_equal(draws[:, 0], draws[:, 1])
     np.testing.assert_allclose(draws.mean(axis=0), [0.0, 0.0], atol=0.04)
     np.testing.assert_allclose(empirical_covariance(draws), covariance, atol=0.06)
     assert draws.flags.writeable and not np.shares_memory(draws, covariance)
     rng = np.random.default_rng(101)
-    np.testing.assert_array_equal(sample_gaussian(np.zeros(2), rng, 3), 0)
-    second = sample_gaussian(np.ones(2), rng, 3)
+    np.testing.assert_array_equal(
+        sample_gaussian(factor_covariance(np.zeros(2), method="eigh"), rng, 3), 0
+    )
+    second = sample_gaussian(factor_covariance(np.ones(2), method="eigh"), rng, 3)
     control = np.random.default_rng(101)
     control.standard_normal((3, 2))
     np.testing.assert_array_equal(second, control.standard_normal((3, 2)))
     with pytest.raises(ValueError, match="positive"):
-        sample_gaussian(covariance, rng, 0)
+        sample_gaussian(factor_covariance(covariance, method="eigh"), rng, 0)
 
 
 def test_empirical_covariance_centres_rows_and_uses_n_minus_one() -> None:

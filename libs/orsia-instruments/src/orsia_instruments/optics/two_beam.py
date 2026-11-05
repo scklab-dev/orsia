@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..quadrature import validate_quadrature_order
-from .psfs import PointSpreadFunction
+from .psfs import SpatialDensity
 from .response import (
     ImagingOptics,
     SpectralParameter,
@@ -83,13 +83,7 @@ def interferometric_imager(
     *,
     focal_length_m: float,
     collecting_area_m2: float,
-    psf_sigma_m: float
-    | np.floating
-    | np.integer
-    | Sequence[float]
-    | NDArray[np.floating | np.integer]
-    | None = None,
-    psf: PointSpreadFunction | None = None,
+    spatial: SpatialDensity,
     opd_m: float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer],
     port: str,
     phase_rad: SpectralParameter = 0,
@@ -119,8 +113,7 @@ def interferometric_imager(
     Args:
         focal_length_m: Imager focal length in metres.
         collecting_area_m2: Entrance collecting area in square metres.
-        psf_sigma_m: Gaussian width in metres, scalar or (x, y), for analytic pixels.
-        psf: Alternative borrowed spatial intensity-density callback.
+        spatial: Declared Gaussian, prepared tabulated density or pure spatial callback.
         opd_m: Base optical path difference in metres, scalar or per exposure.
         port: Physical output port, ``"+"`` or ``"-"``.
         phase_rad: Residual phase in radians, constant or wavelength law.
@@ -162,12 +155,11 @@ def interferometric_imager(
     return imaging_optics(
         focal_length_m,
         collecting_area_m2,
-        psf_sigma_m,
+        spatial,
         throughput,
         law,
         {"opd_m": opd},
         port=port,
-        psf=psf,
-        spatial=opd_offset_m is not None,
+        spatial_transmission=opd_offset_m is not None,
         pixel_order=pixel_order,
     )

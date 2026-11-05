@@ -4,8 +4,9 @@ import numpy as np
 import pytest
 from orsia_instruments import (
     DetectorElectronics,
-    DetectorMaps,
     DetectorOperatingPoints,
+    DetectorProperties,
+    GaussianPSF,
     ReadSchedule,
     cavity_transmission,
     gaussian_filter,
@@ -15,13 +16,14 @@ from orsia_instruments import (
     lorentzian_filter,
     lvf_centre,
     notch_filter,
+    pixel_acceptance,
     pixel_quantum_efficiency,
+    raster_read_schedule,
     rectangular_filter,
     regular_pixel_bounds,
     super_gaussian_filter,
     two_beam_ports,
 )
-from orsia_instruments.optics.pixels import modulated_pixel_response
 
 
 def test_pixel_qe_constructs_float_array_in_read_order():
@@ -69,13 +71,90 @@ def test_scalar_lvf_centre_returns_zero_dimensional_array():
 @pytest.mark.parametrize(
     "make_maps",
     [
-        lambda value: DetectorMaps(quantum_efficiency=value),
-        lambda value: DetectorMaps(dark_electrons_per_s=value),
-        lambda value: DetectorMaps(read_noise_electrons=value),
-        lambda value: DetectorMaps(full_well_electrons=value),
-        lambda value: DetectorMaps(electrons_per_dn=value),
-        lambda value: DetectorMaps(bias_dn=value),
-        lambda value: DetectorMaps(nonlinearity=value),
+        lambda value: DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            quantum_efficiency=value,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+        lambda value: DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            dark_electrons_per_s=value,
+            quantum_efficiency=1,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+        lambda value: DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            read_noise_electrons=value,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+        lambda value: DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            full_well_electrons=value,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+        lambda value: DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            electrons_per_dn=value,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+        lambda value: DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            bias_dn=value,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+        lambda value: DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+            pitch_m=None,
+            nonlinearity=value,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            adc_bits=16,
+        ),
     ],
 )
 @pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
@@ -99,9 +178,27 @@ def test_scalar_electronics_keep_finiteness_checks(field, bad):
 )
 @pytest.mark.parametrize("bad", [-1.0, np.nan, np.inf, -np.inf])
 def test_common_noise_is_validated_before_readout_iteration(field, bad):
-    charge = image_charge({"zero": np.zeros((1, 1, 1))}, exposure_bounds_s=np.array([[0.0, 1.0]]))
+    charge = image_charge(
+        {"zero": np.zeros((1, 1, 1))},
+        schedule=raster_read_schedule(np.array([[0.0, 1.0]]), (1, 1)),
+    )
     with pytest.raises(ValueError, match="common noise must be finite"):
-        image_readout(charge, **{field: bad})
+        image_readout(
+            charge,
+            **{field: bad},
+            detector=DetectorProperties(
+                pixel_bounds_m=regular_pixel_bounds((1, 1), pitch_m=1),
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -171,12 +268,12 @@ def test_local_transmission_callback_is_checked_once_before_integration(bad):
         calls += 1
         return values
 
-    with pytest.raises(ValueError, match="local response must be finite and in"):
-        modulated_pixel_response(
+    with pytest.raises(ValueError, match="transmission must be finite and in"):
+        pixel_acceptance(
             np.array([1.0, 2.0]),
             [-1, 1, -1, 1],
             np.zeros((1, 2)),
-            sigma_m=1,
+            spatial=GaussianPSF(1),
             transmission=transmission,
             pixel_order=2,
         )

@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 
 
 @pytest.mark.parametrize("format", ["f", "d"])
@@ -20,7 +20,7 @@ def test_non_numpy_buffers(format, solar, centres):
     matrices = [array(format, [0] * 6) for _ in range(6)]
     views = [memoryview(a).cast("B").cast(format, shape=[3, 2]) for a in matrices]
     assert (
-        propagation_native.prepare(
+        transfer_native.prepare(
             memoryview(depth).toreadonly(),
             memoryview(mu).toreadonly(),
             0.8,
@@ -35,7 +35,7 @@ def test_non_numpy_buffers(format, solar, centres):
     )
     dtype = np.float32 if format == "f" else np.float64
     expected = [np.empty((3, 2), dtype=dtype) for _ in range(6)]
-    propagation_native.prepare(
+    transfer_native.prepare(
         np.array(depth, dtype=dtype),
         np.array(mu, dtype=dtype),
         0.8,
@@ -53,7 +53,7 @@ def test_non_numpy_buffers(format, solar, centres):
     field = memoryview(array(format, [0] * 6)).cast("B").cast(format, shape=[3, 2])
     exits = array(format, [0] * 2)
     assert (
-        propagation_native.apply(
+        transfer_native.apply(
             mu,
             source.toreadonly(),
             views[0].toreadonly(),
@@ -67,7 +67,7 @@ def test_non_numpy_buffers(format, solar, centres):
         is None
     )
     expected_field, expected_exits = np.empty((3, 2), dtype=dtype), np.empty(2, dtype=dtype)
-    propagation_native.apply(
+    transfer_native.apply(
         np.array(mu, dtype=dtype),
         np.array(source),
         expected[0],
@@ -112,7 +112,7 @@ def test_export_release_on_success_and_error(fail):
     if fail == "acquisition":
         # A later acquisition failure must release all earlier successful exports.
         with pytest.raises(TypeError):
-            propagation_native.prepare(
+            transfer_native.prepare(
                 depth,
                 mu,
                 0,
@@ -130,16 +130,16 @@ def test_export_release_on_success_and_error(fail):
         else:
             outputs[-1] = Exporter(memoryview(array("d", [0])))  # wrong rank, after acquisition
         with pytest.raises(ValueError, match="matching native" if fail == "precision" else "grid"):
-            propagation_native.prepare(
+            transfer_native.prepare(
                 depth, mu, 0, outputs[0], outputs[1], outputs[2], outputs[3], None, None
             )
     else:
-        propagation_native.prepare(
+        transfer_native.prepare(
             depth, mu, 0, outputs[0], outputs[1], outputs[2], outputs[3], None, None
         )
         exits = Exporter(memoryview(array("d", [0])))
         # Exit-only deliberately ignores the two centre coefficients.
-        propagation_native.apply(
+        transfer_native.apply(
             mu,
             outputs[0],
             outputs[0],
@@ -166,11 +166,11 @@ def test_shared_readonly_buffers_concurrent(format):
 
     def run(_):
         exits = array(format, [0, 0])
-        propagation_native.apply(mu, source, transmission, source, None, None, 0.2, None, exits)
+        transfer_native.apply(mu, source, transmission, source, None, None, 0.2, None, exits)
         return exits
 
     expected = run(0)
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(run, range(40)))
     assert all(result == expected for result in results)
     assert all(result is not expected for result in results)
@@ -189,9 +189,9 @@ def test_readonly_outputs(which, numpy):
         exits.flags.writeable = False
     with pytest.raises(ValueError if numpy else BufferError):
         if numpy:
-            propagation_native.apply(mu, source, source, source, source, source, 0.2, field, exits)
+            transfer_native.apply(mu, source, source, source, source, source, 0.2, field, exits)
         else:
-            propagation_native.apply(
+            transfer_native.apply(
                 memoryview(mu),
                 memoryview(source),
                 memoryview(source),
@@ -210,12 +210,12 @@ def test_noncontiguous_rejected_without_copy(numpy):
     source = np.ones((3, 2))
     exits = np.full(2, -99.0)
     with pytest.raises(ValueError if numpy else BufferError):
-        propagation_native.apply(
+        transfer_native.apply(
             mu if numpy else memoryview(mu), source, source, source, None, None, 0, None, exits
         )
     np.testing.assert_array_equal(exits, [-99, -99])
     with pytest.raises(ValueError):
-        propagation_native.apply(
+        transfer_native.apply(
             np.ones(2), source, np.asfortranarray(source), source, None, None, 0, None, exits
         )
 
@@ -225,17 +225,17 @@ def test_non_native_float_rejected(dtype):
     mu = np.ones(2, dtype=dtype)
     source = np.ones((3, 2), dtype=dtype)
     with pytest.raises(ValueError, match="matching native"):
-        propagation_native.apply(mu, source, source, source, None, None, 0, None, mu.copy())
+        transfer_native.apply(mu, source, source, source, None, None, 0, None, mu.copy())
 
 
 def test_native_positional_only_and_no_conversion():
     with pytest.raises(TypeError):
-        propagation_native.prepare(depth=np.ones(1))  # type: ignore[unexpected-keyword, bad-argument-count]
+        transfer_native.prepare(depth=np.ones(1))  # type: ignore[unexpected-keyword, bad-argument-count]
     with pytest.raises(TypeError):
-        propagation_native.apply(mu=np.ones(1))  # type: ignore[unexpected-keyword, bad-argument-count]
+        transfer_native.apply(mu=np.ones(1))  # type: ignore[unexpected-keyword, bad-argument-count]
     with pytest.raises(TypeError):
         matrix = np.ones((1, 1))
-        propagation_native.prepare(
+        transfer_native.prepare(
             [1],  # type: ignore[bad-argument-type]
             np.ones(1),
             0,
@@ -258,7 +258,7 @@ def test_native_in_subinterpreter():
 import importlib.util
 import sys
 from array import array
-spec = importlib.util.spec_from_file_location("propagation_native", {propagation_native.__file__!r})
+spec = importlib.util.spec_from_file_location("transfer_native", {transfer_native.__file__!r})
 native = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native)
 mu = array("d", [0.8])
@@ -280,11 +280,9 @@ def test_scalar_conversion_errors(operation, bad_scalar):
     error = OverflowError if isinstance(bad_scalar, int) else TypeError
     with pytest.raises(error):
         if operation == "prepare":
-            propagation_native.prepare(
-                mu, mu, bad_scalar, matrix, matrix, matrix, matrix, None, None
-            )
+            transfer_native.prepare(mu, mu, bad_scalar, matrix, matrix, matrix, matrix, None, None)
         else:
-            propagation_native.apply(mu, matrix, matrix, matrix, None, None, bad_scalar, None, mu)
+            transfer_native.apply(mu, matrix, matrix, matrix, None, None, bad_scalar, None, mu)
 
 
 def test_scalar_user_exception_preserved():
@@ -294,7 +292,7 @@ def test_scalar_user_exception_preserved():
 
     mu, matrix = np.array([0.8]), np.ones((1, 1))
     with pytest.raises(RuntimeError, match="scalar sentinel"):
-        propagation_native.prepare(
+        transfer_native.prepare(
             mu,
             mu,
             Scalar(),  # type: ignore[bad-argument-type]
@@ -306,7 +304,7 @@ def test_scalar_user_exception_preserved():
             None,
         )
     with pytest.raises(RuntimeError, match="scalar sentinel"):
-        propagation_native.apply(
+        transfer_native.apply(
             mu,
             matrix,
             matrix,

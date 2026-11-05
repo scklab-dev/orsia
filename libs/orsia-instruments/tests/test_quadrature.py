@@ -1,6 +1,4 @@
-"""Instrument-owned interval quadrature, with no numerics compatibility facade."""
-
-import importlib
+"""Instrument-owned quadrature exactness, ownership and consumers."""
 
 import numpy as np
 import pytest
@@ -30,6 +28,3 @@ def test_quadrature_ownership_and_consumers():
     assert acquisition.interval_quadrature is pixels.interval_quadrature is interval_quadrature
     for module in (cavities, dispersion, filters, response, two_beam):
         assert module.validate_quadrature_order is validate_quadrature_order
-    with pytest.raises(ModuleNotFoundError) as error:
-        importlib.import_module("orsia_numerics.quadrature")
-    assert error.value.name == "orsia_numerics.quadrature"

@@ -1,12 +1,12 @@
-"""Independent conditional counting and memoryless physical readout, before processing."""
+"""Define detector geometry, photoelectric properties and memoryless physical readout."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .acquisition import Acquisition, ReadSchedule, read_schedule
+from .acquisition import ReadSchedule
 from .charge import ExpectedElectrons
 
 DETECTOR_MAP_NAMES = (
@@ -60,7 +60,7 @@ class DetectorElectronics:
 
 @dataclass(frozen=True, eq=False)
 class DetectorOperatingPoints:
-    """Persistent per-read detector parameters for a specified acquisition.
+    """Persistent per-read detector parameters for a specified read schedule.
 
     All arrays are independent writable (reads,) copies preserving input dtype.
     Repeat a pixel's value for each exposure to represent fixed-pattern variation;
@@ -139,35 +139,26 @@ class DetectorOperatingPoints:
 class DetectorReadings:
     """Digitised physical reads and separate full-well/ADC flags, not calibrated products.
 
-    Arrays have shape (realisations,reads), immutable owned storage. Acquisition
+    Arrays have shape (realisations,reads), immutable owned storage. Read
     identities and exposure support are retained. ADC flags mark analogue values
     outside its range before rounding; reaching full well is flagged at equality.
     Invalid physical support raises upstream rather than becoming saturation.
 
     Attributes:
-        acquisition: Identity and time support of the simulated physical reads.
+        reads: Identity and time support of the simulated physical reads.
         dn: Owned immutable integer counts of shape (realisations,reads).
         full_well_saturated: Boolean flags for reads reaching the full-well cap.
         adc_clipped: Boolean flags for values outside the ADC range before rounding.
     """
 
-    acquisition: Acquisition | ReadSchedule
+    reads: ReadSchedule
     dn: NDArray[np.int64]
     full_well_saturated: NDArray[np.bool_]
     adc_clipped: NDArray[np.bool_]
 
-    @property
-    def reads(self) -> ReadSchedule:
-        """Expose the readings' geometry-free physical read identities and timing.
-
-        Returns:
-            Existing physical schedule or a fresh timing snapshot from Acquisition.
-        """
-        return read_schedule(self.acquisition)
-
     def __post_init__(self) -> None:
         shape = self.dn.shape
-        if len(shape) != 2 or shape[0] < 1 or shape[1] != len(self.acquisition.sample_ids):
+        if len(shape) != 2 or shape[0] < 1 or shape[1] != len(self.reads.sample_ids):
             raise ValueError("readings must have shape (realisations,reads)")
         for name, dtype in (
             ("dn", np.int64),
@@ -185,16 +176,26 @@ class DetectorReadings:
 
 
 @dataclass(frozen=True, eq=False)
-class DetectorMaps:
-    """Fixed pixel QE and electronics, supplied as scalars or (rows,columns) maps.
+class DetectorProperties:
+    """Stable detector geometry, pixel QE and electronic operating properties.
 
-    Arrays are independent writable copies. Exact map shape is checked against the
-    focal plane on simulation, with no implicit row/column broadcasting. QE is
-    wavelength independent and applied once, before photon noise. Electronics use
-    electrons, electrons/s, electrons/DN and DN; nonlinearity is dimensionless.
-    The existing DetectorOperatingPoints transfer defines clipping/nonlinearity.
+    All ten fields require explicit values. Geometry and property arrays are
+    independent read-only copies; scalar properties are stored as 0-D arrays.
+    Keep retained array buffers and shape/dtype metadata stable during use.
+    Map shapes must exactly equal the derived (rows,columns) detector shape.
+    Columns increase x and rows increase y for regular geometry. Explicit None
+    pitch retains arbitrary finite active rectangles for irregular geometry.
+    Declared pitch requires centre spacing on each available axis and active
+    sizes no larger than pitch, within floating-point coordinate roundoff.
+    Single-row and single-column detectors retain both declared pitch components.
+    QE is wavelength independent and applied once before photon noise.
+    DetectorOperatingPoints defines clipping and nonlinear electronic transfer.
 
     Attributes:
+        pixel_bounds_m: Owned read-only float64 (rows,columns,4) active rectangles
+            in metres, ordered xmin,xmax,ymin,ymax. Gaps represent optical loss.
+        pitch_m: Positive (x,y) centre spacing in metres, or None for irregular geometry.
+        shape: Derived (rows,columns) dimensions of the active bounds.
         quantum_efficiency: Scalar or (rows,columns) photoelectron fraction.
         dark_electrons_per_s: Scalar or map of dark-current rates.
         read_noise_electrons: Scalar or map of Gaussian electron noise scales.
@@ -205,91 +206,322 @@ class DetectorMaps:
         adc_bits: Shared ADC width between one and 32 bits.
     """
 
+    pixel_bounds_m: NDArray[np.float64]
+    pitch_m: tuple[float, float] | None
     quantum_efficiency: (
         float
         | np.floating
         | np.integer
         | Sequence[Sequence[float]]
         | NDArray[np.floating | np.integer]
-    ) = 1
+    )
     dark_electrons_per_s: (
         float
         | np.floating
         | np.integer
         | Sequence[Sequence[float]]
         | NDArray[np.floating | np.integer]
-    ) = 0
+    )
     read_noise_electrons: (
         float
         | np.floating
         | np.integer
         | Sequence[Sequence[float]]
         | NDArray[np.floating | np.integer]
-    ) = 0
+    )
     full_well_electrons: (
         float
         | np.floating
         | np.integer
         | Sequence[Sequence[float]]
         | NDArray[np.floating | np.integer]
-    ) = 1e6
+    )
     electrons_per_dn: (
         float
         | np.floating
         | np.integer
         | Sequence[Sequence[float]]
         | NDArray[np.floating | np.integer]
-    ) = 1
+    )
     bias_dn: (
         float
         | np.floating
         | np.integer
         | Sequence[Sequence[float]]
         | NDArray[np.floating | np.integer]
-    ) = 0
+    )
     nonlinearity: (
         float
         | np.floating
         | np.integer
         | Sequence[Sequence[float]]
         | NDArray[np.floating | np.integer]
-    ) = 0
-    adc_bits: int = 16
+    )
+    adc_bits: int
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        """Return detector dimensions as (rows,columns), derived from active bounds."""
+        return self.pixel_bounds_m.shape[:2]
 
     def __post_init__(self) -> None:
-        for field in fields(self):
-            if field.name == "adc_bits":
-                continue
-            value = np.copy(getattr(self, field.name))
+        pixels = np.array(self.pixel_bounds_m, dtype=np.float64, copy=True)
+        if (
+            pixels.ndim != 3
+            or pixels.shape[-1] != 4
+            or not all(pixels.shape[:2])
+            or not np.isfinite(pixels).all()
+            or np.any(pixels[..., [1, 3]] <= pixels[..., [0, 2]])
+        ):
+            raise ValueError("detector pixels must be finite ordered (rows,columns,4) rectangles")
+        if self.pitch_m is not None:
+            pitch = np.asarray(self.pitch_m, dtype=np.float64)
+            if pitch.shape != (2,) or not np.isfinite(pitch).all() or np.any(pitch <= 0):
+                raise ValueError("detector pitch must be a finite positive (x,y) pair or None")
+            # Subtraction of focal-plane coordinates can lose low-order bits.
+            tolerance = 16 * np.finfo(np.float64).eps * np.max(np.abs(pixels))
+            sizes = pixels[..., [1, 3]] - pixels[..., [0, 2]]
+            centres = pixels[..., [0, 2]] / 2 + pixels[..., [1, 3]] / 2
+            if np.any(sizes > pitch + tolerance):
+                raise ValueError("active dimensions cannot exceed pixel pitch")
+            for axis, step in ((1, (pitch[0], 0)), (0, (0, pitch[1]))):
+                if not np.allclose(np.diff(centres, axis=axis), step, rtol=1e-12, atol=tolerance):
+                    raise ValueError("pixel centre spacing must agree with declared pitch")
+            object.__setattr__(self, "pitch_m", (float(pitch[0]), float(pitch[1])))
+        pixels.flags.writeable = False
+        object.__setattr__(self, "pixel_bounds_m", pixels)
+        for name in DETECTOR_MAP_NAMES:
+            value = np.copy(getattr(self, name))
             if value.ndim not in (0, 2) or not value.size:
                 raise ValueError("detector properties must be scalars or nonempty 2-D pixel maps")
-            if field.name == "quantum_efficiency":
+            if value.ndim == 2 and value.shape != self.shape:
+                raise ValueError(f"{name} map must match (rows,columns) exactly")
+            if name == "quantum_efficiency":
                 if not np.isfinite(value).all() or np.any((value < 0) | (value > 1)):
                     raise ValueError("QE must be finite and in [0, 1]")
-            elif field.name == "dark_electrons_per_s":
+            elif name == "dark_electrons_per_s":
                 if not np.isfinite(value).all() or np.any(value < 0):
                     raise ValueError("dark current must be finite and in [0, inf]")
-            elif field.name == "read_noise_electrons":
+            elif name == "read_noise_electrons":
                 if not np.isfinite(value).all() or np.any(value < 0):
                     raise ValueError("read noise must be finite and in [0, inf]")
-            elif field.name == "full_well_electrons":
+            elif name == "full_well_electrons":
                 if not np.isfinite(value).all() or np.any(value <= 0):
                     raise ValueError("full well must be finite and positive")
-            elif field.name == "electrons_per_dn":
+            elif name == "electrons_per_dn":
                 if not np.isfinite(value).all() or np.any(value <= 0):
                     raise ValueError("electrons per DN must be finite and positive")
-            elif field.name == "nonlinearity":
+            elif name == "nonlinearity":
                 if not np.isfinite(value).all() or np.any((value < -0.5) | (value > 0.5)):
                     raise ValueError("nonlinearity must be finite and in [-0.5, 0.5]")
             elif not np.isfinite(value).all():
                 raise ValueError("bias must be finite")
-            object.__setattr__(self, field.name, value)
+            value.flags.writeable = False
+            object.__setattr__(self, name, value)
         if not 1 <= self.adc_bits <= 32:
             raise ValueError("ADC width must be in [1,32]")
 
 
+def detector_operating_points(
+    detector: DetectorProperties, *, rows: NDArray[np.int64], columns: NDArray[np.int64]
+) -> DetectorOperatingPoints:
+    """Select owned electronic parameters in supplied physical read order.
+
+    QE remains upstream in photon conversion. Selection never consumes RNG.
+
+    Args:
+        detector: Physical or independently estimated detector electronic maps.
+        rows: Nonempty int64 (reads,) native row indices, including repeats.
+        columns: Matching int64 native column indices, including repeats.
+
+    Returns:
+        Independent per-read electronic maps and shared ADC width.
+
+    Raises:
+        ValueError: Indices have invalid shape, dtype or detector support.
+    """
+    if (
+        rows.ndim != 1
+        or not len(rows)
+        or columns.shape != rows.shape
+        or rows.dtype != np.int64
+        or columns.dtype != np.int64
+        or np.any(rows < 0)
+        or np.any(rows >= detector.shape[0])
+        or np.any(columns < 0)
+        or np.any(columns >= detector.shape[1])
+    ):
+        raise ValueError("detector indices must be matching nonempty in-range int64 vectors")
+    return DetectorOperatingPoints(
+        **{
+            name: np.broadcast_to(getattr(detector, name), detector.shape)[rows, columns]
+            for name in DETECTOR_MAP_NAMES
+            if name != "quantum_efficiency"
+        },
+        adc_bits=detector.adc_bits,
+    )
+
+
+def regular_pixel_bounds(
+    shape: tuple[int, int],
+    *,
+    pitch_m: float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer],
+    active_size_m: float
+    | np.floating
+    | np.integer
+    | Sequence[float]
+    | NDArray[np.floating | np.integer]
+    | None = None,
+    centre_xy_m: float
+    | np.floating
+    | np.integer
+    | Sequence[float]
+    | NDArray[np.floating | np.integer] = (0, 0),
+) -> NDArray[np.float64]:
+    """Fresh writable (rows,columns,4) bounds in xmin,xmax,ymin,ymax order.
+
+    Pitch and active size are scalars or (x,y) pairs, not (row,column) pairs.
+    Columns increase x; rows increase y. centre_xy_m is the centre of the whole
+    array. Active dimensions default to pitch and cannot exceed it. Gaps are lost
+    collecting area, not a second fill-factor multiplier. For irregular instruments,
+    supply explicit bounds to DetectorProperties(pixel_bounds_m=..., pitch_m=None,
+    ...) before instrument construction. Low-level acquisition kernels can also
+    receive explicit bounds.
+
+    Args:
+        shape: Positive (rows,columns) detector dimensions.
+        pitch_m: Scalar or (x,y) pixel-centre spacing in metres.
+        active_size_m: Optional scalar or (x,y) active rectangle dimensions;
+            defaults to pitch when omitted.
+        centre_xy_m: (x,y) centre of the entire detector array in metres.
+
+    Returns:
+        Fresh writable float64 (rows,columns,4) active pixel bounds in metres.
+
+    Raises:
+        ValueError: Dimensions, spacing, active size or centre are invalid.
+    """
+    rows, columns = shape
+    if rows < 1 or columns < 1:
+        raise ValueError("focal-plane dimensions must be positive")
+    pitch = np.asarray(pitch_m, dtype=np.float64)
+    if not np.isfinite(pitch).all() or np.any(pitch <= 0):
+        raise ValueError("pixel pitch must be finite and positive")
+    active = pitch if active_size_m is None else np.asarray(active_size_m, dtype=np.float64)
+    if active_size_m is not None and (not np.isfinite(active).all() or np.any(active <= 0)):
+        raise ValueError("active size must be finite and positive")
+    centre = np.copy(centre_xy_m)
+    if not np.isfinite(centre).all():
+        raise ValueError("pixel centre must be finite")
+    if pitch.shape not in ((), (2,)) or active.shape not in ((), (2,)) or centre.shape != (2,):
+        raise ValueError("pitch/active size must be scalar or (x,y); centre must be (x,y)")
+    pitch = np.broadcast_to(pitch, (2,))
+    active = np.broadcast_to(active, (2,))
+    if np.any(active > pitch):
+        raise ValueError("active dimensions cannot exceed pixel pitch")
+    x = centre[0] + (np.arange(columns) - (columns - 1) / 2) * pitch[0]
+    y = centre[1] + (np.arange(rows) - (rows - 1) / 2) * pitch[1]
+    result = np.empty((rows, columns, 4))
+    result[..., 0] = x - active[0] / 2
+    result[..., 1] = x + active[0] / 2
+    result[..., 2] = y[:, None] - active[1] / 2
+    result[..., 3] = y[:, None] + active[1] / 2
+    return result
+
+
+def regular_detector(
+    shape: tuple[int, int],
+    *,
+    pitch_m: float | np.floating | np.integer | Sequence[float] | NDArray[np.floating | np.integer],
+    active_size_m: float
+    | np.floating
+    | np.integer
+    | Sequence[float]
+    | NDArray[np.floating | np.integer],
+    centre_xy_m: Sequence[float] | NDArray[np.floating | np.integer],
+    quantum_efficiency: float
+    | np.floating
+    | np.integer
+    | Sequence[Sequence[float]]
+    | NDArray[np.floating | np.integer],
+    dark_electrons_per_s: float
+    | np.floating
+    | np.integer
+    | Sequence[Sequence[float]]
+    | NDArray[np.floating | np.integer],
+    read_noise_electrons: float
+    | np.floating
+    | np.integer
+    | Sequence[Sequence[float]]
+    | NDArray[np.floating | np.integer],
+    full_well_electrons: float
+    | np.floating
+    | np.integer
+    | Sequence[Sequence[float]]
+    | NDArray[np.floating | np.integer],
+    electrons_per_dn: float
+    | np.floating
+    | np.integer
+    | Sequence[Sequence[float]]
+    | NDArray[np.floating | np.integer],
+    bias_dn: float
+    | np.floating
+    | np.integer
+    | Sequence[Sequence[float]]
+    | NDArray[np.floating | np.integer],
+    nonlinearity: float
+    | np.floating
+    | np.integer
+    | Sequence[Sequence[float]]
+    | NDArray[np.floating | np.integer],
+    adc_bits: int,
+) -> DetectorProperties:
+    """Build a regular detector with explicit geometry and photoelectric properties.
+
+    All arguments are required. Shape uses (rows,columns); physical dimensions
+    use scalar or (x,y) values. Gaps reduce active area directly. Geometry and
+    maps become independent read-only snapshots in DetectorProperties.
+
+    Args:
+        shape: Positive (rows,columns) detector dimensions.
+        pitch_m: Positive scalar or (x,y) pixel-centre spacing in metres.
+        active_size_m: Positive scalar or (x,y) active sizes, no larger than pitch.
+        centre_xy_m: (x,y) centre of the whole detector in metres.
+        quantum_efficiency: Scalar or exact detector-shaped photoelectron fraction.
+        dark_electrons_per_s: Scalar or map of nonnegative dark-current rates.
+        read_noise_electrons: Scalar or map of nonnegative Gaussian noise scales.
+        full_well_electrons: Scalar or map of positive charge caps in electrons.
+        electrons_per_dn: Scalar or map of positive electron-to-DN gains.
+        bias_dn: Scalar or map of finite digital offsets in DN.
+        nonlinearity: Scalar or map of dimensionless charge curvature in [-0.5,0.5].
+        adc_bits: Shared ADC width between one and 32 bits.
+
+    Returns:
+        Detector with derived shape, retained (x,y) pitch and read-only arrays.
+
+    Raises:
+        ValueError: Geometry or physical properties violate detector support.
+    """
+    pixels = regular_pixel_bounds(
+        shape, pitch_m=pitch_m, active_size_m=active_size_m, centre_xy_m=centre_xy_m
+    )
+    pitch = np.broadcast_to(np.asarray(pitch_m, dtype=np.float64), (2,))
+    return DetectorProperties(
+        pixel_bounds_m=pixels,
+        pitch_m=(float(pitch[0]), float(pitch[1])),
+        quantum_efficiency=quantum_efficiency,
+        dark_electrons_per_s=dark_electrons_per_s,
+        read_noise_electrons=read_noise_electrons,
+        full_well_electrons=full_well_electrons,
+        electrons_per_dn=electrons_per_dn,
+        bias_dn=bias_dn,
+        nonlinearity=nonlinearity,
+        adc_bits=adc_bits,
+    )
+
+
 def pixel_quantum_efficiency(
-    acquisition: Acquisition | ReadSchedule, efficiencies: Mapping[str, float]
+    reads: ReadSchedule, efficiencies: Mapping[str, float]
 ) -> NDArray[np.float64]:
     """Persistent pixel QE map as (reads,1), for ``expected_electrons`` QE input.
 
@@ -298,7 +530,7 @@ def pixel_quantum_efficiency(
     explicit (reads,spectral) input. Never reapply QE at readout.
 
     Args:
-        acquisition: Ordered physical reads providing pixel identities.
+        reads: Ordered physical reads providing pixel identities.
         efficiencies: Exact mapping of every pixel identity to a fraction in [0,1].
 
     Returns:
@@ -307,9 +539,9 @@ def pixel_quantum_efficiency(
     Raises:
         ValueError: Pixel coverage or any efficiency fraction is invalid.
     """
-    if set(efficiencies) != set(acquisition.pixel_ids):
+    if set(efficiencies) != set(reads.pixel_ids):
         raise ValueError("QE map must cover exactly the physical pixel identities")
-    values = np.array([efficiencies[p] for p in acquisition.pixel_ids], dtype=np.float64)
+    values = np.array([efficiencies[p] for p in reads.pixel_ids], dtype=np.float64)
     if not np.isfinite(values).all() or np.any((values < 0) | (values > 1)):
         raise ValueError("pixel QE must be finite and in [0, 1]")
     return values[:, None]
@@ -335,8 +567,8 @@ def electron_moments(
     Raises:
         ValueError: Operating points do not align with reads or moments overflow.
     """
-    _check_points(signal.acquisition, electronics)
-    duration = np.diff(signal.acquisition.exposure_bounds_s, axis=1).ravel()
+    _check_points(signal.reads, electronics)
+    duration = np.diff(signal.reads.exposure_bounds_s, axis=1).ravel()
     mean = signal.total + electronics.dark_electrons_per_s * duration
     variance = mean + electronics.read_noise_electrons**2
     if not np.all(np.isfinite(mean)) or not np.all(np.isfinite(variance)):
@@ -345,7 +577,7 @@ def electron_moments(
 
 
 def digitize(
-    acquisition: Acquisition | ReadSchedule,
+    reads: ReadSchedule,
     collected_electrons: NDArray[np.float64],
     read_noise_electrons: NDArray[np.float64],
     electronics: DetectorElectronics | DetectorOperatingPoints,
@@ -357,7 +589,7 @@ def digitize(
     No input mutation; output arrays own immutable storage.
 
     Args:
-        acquisition: Physical read identities and exposure support.
+        reads: Physical read identities and exposure support.
         collected_electrons: (realisations,reads) nonnegative photo/dark charge.
         read_noise_electrons: Matching signed additive read-noise realizations.
         electronics: Full-well, gain, bias, nonlinear and ADC transfer parameters.
@@ -368,7 +600,7 @@ def digitize(
     Raises:
         ValueError: Charge/noise support, operating points or analogue DN is invalid.
     """
-    _check_points(acquisition, electronics)
+    _check_points(reads, electronics)
     charge = collected_electrons
     if not np.isfinite(charge).all() or np.any(charge < 0):
         raise ValueError("collected charge must be finite and in [0, inf]")
@@ -376,7 +608,7 @@ def digitize(
     if (
         charge.ndim != 2
         or charge.shape[0] < 1
-        or charge.shape[1] != len(acquisition.sample_ids)
+        or charge.shape[1] != len(reads.sample_ids)
         or noise.shape != charge.shape
         or not np.all(np.isfinite(noise))
     ):
@@ -394,7 +626,7 @@ def digitize(
     maximum = 2**electronics.adc_bits - 1
     clipped = (analogue < 0) | (analogue > maximum)
     dn = np.rint(np.clip(analogue, 0, maximum)).astype(np.int64)
-    return DetectorReadings(acquisition, dn, saturated, clipped)
+    return DetectorReadings(reads, dn, saturated, clipped)
 
 
 def correct_digital_readings(
@@ -422,10 +654,10 @@ def correct_digital_readings(
     """
     if readings.full_well_saturated.any() or readings.adc_clipped.any():
         raise ValueError("clipped detector reads cannot be linearly corrected")
-    _check_points(readings.acquisition, electronics)
+    _check_points(readings.reads, electronics)
     if isinstance(electronics, DetectorOperatingPoints) and np.any(electronics.nonlinearity != 0):
         raise ValueError("nonlinear detector reads need their own calibration")
-    duration = np.diff(readings.acquisition.exposure_bounds_s, axis=1).ravel()
+    duration = np.diff(readings.reads.exposure_bounds_s, axis=1).ravel()
     return (
         electronics.electrons_per_dn * (readings.dn.astype(np.float64) - electronics.bias_dn)
         - electronics.dark_electrons_per_s * duration
@@ -505,7 +737,7 @@ def sample_readout(
             noise += rng.normal(0, amplitude, size=(realisations, len(groups)))[:, indices]
         elif ids is not None:
             _group_indices(ids, len(mean), name)
-    return digitize(signal.acquisition, charge, noise, electronics)
+    return digitize(signal.reads, charge, noise, electronics)
 
 
 def electron_covariance(
@@ -558,11 +790,13 @@ def electron_covariance(
 
 
 def check_detector_maps(
-    detector: DetectorMaps, shape: tuple[int, int], *, include_qe: bool = False
+    detector: DetectorProperties, shape: tuple[int, int], *, include_qe: bool = False
 ) -> None:
     """Check scalar/exact (rows,columns) map support without copying or applying it.
 
-    QE is checked only when include_qe=True; a supplied spectral QE callback
+    Detector geometry must match the supplied raster shape. Property maps are
+    validated against that geometry at construction. QE is checked here only
+    when include_qe=True; a supplied spectral QE callback
     replaces that map. Electronics maps are always checked. No broadcasting
     across a single image axis is accepted.
 
@@ -572,8 +806,10 @@ def check_detector_maps(
         include_qe: Check QE map dimensions when a spectral callback does not replace it.
 
     Raises:
-        ValueError: A required two-dimensional detector map differs from shape.
+        ValueError: Detector geometry or a required map differs from the raster shape.
     """
+    if detector.shape != shape:
+        raise ValueError("detector shape must match (rows,columns) exactly")
     for name in DETECTOR_MAP_NAMES:
         if name == "quantum_efficiency" and not include_qe:
             continue
@@ -583,12 +819,12 @@ def check_detector_maps(
 
 
 def _check_points(
-    acquisition: Acquisition | ReadSchedule,
+    reads: ReadSchedule,
     electronics: DetectorElectronics | DetectorOperatingPoints,
 ) -> None:
     if isinstance(electronics, DetectorOperatingPoints) and len(
         electronics.dark_electrons_per_s
-    ) != len(acquisition.sample_ids):
+    ) != len(reads.sample_ids):
         raise ValueError("detector operating points must match physical reads")
 
 

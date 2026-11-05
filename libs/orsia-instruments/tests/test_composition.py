@@ -7,8 +7,9 @@ import numpy as np
 import pytest
 from orsia_instruments import (
     DetectorElectronics,
-    DetectorMaps,
+    DetectorProperties,
     ExpectedElectrons,
+    GaussianPSF,
     ImagingOptics,
     RadianceField,
     ReadSchedule,
@@ -27,6 +28,7 @@ from orsia_instruments import (
     image_readout,
     lvf_imager,
     native_sensitivities,
+    raster_read_schedule,
     read_schedule,
     rectangular_acquisition,
     regular_pixel_bounds,
@@ -53,7 +55,7 @@ def optical_case():
         optics=filter_imager(
             focal_length_m=0.02,
             collecting_area_m2=1e-8,
-            psf_sigma_m=3e-5,
+            spatial=GaussianPSF(3e-5),
             filter=partial(gaussian_filter, centre_m=2e-6, width_m=3e-8),
         ),
         exposures=exposure_sequence(
@@ -73,19 +75,22 @@ def external(values=None, **kwargs):
         values = {"external": np.zeros((2, 2, 3))}
     return image_charge(
         values,
-        exposure_bounds_s=np.array([[0.0, 0.01], [0.1, 0.11]]),
-        row_delay_s=0.001,
+        schedule=raster_read_schedule(
+            np.array([[0.0, 0.01], [0.1, 0.11]]),
+            next(iter(values.values())).shape[1:],
+            row_offsets_s=np.arange(next(iter(values.values())).shape[1], dtype=np.float64) * 0.001,
+        ),
         **kwargs,
     )
 
 
-def test_detector_without_geometry_and_legacy_identity():
+def test_detector_without_geometry_and_explicit_timing_snapshot():
     bounds = np.array([[0.0, 1.0], [2.0, 4.0]])
     reads = ReadSchedule(("a", "b"), ("p", "q"), ("s", "s"), ("+", "+"), bounds)
     bounds[:] = 9
     assert read_schedule(reads) is reads
     assert not hasattr(reads, "weights_sr_s")
-    assert reads.exposure_bounds_s.flags.writeable
+    assert not reads.exposure_bounds_s.flags.writeable
     signal = ExpectedElectrons(reads, {"scene": np.array([10.0, 20.0])})
     combined = combine_source_paths(
         signal, ExpectedElectrons(reads, {"warm": np.array([2.0, 3.0])})
@@ -96,7 +101,7 @@ def test_detector_without_geometry_and_legacy_identity():
     np.testing.assert_array_equal(variance, [23.0, 36.0])
     np.testing.assert_array_equal(electron_covariance(combined, electronics), np.diag(variance))
     result = digitize(reads, mean[None], np.zeros((1, 2)), electronics)
-    assert result.acquisition is reads and result.reads is reads
+    assert result.reads is reads
     np.testing.assert_array_equal(result.dn, [[14, 27]])
     assert sample_readout(combined, electronics, np.random.default_rng(3)).reads is reads
     nominal, derivative = native_sensitivities(
@@ -107,33 +112,35 @@ def test_detector_without_geometry_and_legacy_identity():
     assert nominal.reads is reads
     np.testing.assert_allclose(derivative, 1.0)
     acquisition = rectangular_acquisition(
-        sample_ids=reads.sample_ids,
-        pixel_ids=reads.pixel_ids,
-        setting_ids=reads.setting_ids,
-        port_ids=reads.port_ids,
-        exposure_bounds_s=reads.exposure_bounds_s,
+        reads=ReadSchedule(
+            reads.sample_ids,
+            reads.pixel_ids,
+            reads.setting_ids,
+            reads.port_ids,
+            reads.exposure_bounds_s,
+        ),
         pixel_bounds_m=np.tile([-0.1, 0.1, -0.1, 0.1], (2, 1)),
         direction_bounds_uv=(-0.01, 0.01, -0.01, 0.01),
         pointing=lambda t: np.zeros((len(t), 2)),
         focal_length_m=1,
     )
-    old = ExpectedElectrons(acquisition, {"a": np.zeros(2)})
-    assert old.acquisition is acquisition
-    np.testing.assert_array_equal(old.reads.exposure_bounds_s, reads.exposure_bounds_s)
-    readout = sample_readout(old, electronics, np.random.default_rng(1))
-    assert readout.acquisition is acquisition
-    assert readout.reads.sample_ids == reads.sample_ids
-    assert combine_source_paths(old, combined).acquisition is acquisition
+    snapshot = read_schedule(acquisition)
+    assert snapshot is not acquisition
+    np.testing.assert_array_equal(snapshot.exposure_bounds_s, reads.exposure_bounds_s)
+    assert snapshot is acquisition.reads
+    with pytest.raises(ValueError):
+        acquisition.exposure_bounds_s[:] += 5
+    np.testing.assert_array_equal(snapshot.exposure_bounds_s, reads.exposure_bounds_s)
+    optical_signal = ExpectedElectrons(snapshot, {"a": np.zeros(2)})
+    readout = sample_readout(optical_signal, electronics, np.random.default_rng(1))
+    assert readout.reads is snapshot
+    assert combine_source_paths(optical_signal, combined).reads is snapshot
     with pytest.raises(ValueError, match="identities"):
-        combine_source_paths(
-            signal, replace(signal, acquisition=replace(reads, pixel_ids=("q", "p")))
-        )
+        combine_source_paths(signal, replace(signal, reads=replace(reads, pixel_ids=("q", "p"))))
     with pytest.raises(ValueError, match="intervals"):
         combine_source_paths(
             signal,
-            replace(
-                signal, acquisition=replace(reads, exposure_bounds_s=reads.exposure_bounds_s + 1)
-            ),
+            replace(signal, reads=replace(reads, exposure_bounds_s=reads.exposure_bounds_s + 1)),
         )
 
 
@@ -162,11 +169,17 @@ def test_invalid_read_schedule(change):
 
 def test_explicit_assembly_equals_shortcut_and_keeps_sources(optical_case):
     scene, inputs = optical_case
-    detector = DetectorMaps(
+    detector = DetectorProperties(
+        pixel_bounds_m=inputs["pixel_bounds_m"],
+        pitch_m=None,
         quantum_efficiency=0.7,
         bias_dn=np.arange(6).reshape(2, 3) + 100,
         dark_electrons_per_s=2,
         read_noise_electrons=1,
+        full_well_electrons=1e6,
+        electrons_per_dn=1,
+        nonlinearity=0,
+        adc_bits=16,
     )
     noise = dict(
         realisations=3, row_noise_electrons=2, column_noise_electrons=3, exposure_noise_electrons=4
@@ -180,8 +193,11 @@ def test_explicit_assembly_equals_shortcut_and_keeps_sources(optical_case):
         rng=np.random.default_rng(5),
         **noise,
     )
-    for name in ("photoelectrons", "dn", "full_well_saturated", "adc_clipped", "exposure_bounds_s"):
+    for name in ("photoelectrons", "dn", "full_well_saturated", "adc_clipped"):
         np.testing.assert_array_equal(getattr(explicit, name), getattr(dense, name))
+    np.testing.assert_array_equal(
+        explicit.schedule.reads.exposure_bounds_s, dense.schedule.reads.exposure_bounds_s
+    )
     np.testing.assert_array_equal(dense.contributions["scene"], dense.photoelectrons)
     assert dense.contributions["scene"].flags.writeable
     with pytest.raises(TypeError):
@@ -200,9 +216,37 @@ def test_spectral_qe_replaces_map_on_full_image(optical_case):
         return (0.2 + 0.03 * indices[1][:, None] + 0.04 * indices[2][:, None]) * (wave[None] / 2e-6)
 
     charge = image_photoelectrons(
-        scene, **inputs, detector=DetectorMaps(quantum_efficiency=0), quantum_efficiency=law
+        scene,
+        **inputs,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=0,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+        quantum_efficiency=law,
     )
-    dense = image_readout(charge)
+    dense = image_readout(
+        charge,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     assert dense.photoelectrons.min() > 0
     assert len(calls) == 1
     exposure, row, column = calls[0]
@@ -216,10 +260,13 @@ def test_spectral_qe_replaces_map_on_full_image(optical_case):
 
     exposures = inputs["exposures"]
     acquisition = image_acquisition(
-        exposure_bounds_s=exposures.bounds_s,
-        setting_ids=("0", "1"),
+        schedule=raster_read_schedule(
+            exposures.bounds_s,
+            inputs["pixel_bounds_m"].shape[:2],
+            setting_ids=("0", "1"),
+            row_offsets_s=np.arange(2, dtype=np.float64) * exposures.row_delay_s,
+        ),
         pixel_bounds_m=inputs["pixel_bounds_m"],
-        row_offsets_s=np.arange(2) * exposures.row_delay_s,
         direction_bounds_uv=exposures.direction_bounds_uv,
         pointing=exposures.pointing,
         focal_length_m=inputs["optics"].focal_length_m,
@@ -247,12 +294,39 @@ def test_spectral_qe_replaces_map_on_full_image(optical_case):
 def test_bad_spectral_qe(optical_case, law):
     scene, inputs = optical_case
     with pytest.raises(ValueError):
-        image_photoelectrons(scene, **inputs, quantum_efficiency=law)
+        image_photoelectrons(
+            scene,
+            **inputs,
+            quantum_efficiency=law,
+            detector=DetectorProperties(
+                pixel_bounds_m=inputs["pixel_bounds_m"],
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
 
 
-def test_qe_support_and_ignored_map_shape(optical_case):
+def test_qe_support_and_detector_map_shape(optical_case):
     scene, inputs = optical_case
-    detector = DetectorMaps(quantum_efficiency=np.zeros((9, 8)))
+    detector = DetectorProperties(
+        pixel_bounds_m=inputs["pixel_bounds_m"],
+        pitch_m=None,
+        quantum_efficiency=np.zeros((2, 3)),
+        dark_electrons_per_s=0,
+        read_noise_electrons=0,
+        full_well_electrons=1e6,
+        electrons_per_dn=1,
+        bias_dn=0,
+        nonlinearity=0,
+        adc_bits=16,
+    )
 
     def law(indices, wave):
         return np.full((len(indices[0]), len(wave)), 0.5)
@@ -264,15 +338,50 @@ def test_qe_support_and_ignored_map_shape(optical_case):
         0,
     )
     with pytest.raises(ValueError, match="map"):
-        image_photoelectrons(scene, **inputs, detector=detector)
+        replace(detector, quantum_efficiency=np.zeros((9, 8)))
+    np.testing.assert_array_equal(
+        image_photoelectrons(scene, **inputs, detector=detector).signal.total, 0
+    )
 
     def unsupported(indices, wave):
         raise ValueError("outside supplied QE support")
 
     with pytest.raises(ValueError, match="outside supplied QE support"):
-        image_photoelectrons(scene, **inputs, quantum_efficiency=unsupported)
+        image_photoelectrons(
+            scene,
+            **inputs,
+            quantum_efficiency=unsupported,
+            detector=DetectorProperties(
+                pixel_bounds_m=inputs["pixel_bounds_m"],
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
     with pytest.raises(ValueError, match="source name"):
-        image_photoelectrons(scene, **inputs, source_name="")
+        image_photoelectrons(
+            scene,
+            **inputs,
+            source_name="",
+            detector=DetectorProperties(
+                pixel_bounds_m=inputs["pixel_bounds_m"],
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
 
 
 def test_different_source_grids_quadratures_and_external_background(optical_case):
@@ -285,13 +394,56 @@ def test_different_source_grids_quadratures_and_external_background(optical_case
         ),
         values=np.full((2, 2, 2, 23), 2e-4),
     )
-    a = image_photoelectrons(scene, **inputs)
+    a = image_photoelectrons(
+        scene,
+        **inputs,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     b = image_photoelectrons(
-        warm, **(inputs | {"time_order": 2, "angular_order": 3}), source_name="warm"
+        warm,
+        **(inputs | {"time_order": 2, "angular_order": 3}),
+        source_name="warm",
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
     )
     c = external({"other": np.full((2, 2, 3), 5.0)})
     combined = combine_image_source_paths(a, b, c)
-    result = image_readout(combined, detector=DetectorMaps(quantum_efficiency=0))
+    result = image_readout(
+        combined,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=0,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     assert set(result.contributions) == {"scene", "warm", "other"}
     np.testing.assert_array_equal(result.contributions["other"], 5.0)
     np.testing.assert_allclose(
@@ -300,7 +452,9 @@ def test_different_source_grids_quadratures_and_external_background(optical_case
     with pytest.raises(ValueError, match="unique"):
         combine_image_source_paths(a, a)
     with pytest.raises(ValueError):
-        combine_image_source_paths(a, replace(b, image_shape=(1, 2, 3)))
+        combine_image_source_paths(
+            a, replace(b, schedule=replace(b.schedule, native_shape=(1, 2, 3)))
+        )
     with pytest.raises(ValueError, match="identities"):
         reordered = replace(b.signal.reads, sample_ids=tuple(reversed(b.signal.reads.sample_ids)))
         combine_image_source_paths(
@@ -315,11 +469,25 @@ def test_external_noise_groups_on_full_image(kind):
     options = {f"{kind}_noise_electrons": 20.0}
     charge = image_charge(
         {"zero": np.zeros((2, 2, 3))},
-        exposure_bounds_s=np.array([[0.0, 1.0], [1.0, 2.0]]),
+        schedule=raster_read_schedule(
+            np.array([[0.0, 1.0], [1.0, 2.0]]),
+            (2, 3),
+        ),
     )
     result = image_readout(
         charge,
-        detector=DetectorMaps(bias_dn=1000),
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+            pitch_m=None,
+            bias_dn=1000,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
         rng=np.random.default_rng(6),
         realisations=2000,
         **options,
@@ -341,33 +509,123 @@ def test_external_snapshots_and_dense_readout_failures():
     charge = external({"source": values})
     values[:] = 100
     np.testing.assert_array_equal(charge.signal.total, 12.0)
-    changed = replace(
-        charge.signal.reads, exposure_bounds_s=charge.signal.reads.exposure_bounds_s.copy()
-    )
-    changed.exposure_bounds_s[1] += 0.1
-    with pytest.raises(ValueError, match="columns"):
+    bounds = charge.signal.reads.exposure_bounds_s.copy()
+    bounds[1] += 0.1
+    changed = replace(charge.signal.reads, exposure_bounds_s=bounds)
+    with pytest.raises(ValueError, match="identit"):
         image_readout(
-            replace(charge, signal=ExpectedElectrons(changed, charge.signal.contributions))
+            replace(charge, signal=ExpectedElectrons(changed, charge.signal.contributions)),
+            detector=DetectorProperties(
+                pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
         )
     with pytest.raises(ValueError, match="map"):
-        image_readout(charge, detector=DetectorMaps(bias_dn=np.zeros((3, 2))))
+        image_readout(
+            charge,
+            detector=DetectorProperties(
+                pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+                pitch_m=None,
+                bias_dn=np.zeros((3, 2)),
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
     with pytest.raises(ValueError):
-        image_readout(charge, realisations=0)
+        image_readout(
+            charge,
+            realisations=0,
+            detector=DetectorProperties(
+                pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
     with pytest.raises(ValueError):
-        image_readout(charge, row_noise_electrons=-1)
-    with pytest.raises(ValueError, match="port"):
-        replace(charge, port="+")
+        image_readout(
+            charge,
+            row_noise_electrons=-1,
+            detector=DetectorProperties(
+                pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
+    with pytest.raises(ValueError, match="identit"):
+        replace(
+            charge,
+            schedule=replace(
+                charge.schedule,
+                reads=replace(charge.schedule.reads, port_ids=("+",) * len(charge.signal.total)),
+            ),
+        )
     with pytest.raises(ValueError, match="settings"):
         replace(charge, settings={"opd_m": [0]})
-    measured = image_readout(charge)
-    noisy = image_readout(charge, rng=np.random.default_rng(5))
+    measured = image_readout(
+        charge,
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
+    noisy = image_readout(
+        charge,
+        rng=np.random.default_rng(5),
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     assert measured.dn is None and noisy.dn is not None
 
 
 @pytest.mark.parametrize(
     "options",
     [
-        {"row_delay_s": np.inf},
+        {"row_offsets_s": np.array([0.0, np.inf])},
         {"port": ""},
         {"exposure_bounds_s": [[0, 1]]},
         {"exposure_bounds_s": [[0, 0], [1, 2]]},
@@ -384,21 +642,37 @@ def test_external_invalid_inputs(options):
         exposure_bounds_s=np.array([[0, 1], [1, 2]]),
     )
     with pytest.raises(ValueError):
-        image_charge(**(args | options))
+        selected = args | options
+        schedule = raster_read_schedule(
+            np.asarray(selected["exposure_bounds_s"]),
+            (2, 3),
+            row_offsets_s=selected.get("row_offsets_s", np.zeros(2)),
+            port=selected.get("port", "direct"),
+        )
+        image_charge(selected["contributions"], schedule=schedule)
 
 
 def test_full_image_charge_shape_and_readout_ownership():
     charge = external()
     for shape in ((0, 2, 3), (1, 2, 3), (2, 2)):
         with pytest.raises(ValueError):
-            replace(charge, image_shape=shape)  # pyrefly: ignore[bad-argument-type]
-    with pytest.raises(ValueError, match="signal"):
-        replace(
-            charge,
-            signal=ExpectedElectrons(charge.signal.reads, {"bad": np.ones(12)}),
-            image_shape=(1, 2, 3),
-        )
-    result = image_readout(charge, rng=np.random.default_rng(1))
+            replace(charge, schedule=replace(charge.schedule, native_shape=shape))  # pyrefly: ignore[bad-argument-type]
+    result = image_readout(
+        charge,
+        rng=np.random.default_rng(1),
+        detector=DetectorProperties(
+            pixel_bounds_m=regular_pixel_bounds((2, 3), pitch_m=3e-5),
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     np.testing.assert_array_equal(result.photoelectrons, 0)
     assert result.dn is not None and result.dn.shape == (1, 2, 2, 3)
     result.photoelectrons[:] = 1
@@ -410,7 +684,7 @@ def test_optical_model_description_cannot_drift(optical_case):
     optics = lvf_imager(
         focal_length_m=0.02,
         collecting_area_m2=1e-8,
-        psf_sigma_m=3e-5,
+        spatial=GaussianPSF(3e-5),
         reference_m=[2e-6, 2.01e-6],
         gradient=0,
         sigma_m=3e-8,
@@ -423,16 +697,42 @@ def test_optical_model_description_cannot_drift(optical_case):
         {"port": "direct"},
         {"response": lambda e, r, w, a: np.zeros((1, len(w)))},
     ):
-        with pytest.raises(ValueError, match="rebuild"):
+        with pytest.raises(TypeError, match="init=False"):
             replace(optics, **changes)  # pyrefly: ignore[bad-argument-type]
     with pytest.raises(FrozenInstanceError):
         optics.throughput = 0  # pyrefly: ignore[read-only]
-    copied = replace(optics)
-    assert copied.response is optics.response and copied.settings is optics.settings
-    with pytest.raises(TypeError):
-        ImagingOptics()
     custom = ImagingOptics(0.02, 1e-8, optics.response, optics.settings)
     np.testing.assert_array_equal(
-        simulate_images(scene, **(inputs | {"optics": custom})).photoelectrons,
-        simulate_images(scene, **(inputs | {"optics": optics})).photoelectrons,
+        simulate_images(
+            scene,
+            **(inputs | {"optics": custom}),
+            detector=DetectorProperties(
+                pixel_bounds_m=inputs["pixel_bounds_m"],
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        ).photoelectrons,
+        simulate_images(
+            scene,
+            **(inputs | {"optics": optics}),
+            detector=DetectorProperties(
+                pixel_bounds_m=inputs["pixel_bounds_m"],
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        ).photoelectrons,
     )

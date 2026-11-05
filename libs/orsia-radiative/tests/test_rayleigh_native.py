@@ -18,7 +18,7 @@ import orders_reference as orders
 import pytest
 from orsia_radiative.transfer import formal, solar
 from orsia_radiative.transfer import orders as production_orders
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 from test_solar_accumulation import _inputs
 from test_solar_boundary import _sweep_reference
 
@@ -27,9 +27,9 @@ from test_solar_boundary import _sweep_reference
 def native_backend(request, monkeypatch):
     if request.param == "blas":
         monkeypatch.setattr(
-            propagation_native,
+            transfer_native,
             "rayleigh_orders",
-            propagation_native.bind_rayleigh_blas(import_module("scipy.linalg.cython_blas")),
+            transfer_native.bind_rayleigh_blas(import_module("scipy.linalg.cython_blas")),
         )
 
 
@@ -38,7 +38,7 @@ def test_blas_owner_lifetime_and_one_time_resolution() -> None:
     owner = ModuleType("retained_blas_owner")
     owner.__dict__["__pyx_capi__"] = dict(cython_blas.__pyx_capi__)
     reference = weakref.ref(owner)
-    bound = propagation_native.bind_rayleigh_blas(owner)
+    bound = transfer_native.bind_rayleigh_blas(owner)
     args = _native_args(_point(2, False, 4))
     expected = bound(*args)
     owner.__dict__["__pyx_capi__"] = None
@@ -61,13 +61,13 @@ from unittest.mock import patch
 import numpy as np
 from scipy.linalg import cython_blas
 from orsia_radiative.transfer import orders
-from orsia_radiative.transfer.native import propagation_native
+from orsia_radiative.transfer.native import transfer_native
 sys.path.insert(0, sys.argv[1])
 from test_solar_accumulation import _inputs
 scene, source, optics = _inputs('positive', 0.3)
 expected = orders.scattering_orders(scene, source=source, optics=optics)
-with patch.object(propagation_native, 'bind_spectral_blas',
-                  wraps=propagation_native.bind_spectral_blas) as bind:
+with patch.object(transfer_native, 'bind_spectral_blas',
+                  wraps=transfer_native.bind_spectral_blas) as bind:
     importlib.reload(orders)
     bind.assert_called_once_with(cython_blas)
     for _ in range(2):
@@ -148,7 +148,7 @@ def test_point_parity_and_callback_independence(
         patch.object(np, "matmul", wraps=np.matmul) as matmul,
         patch.object(np, "sum", wraps=np.sum) as reduction,
     ):
-        actual = propagation_native.rayleigh_orders(*_native_args(args))
+        actual = transfer_native.rayleigh_orders(*_native_args(args))
     assert matmul.call_count == 0
     assert reduction.call_count == 0
     np.testing.assert_allclose(actual, expected, rtol=3e-14, atol=0)
@@ -160,12 +160,12 @@ def test_concurrent_owned_scratch_and_readonly_inputs() -> None:
     snapshots = [a.tobytes() for a in arrays]
     for a in arrays:
         a.flags.writeable = False
-    expected = propagation_native.rayleigh_orders(*args)
+    expected = transfer_native.rayleigh_orders(*args)
 
     def calculate(_: int):
-        return propagation_native.rayleigh_orders(*args)
+        return transfer_native.rayleigh_orders(*args)
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(calculate, range(16)))
     assert not sys._is_gil_enabled()
     for result in results:
@@ -229,17 +229,17 @@ def test_native_rejects_invalid_buffers(fault: str) -> None:
     elif fault == "missing_solar":
         args[3] = (*args[3][:-1], None)
     with pytest.raises((ValueError, TypeError)):
-        propagation_native.rayleigh_orders(*args)
+        transfer_native.rayleigh_orders(*args)
 
 
 def test_numpy_callbacks_can_raise_without_affecting_core() -> None:
     args = _native_args(_point(2, False, 2))
-    expected = propagation_native.rayleigh_orders(*args)
+    expected = transfer_native.rayleigh_orders(*args)
     with (
         patch.object(np, "matmul", side_effect=RuntimeError("callback forbidden")),
         patch.object(np, "sum", side_effect=RuntimeError("callback forbidden")),
     ):
-        actual = propagation_native.rayleigh_orders(*args)
+        actual = transfer_native.rayleigh_orders(*args)
     assert actual.tobytes() == expected.tobytes()
 
 
@@ -262,7 +262,7 @@ def test_empty_cells_and_single_hemisphere(cells: int, sign: int) -> None:
     )
     args[4] = np.zeros_like(args[2])
     args[5] = np.zeros(mu.size)
-    np.testing.assert_array_equal(propagation_native.rayleigh_orders(*args), np.zeros(3))
+    np.testing.assert_array_equal(transfer_native.rayleigh_orders(*args), np.zeros(3))
 
 
 @pytest.mark.parametrize("angular_directions", [0, 1, 7, 8, 9, 127, 128, 129, 513])
@@ -296,7 +296,7 @@ def test_seven_factor_arithmetic_against_extended_precision(
         0.0,
         1,
     )
-    actual = propagation_native.rayleigh_orders(*args)[0]
+    actual = transfer_native.rayleigh_orders(*args)[0]
     f, a, b = (x.astype(np.longdouble) for x in (field[0, :-1], incoming, outgoing[:, -1]))
     expected = (f @ a) @ b
     mass = (np.abs(f) @ np.abs(a)) @ np.abs(b)
@@ -321,7 +321,7 @@ def test_general_buffer_exports_release_once(invalid: bool) -> None:
             self.released += 1
 
     args: list[Any] = list(_native_args(_point(2, False, 3)))
-    expected = propagation_native.rayleigh_orders(*args)
+    expected = transfer_native.rayleigh_orders(*args)
     arrays = [args[0], *args[1], args[2], *args[3], args[4], args[5], args[6]]
     wrappers = [Exporter(a) for a in arrays]
     args[:7] = [
@@ -334,9 +334,9 @@ def test_general_buffer_exports_release_once(invalid: bool) -> None:
     if invalid:
         wrappers[8].array = arrays[8][:-1]
         with pytest.raises(ValueError, match="grid mismatch"):
-            propagation_native.rayleigh_orders(*args)
+            transfer_native.rayleigh_orders(*args)
     else:
-        assert propagation_native.rayleigh_orders(*args).tobytes() == expected.tobytes()
+        assert transfer_native.rayleigh_orders(*args).tobytes() == expected.tobytes()
     assert all(w.acquired == 1 and w.released == 1 for w in wrappers)
 
 

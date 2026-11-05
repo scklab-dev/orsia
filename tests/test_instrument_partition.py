@@ -31,9 +31,9 @@ def test_full_grid_qe_callback_matches_constant_physical_fraction() -> None:
 
 
 def test_batched_interpolation_matches_scalar(monkeypatch: pytest.MonkeyPatch) -> None:
-    import orsia_instruments.integration as integration
+    import orsia_instruments.photoelectrons as photoelectrons
 
-    original = integration.sample_radiance
+    original = photoelectrons.sample_radiance
     batch_sizes = []
 
     def compare(field, times, directions, block):
@@ -48,6 +48,6 @@ def test_batched_interpolation_matches_scalar(monkeypatch: pytest.MonkeyPatch) -
         batch_sizes.append(len(times))
         return batch
 
-    monkeypatch.setattr(integration, "sample_radiance", compare)
+    monkeypatch.setattr(photoelectrons, "sample_radiance", compare)
     simulate("filter")
     assert batch_sizes and max(batch_sizes) > 1

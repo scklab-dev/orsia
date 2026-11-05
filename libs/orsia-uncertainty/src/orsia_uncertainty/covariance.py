@@ -1,120 +1,165 @@
-"""Validate, solve and propagate covariance in caller-defined vector order.
+"""Prepare reusable covariance factors and transport uncertainty in caller order.
 
-Arrays are float64; callers own coordinate ordering and unit consistency.
-Inputs are never modified. Prepared functions snapshot their numerical factors.
+Arrays use float64. Coordinate order and unit consistency belong to the caller.
+Preparation owns immutable snapshots; operations allocate independent writable results.
 """
 
-from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.linalg import cho_factor, cho_solve, cholesky, eigvalsh, solve_triangular
+from scipy.linalg import cholesky, eigvalsh, solve_triangular
 
 
-def whitener(
-    covariance: NDArray[np.float64],
-) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
-    """Prepare a reusable whitening transform for covariance-weighted residuals.
+@dataclass(frozen=True, eq=False)
+class CovarianceFactor:
+    """Scaled square root and spectrum of a covariance in supplied coordinate order.
 
-    The returned callable computes ``W b``, where ``C = L L.T`` and ``W = L^-1``.
-    Covariance is a variance vector (n,) or dense matrix (n,n). The callable
-    accepts finite float64 (n,) or (n,k) arrays and returns fresh writable arrays.
-    Reject eigenvalue ratios <=1e-12, without regularisation or pseudoinverse.
-    Factors are independent snapshots; calls share no writable work buffers.
+    Construct with factor_covariance. All buffers have independent immutable storage.
+    The normalized root R satisfies C = scale * R R.T, after clipping tolerated
+    negative eigenvalues for spectral sampling only. Inverse operations require
+    the original minimum/maximum eigenvalue ratio strictly greater than 1e-12.
 
-    Args:
-        covariance: Float64 (n,) variances or positive-definite (n,n) covariance.
-
-    Returns:
-        Callable whitening a (n,) vector or (n,k) matrix with owned factors.
-
-    Raises:
-        ValueError: Covariance shape, finiteness, PSD or conditioning fails validation.
+    Attributes:
+        method: Diagonal, lower Cholesky or spectral square-root representation.
+        scale: Largest absolute covariance entry, or one for a zero covariance.
+        eigenvalues: Normalized spectrum (size,), retaining tolerated negatives.
+        root: Normalized diagonal scales (size,) or square root (size,size).
     """
-    covariance = validate_covariance(covariance)
-    size = covariance.shape[0]
-    if covariance.ndim == 1:
-        _require_conditioned(covariance, "whiten")
-        scales = np.sqrt(covariance)
 
-        def whiten_diagonal(values: NDArray[np.float64]) -> NDArray[np.float64]:
-            _validate_whitening_input(values, size)
-            return values / (scales if values.ndim == 1 else scales[:, None])
+    method: Literal["diagonal", "cholesky", "eigh"]
+    scale: float
+    eigenvalues: NDArray[np.float64]
+    root: NDArray[np.float64]
 
-        return whiten_diagonal
-    try:
-        _require_conditioned(np.linalg.eigvalsh(covariance), "whiten")
-        factor = cholesky(covariance, lower=True, check_finite=False)
-    except np.linalg.LinAlgError as exc:
-        raise ValueError("covariance whitening factorisation failed") from exc
-
-    def whiten_dense(values: NDArray[np.float64]) -> NDArray[np.float64]:
-        _validate_whitening_input(values, size)
-        return solve_triangular(factor, values, lower=True, check_finite=False)
-
-    return whiten_dense
+    @property
+    def size(self) -> int:
+        """Return the number of covariance coordinates."""
+        return self.eigenvalues.size
 
 
-def covariance_solver(
-    covariance: NDArray[np.float64],
-    *,
-    method: Literal["eigh", "cholesky"] = "eigh",
-) -> Callable[[NDArray[np.float64]], NDArray[np.float64]]:
-    """Prepare a reusable covariance solver for finite float64 vectors (n,).
+def factor_covariance(
+    covariance: NDArray[np.float64], *, method: Literal["eigh", "cholesky"]
+) -> CovarianceFactor:
+    """Prepare one independent covariance snapshot for whitening, solves and draws.
 
-    The returned callable solves ``C x = b`` for each supplied vector.
-
-    Variance vectors retain O(n) storage; dense arrays retain O(n**2) factors.
-    The default eigensystem and explicit Cholesky backend both reject eigenvalue
-    ratios <=1e-12. No regularisation, clipping or pseudoinverse is used.
-    Preparation snapshots inputs; results are independent writable arrays.
+    Normalize before symmetry and spectral checks to support extreme finite scales.
+    Dense PSD tolerance is 1e-12 times the largest absolute entry. Spectral roots
+    clip only tolerated negative eigenvalues to zero when drawing; the retained
+    spectrum keeps their sign. Cholesky requires positive definite covariance.
+    Diagonal variances remain nonnegative and use linear storage for either method.
+    No preparation consumes RNG or introduces regularization or a pseudoinverse.
 
     Args:
-        covariance: Float64 (n,) variances or (n,n) covariance of a vector.
-        method: Dense factorization choice; diagonal variances use direct division.
+        covariance: Finite float64 variances (n,) or symmetric covariance (n,n).
+        method: Dense square-root backend, 'eigh' or 'cholesky'.
 
     Returns:
-        Callable solving covariance times a finite (n,) vector for that vector.
+        Factor with immutable owned buffers and one spectral validation per snapshot.
 
     Raises:
-        ValueError: The method or covariance is invalid or poorly conditioned.
+        ValueError: Shape, dtype, finiteness, symmetry, PSD or factorization is invalid.
     """
     if method not in ("eigh", "cholesky"):
-        raise ValueError("solve method must be 'eigh' or 'cholesky'")
-    covariance = validate_covariance(covariance)
-    size = covariance.shape[0]
-    if covariance.ndim == 1:
-        _require_conditioned(covariance, "solve with")
-
-        def solve_diagonal(vector: NDArray[np.float64]) -> NDArray[np.float64]:
-            _validate_vector(vector, size)
-            return vector / covariance
-
-        return solve_diagonal
+        raise ValueError("factor method must be 'eigh' or 'cholesky'")
+    matrix, scale, snapshot = _normalized_snapshot(covariance)
+    if matrix.ndim == 1:
+        root = np.sqrt(snapshot) / np.sqrt(scale)
+        return CovarianceFactor("diagonal", scale, _immutable(matrix), _immutable(root))
     try:
-        if method == "cholesky":
-            _require_conditioned(np.linalg.eigvalsh(covariance), "solve with")
-            factor, lower = cho_factor(covariance, lower=True, check_finite=False)
-            factor = np.frombuffer(factor.tobytes(order="F"), dtype=np.float64).reshape(
-                factor.shape, order="F"
-            )
-
-            def solve_cholesky(vector: NDArray[np.float64]) -> NDArray[np.float64]:
-                _validate_vector(vector, size)
-                return cho_solve((factor, lower), vector, check_finite=False)
-
-            return solve_cholesky
-        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        if method == "eigh":
+            eigenvalues, basis = np.linalg.eigh(matrix)
+        else:
+            eigenvalues = np.linalg.eigvalsh(matrix)
+            basis = None
+        if eigenvalues[0] < -1e-12:
+            raise ValueError("covariance matrix must be positive semidefinite")
+        if basis is None:
+            if eigenvalues[0] <= 0:
+                raise ValueError("Cholesky requires positive definite covariance; use eigh for PSD")
+            root = cholesky(matrix, lower=True, check_finite=False)
+        else:
+            root = basis * np.sqrt(np.maximum(eigenvalues, 0))
     except np.linalg.LinAlgError as exc:
         raise ValueError("covariance factorisation failed") from exc
-    _require_conditioned(eigenvalues, "solve with")
+    return CovarianceFactor(method, scale, _immutable(eigenvalues), _immutable(root))
 
-    def solve_dense(vector: NDArray[np.float64]) -> NDArray[np.float64]:
-        _validate_vector(vector, size)
-        return eigenvectors @ ((eigenvectors.T @ vector) / eigenvalues)
 
-    return solve_dense
+def whiten(
+    factor: CovarianceFactor, values: NDArray[np.float64], *, transpose: bool = False
+) -> NDArray[np.float64]:
+    """Apply R^-1 / sqrt(scale), or its transpose, to column right-hand sides.
+
+    Spectral whitening components follow eigenvector order; Cholesky components
+    follow triangular elimination. Both define the same covariance quadratic form.
+    Buffers are borrowed and unchanged; calls share no writable workspace.
+
+    Args:
+        factor: Prepared covariance factor with min/max eigenvalue ratio >1e-12.
+        values: Finite float64 (size,) or (size,columns) array.
+        transpose: Apply the transpose whitening operator for gain propagation.
+
+    Returns:
+        Fresh writable whitened vector or matrix.
+
+    Raises:
+        ValueError: Values have invalid support, or covariance is ill-conditioned.
+    """
+    _require_conditioned(factor.eigenvalues, "whiten")
+    _validate_whitening_input(values, factor.size)
+    scaled = values / np.sqrt(factor.scale)
+    if factor.method == "diagonal":
+        return scaled / (factor.root if values.ndim == 1 else factor.root[:, None])
+    if factor.method == "cholesky":
+        return solve_triangular(
+            factor.root, scaled, lower=True, trans="T" if transpose else "N", check_finite=False
+        )
+    inverse_root = factor.root / factor.eigenvalues
+    return inverse_root @ scaled if transpose else inverse_root.T @ scaled
+
+
+def solve_covariance(factor: CovarianceFactor, values: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Solve C x = values using an existing factor without spectral preparation.
+
+    Args:
+        factor: Prepared covariance with min/max eigenvalue ratio >1e-12.
+        values: Finite float64 vector (size,) or column right-hand sides (size,k).
+
+    Returns:
+        Independent writable solution in the supplied coordinate order.
+
+    Raises:
+        ValueError: Right-hand sides are invalid or the covariance is ill-conditioned.
+    """
+    return whiten(factor, whiten(factor, values), transpose=True)
+
+
+def sample_gaussian(
+    factor: CovarianceFactor, rng: np.random.Generator, count: int
+) -> NDArray[np.float64]:
+    """Draw centred perturbations from a prepared covariance with explicit RNG.
+
+    Singular and zero laws use diagonal or spectral roots. Even a zero law consumes
+    count*size standard normals in row order. Roots may change seeded components
+    across backends; each backend preserves its own deterministic draw convention.
+
+    Args:
+        factor: Prepared covariance factor, including supported singular PSD laws.
+        rng: Caller-owned generator consumed for ordered standard normal draws.
+        count: Positive number of realizations.
+
+    Returns:
+        Fresh writable float64 perturbations (count,size), realizations in rows.
+
+    Raises:
+        ValueError: Count is not positive.
+    """
+    if count < 1:
+        raise ValueError("sample count must be positive")
+    normal = rng.standard_normal((count, factor.size))
+    values = normal * factor.root if factor.method == "diagonal" else normal @ factor.root.T
+    return values * np.sqrt(factor.scale)
 
 
 def covariance_product(
@@ -135,36 +180,6 @@ def covariance_product(
     covariance = validate_covariance(covariance)
     _validate_vector(vector, covariance.shape[0])
     return covariance * vector if covariance.ndim == 1 else covariance @ vector
-
-
-def solve_covariance(
-    covariance: NDArray[np.float64], vector: NDArray[np.float64]
-) -> NDArray[np.float64]:
-    """Solve ``C x = vector`` without regularisation or pseudoinverse.
-
-    Dense one-off solves use NumPy LU after checking spectral conditioning;
-    variance vectors use direct division. Output is fresh and writable.
-
-    Args:
-        covariance: Float64 (n,) variances or invertible (n,n) covariance.
-        vector: Finite float64 (n,) right-hand side in matching coordinates.
-
-    Returns:
-        Fresh solution vector satisfying ``C x = vector``.
-
-    Raises:
-        ValueError: Covariance or vector is invalid, singular or ill-conditioned.
-    """
-    covariance = validate_covariance(covariance)
-    _validate_vector(vector, covariance.shape[0])
-    if covariance.ndim == 1:
-        _require_conditioned(covariance, "solve with")
-        return vector / covariance
-    try:
-        _require_conditioned(np.linalg.eigvalsh(covariance), "solve with")
-        return np.linalg.solve(covariance, vector)
-    except np.linalg.LinAlgError as exc:
-        raise ValueError("covariance solve failed") from exc
 
 
 def propagate_covariance(
@@ -235,31 +250,43 @@ def validate_covariance(covariance: NDArray[np.float64]) -> NDArray[np.float64]:
     Raises:
         ValueError: Shape, dtype, finiteness, symmetry or PSD validation fails.
     """
+    matrix, _, snapshot = _normalized_snapshot(covariance)
+    if matrix.ndim == 2:
+        try:
+            minimum = _minimum_eigenvalue(matrix)
+        except np.linalg.LinAlgError as exc:
+            raise ValueError("covariance matrix eigenvalue check failed") from exc
+        if minimum < -1e-12:
+            raise ValueError("covariance matrix must be positive semidefinite")
+    return snapshot if snapshot.ndim == 1 else snapshot * 0.5 + snapshot.T * 0.5
+
+
+def _normalized_snapshot(
+    covariance: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], float, NDArray[np.float64]]:
+    snapshot = np.copy(covariance)
     if (
-        covariance.dtype != np.float64
-        or covariance.ndim not in (1, 2)
-        or covariance.shape[0] == 0
-        or (covariance.ndim == 2 and covariance.shape[0] != covariance.shape[1])
+        snapshot.dtype != np.float64
+        or snapshot.ndim not in (1, 2)
+        or snapshot.shape[0] == 0
+        or (snapshot.ndim == 2 and snapshot.shape[0] != snapshot.shape[1])
     ):
         raise ValueError("covariance must be float64 variances (n,) or a square matrix (n,n)")
-    if not np.all(np.isfinite(covariance)):
+    if not np.all(np.isfinite(snapshot)):
         raise ValueError("covariance must be finite")
-    if covariance.ndim == 1:
-        if np.any(covariance < 0):
-            raise ValueError("variances must be nonnegative")
-        return np.copy(covariance)
-    scale = np.max(np.abs(covariance))
-    tolerance = 1e-12 * scale
-    if not np.all(np.abs(covariance - covariance.T) <= tolerance):
-        raise ValueError("covariance matrix must be symmetric")
-    matrix = covariance * 0.5 + covariance.T * 0.5
-    try:
-        minimum = _minimum_eigenvalue(matrix)
-    except np.linalg.LinAlgError as exc:
-        raise ValueError("covariance matrix eigenvalue check failed") from exc
-    if minimum < -tolerance:
-        raise ValueError("covariance matrix must be positive semidefinite")
-    return matrix
+    if snapshot.ndim == 1 and np.any(snapshot < 0):
+        raise ValueError("variances must be nonnegative")
+    scale = float(np.max(np.abs(snapshot))) or 1.0
+    normalized = snapshot / scale
+    if snapshot.ndim == 2:
+        if not np.all(np.abs(normalized - normalized.T) <= 1e-12):
+            raise ValueError("covariance matrix must be symmetric")
+        normalized = normalized * 0.5 + normalized.T * 0.5
+    return normalized, scale, snapshot
+
+
+def _immutable(values: NDArray[np.float64]) -> NDArray[np.float64]:
+    return np.frombuffer(values.tobytes(), dtype=np.float64).reshape(values.shape)
 
 
 def _require_conditioned(eigenvalues: NDArray[np.float64], operation: str) -> None:

@@ -5,12 +5,13 @@ remapping. Reader buffers are fresh writable float64 arrays, detached from the
 file. Native file metadata and file identity remain caller-owned provenance.
 """
 
-from datetime import datetime, timedelta
+import re
+from contextlib import ExitStack
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
-import xarray as xr
 from numpy.typing import NDArray
 
 from .sampling import linear_axis_weights
@@ -49,8 +50,10 @@ def read_netcdf_profiles(
     minutes, hours or days since an ISO epoch with standard/gregorian calendar.
     Forecast cycle/lead must be retained separately, not inferred from valid time.
 
-    xarray handles named dimensions and CF decoding. classic explicitly selects
-    its SciPy NetCDF CDF-1/2 engine; hdf5 selects the optional h5netcdf engine.
+    classic uses SciPy's NetCDF CDF-1/2 reader; hdf5 uses optional h5netcdf.
+    Named dimensions, packed validity and Gregorian dates are decoded locally,
+    without importing xarray, cftime or netCDF4. Dates before the Gregorian
+    transition (1582-10-15) are unsupported.
     Native backends run synchronously, with caller-owned serialization and
     execution policy; disabled GIL is not a backend thread-safety guarantee.
     Missing fields, units, support or decoded values raise ValueError. Source file
@@ -165,134 +168,177 @@ def _read_column(
         raise ValueError("vertical interval must be finite and increasing")
     if backend not in ("classic", "hdf5"):
         raise ValueError("unknown NetCDF backend")
-    # Keep raw packed validity metadata until after the bounded selection. xarray
-    # handles CF fill/packing and dates; it does not enforce CF valid_* bounds.
-    with xr.open_dataset(
-        path,
-        engine="scipy" if backend == "classic" else "h5netcdf",
-        decode_cf=False,
-        chunks=None,
-        cache=False,
-        create_default_indexes=False,
-    ) as dataset:
-        names = (*coordinates, *variables)
-        if any(name not in dataset.variables for name in names):
-            raise ValueError("missing requested NetCDF variable or coordinate")
-        coords = [dataset[name] for name in coordinates]
-        if any(c.ndim != 1 for c in coords):
-            raise ValueError("coordinate variables must be one-dimensional")
-        dimensions = tuple(c.dims[0] for c in coords)
-        if len(set(dimensions)) != len(coordinates):
-            raise ValueError("coordinates must identify distinct dimensions")
-        if vertical_units is None:
-            time, latitude, longitude = coords
-            native_levels = np.empty(0)
-            vertical_mask = None
+    with ExitStack() as files:
+        if backend == "classic":
+            from scipy.io import netcdf_file
+
+            dataset = files.enter_context(netcdf_file(path, "r", mmap=True))
         else:
-            time, level, latitude, longitude = coords
-            _units(level, vertical_units)
-            native_levels = _values(level)
-            if (
-                native_levels.ndim != 1
-                or not len(native_levels)
-                or not np.all(np.isfinite(native_levels))
-            ):
-                raise ValueError("invalid native vertical coordinate")
-            vertical_mask = np.ones(len(native_levels), dtype=bool)
-            if vertical_interval is not None:
-                vertical_mask = (native_levels >= vertical_interval[0]) & (
-                    native_levels <= vertical_interval[1]
-                )
-                native_levels = native_levels[vertical_mask]
-                if not len(native_levels):
-                    raise ValueError("vertical interval has no native coordinate support")
-        _units(latitude, "degrees_north")
-        _units(longitude, "degrees_east")
-        selectors = (
-            linear_axis_weights(_time_offsets(time, valid_time), 0.0, periodic=False),
-            linear_axis_weights(_values(latitude), latitude_deg, periodic=False),
-            linear_axis_weights(_values(longitude), longitude_deg, periodic=periodic_longitude),
+            import h5netcdf
+
+            dataset = files.enter_context(h5netcdf.File(path, "r"))
+        # Successful sampling releases borrowed mmap variables before closure.
+        # Failed reads can retain them through exception tracebacks (see guide).
+        return _sample_dataset(
+            dataset,
+            variables,
+            coordinates,
+            vertical_units,
+            valid_time,
+            latitude_deg,
+            longitude_deg,
+            periodic_longitude,
+            vertical_interval,
+            backend,
         )
-        profiles = {}
-        for name, units in variables.items():
-            variable = dataset[name]
-            _units(variable, units)
-            if len(variable.dims) != len(dimensions) or set(variable.dims) != set(dimensions):
-                raise ValueError("field dimensions must match the explicit coordinates")
-            # Read only the bracketing columns, not the complete provider cube.
-            result = np.zeros(
-                len(native_levels) if vertical_units is not None else 1, dtype=np.float64
+
+
+def _sample_dataset(
+    dataset: Any,
+    variables: dict[str, str],
+    coordinates: tuple[str, ...],
+    vertical_units: str | None,
+    valid_time: datetime,
+    latitude_deg: float,
+    longitude_deg: float,
+    periodic_longitude: bool,
+    vertical_interval: tuple[float, float] | None,
+    backend: str,
+) -> tuple[NDArray[np.float64], dict[str, NDArray[np.float64]]]:
+    # Only selected stencil columns are decoded; raw packed validity is
+    # applied before scaling. Backends retain ownership until context exit.
+    names = (*coordinates, *variables)
+    if any(name not in dataset.variables for name in names):
+        raise ValueError("missing requested NetCDF variable or coordinate")
+    coords = [dataset.variables[name] for name in coordinates]
+    if any(len(c.shape) != 1 for c in coords):
+        raise ValueError("coordinate variables must be one-dimensional")
+    dimensions = tuple(c.dimensions[0] for c in coords)
+    if len(set(dimensions)) != len(coordinates):
+        raise ValueError("coordinates must identify distinct dimensions")
+    if vertical_units is None:
+        time, latitude, longitude = coords
+        native_levels = np.empty(0)
+        vertical_mask = None
+    else:
+        time, level, latitude, longitude = coords
+        _units(level, vertical_units, backend)
+        native_levels = _values(level, backend)
+        if (
+            native_levels.ndim != 1
+            or not len(native_levels)
+            or not np.all(np.isfinite(native_levels))
+        ):
+            raise ValueError("invalid native vertical coordinate")
+        vertical_mask = np.ones(len(native_levels), dtype=bool)
+        if vertical_interval is not None:
+            vertical_mask = (native_levels >= vertical_interval[0]) & (
+                native_levels <= vertical_interval[1]
             )
-            for ti, tw in selectors[0]:
-                for yi, yw in selectors[1]:
-                    for xi, xw in selectors[2]:
-                        positions = (
-                            (ti, yi, xi) if vertical_units is None else (ti, slice(None), yi, xi)
-                        )
-                        indices = dict(zip(dimensions, positions, strict=True))
-                        if vertical_mask is not None:
-                            indices[dimensions[1]] = np.flatnonzero(vertical_mask)
-                        values = np.atleast_1d(_values(variable.isel(indices)))
-                        if values.shape != result.shape or not np.all(np.isfinite(values)):
-                            raise ValueError("missing/nonfinite sampled NetCDF values")
-                        result += tw * yw * xw * values
-            profiles[name] = result
-        return native_levels.copy(), profiles
+            native_levels = native_levels[vertical_mask]
+            if not len(native_levels):
+                raise ValueError("vertical interval has no native coordinate support")
+    _units(latitude, "degrees_north", backend)
+    _units(longitude, "degrees_east", backend)
+    selectors = (
+        linear_axis_weights(_time_offsets(time, valid_time, backend), 0.0, periodic=False),
+        linear_axis_weights(_values(latitude, backend), latitude_deg, periodic=False),
+        linear_axis_weights(
+            _values(longitude, backend), longitude_deg, periodic=periodic_longitude
+        ),
+    )
+    profiles = {}
+    for name, units in variables.items():
+        variable = dataset.variables[name]
+        _units(variable, units, backend)
+        if len(variable.dimensions) != len(dimensions) or set(variable.dimensions) != set(
+            dimensions
+        ):
+            raise ValueError("field dimensions must match the explicit coordinates")
+        # Read only the bracketing columns, not the complete provider cube.
+        result = np.zeros(len(native_levels) if vertical_units is not None else 1, dtype=np.float64)
+        for ti, tw in selectors[0]:
+            for yi, yw in selectors[1]:
+                for xi, xw in selectors[2]:
+                    positions = (
+                        (ti, yi, xi) if vertical_units is None else (ti, slice(None), yi, xi)
+                    )
+                    indices = dict(zip(dimensions, positions, strict=True))
+                    if vertical_mask is not None:
+                        indices[dimensions[1]] = np.flatnonzero(vertical_mask)
+                    selection = tuple(indices[dimension] for dimension in variable.dimensions)
+                    values = np.atleast_1d(_values(variable, backend, selection))
+                    if values.shape != result.shape or not np.all(np.isfinite(values)):
+                        raise ValueError("missing/nonfinite sampled NetCDF values")
+                    result += tw * yw * xw * values
+        profiles[name] = result
+    return native_levels.copy(), profiles
 
 
-def _values(variable: xr.DataArray) -> NDArray[np.float64]:
-    if _text(variable.attrs.get("_Unsigned", "false")).lower() != "false":
+def _attribute(variable: Any, name: str, backend: str, default: Any = None) -> Any:
+    return (
+        getattr(variable, name, default)
+        if backend == "classic"
+        else variable.attrs.get(name, default)
+    )
+
+
+def _values(variable: Any, backend: str, selection: Any = Ellipsis) -> NDArray[np.float64]:
+    if _text(_attribute(variable, "_Unsigned", backend, "false")).lower() != "false":
         raise ValueError("unsigned packed reinterpretation is not supported")
-    values = np.array(variable.values, dtype=np.float64, copy=True)
-    valid_range = variable.attrs.get("valid_range")
+    values = np.array(variable[selection], dtype=np.float64, copy=True)
+    for name in ("_FillValue", "missing_value"):
+        missing = _attribute(variable, name, backend)
+        if missing is not None:
+            values[np.isin(values, np.asarray(missing).ravel())] = np.nan
+    valid_range = _attribute(variable, "valid_range", backend)
     if valid_range is not None:
         bounds = np.asarray(valid_range, dtype=np.float64)
         if bounds.shape != (2,) or not np.all(np.isfinite(bounds)) or bounds[1] < bounds[0]:
             raise ValueError("invalid CF valid_range")
         values[(values < bounds[0]) | (values > bounds[1])] = np.nan
     for name, lower in (("valid_min", True), ("valid_max", False)):
-        bound = variable.attrs.get(name)
+        bound = _attribute(variable, name, backend)
         if bound is not None:
             bound = float(bound)
             if not np.isfinite(bound):
                 raise ValueError("invalid CF valid bound")
             values[values < bound if lower else values > bound] = np.nan
-    decoded = xr.decode_cf(
-        xr.Dataset({"field": xr.Variable(variable.dims, values, attrs=variable.attrs)}),
-        decode_times=False,
-        decode_timedelta=False,
-    )
-    return np.array(decoded["field"].values, dtype=np.float64, copy=True)
+    values *= float(_attribute(variable, "scale_factor", backend, 1.0))
+    values += float(_attribute(variable, "add_offset", backend, 0.0))
+    return values
 
 
 def _text(value: Any) -> str:
     return value.decode("ascii") if isinstance(value, bytes) else str(value)
 
 
-def _units(variable: xr.DataArray, expected: str) -> None:
-    if _text(variable.attrs.get("units", "")) != expected:
+def _units(variable: Any, expected: str, backend: str) -> None:
+    if _text(_attribute(variable, "units", backend, "")) != expected:
         raise ValueError("NetCDF variable units do not match the explicit native convention")
 
 
-def _time_offsets(variable: xr.DataArray, instant: datetime) -> NDArray[np.float64]:
-    calendar = _text(variable.attrs.get("calendar", "standard"))
-    units = _text(variable.attrs.get("units", ""))
-    unit, separator, _ = units.partition(" since ")
+def _time_offsets(variable: Any, instant: datetime, backend: str) -> NDArray[np.float64]:
+    calendar = _text(_attribute(variable, "calendar", backend, "standard"))
+    units = _text(_attribute(variable, "units", backend, ""))
+    unit, separator, epoch_text = units.partition(" since ")
     if calendar not in ("standard", "gregorian"):
         raise ValueError("unsupported NetCDF time calendar")
     if not separator or unit not in ("seconds", "minutes", "hours", "days"):
         raise ValueError("unsupported CF time units")
-    dates = xr.decode_cf(
-        xr.Dataset(
-            {
-                "time": xr.Variable(
-                    variable.dims, _values(variable), attrs={"units": units, "calendar": calendar}
-                )
-            }
-        ),
-        decode_times=xr.coders.CFDatetimeCoder(use_cftime=False, time_unit="us"),
-    )["time"].values
-    if np.any(np.isnat(dates)):
-        raise ValueError("invalid native time coordinate")
-    target = np.datetime64(instant.replace(tzinfo=None), "us")
-    return np.asarray((dates - target) / np.timedelta64(1, "s"), dtype=np.float64)
+    epoch = datetime.fromisoformat(epoch_text.strip())
+    epoch = epoch.replace(tzinfo=UTC) if epoch.tzinfo is None else epoch.astimezone(UTC)
+    values = _values(variable, backend)
+    seconds = values * {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}[unit]
+    transition = datetime(1582, 10, 15, tzinfo=UTC)
+    if (
+        not np.all(np.isfinite(seconds))
+        or epoch < transition
+        or np.any(seconds < (transition - epoch).total_seconds())
+    ):
+        raise ValueError("invalid native time coordinate or pre-Gregorian date")
+    # datetime retains microseconds. Preserve the ISO epoch's remaining
+    # nanosecond digits and native floating offsets without rounding time knots.
+    fraction = re.search(r"[T ]\d{2}:?\d{2}:?\d{2}[.,](\d+)", epoch_text)
+    remainder = 0.0 if fraction is None else int((fraction[1] + "000000000")[:9]) % 1000 / 1e9
+    return np.asarray(seconds + ((epoch - instant).total_seconds() + remainder), dtype=np.float64)

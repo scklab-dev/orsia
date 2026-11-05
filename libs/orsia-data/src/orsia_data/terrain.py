@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from .geospatial import RasterBand, Window, read_raster_band
-from .services.copernicus_dem import download_copernicus_dem as download_copernicus_dem
 
 
 def read_copernicus_dem(path: Path, *, window: Window | None = None) -> RasterBand:

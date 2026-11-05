@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 from orsia_instruments import (
     DetectorElectronics,
-    DetectorMaps,
+    DetectorProperties,
+    GaussianPSF,
     RadianceField,
     cavity_imager,
     combine_image_source_paths,
@@ -33,6 +34,7 @@ from orsia_instruments import (
 )
 from orsia_radiative import SpectralDomain, SpectralGrid
 from orsia_uncertainty import (
+    factor_covariance,
     propagate_covariance,
     sample_gaussian,
     validate_covariance,
@@ -60,7 +62,10 @@ def case(family, *, points=257, pixel_order=8, pointing=0.0, band_shift=0.0, thr
     )
     field = RadianceField(grid, t, u, v, values)
     common = dict(
-        focal_length_m=0.02, collecting_area_m2=1e-8, psf_sigma_m=3e-5, throughput=throughput
+        focal_length_m=0.02,
+        collecting_area_m2=1e-8,
+        spatial=GaussianPSF(3e-5),
+        throughput=throughput,
     )
     if family == "filter":
         optics = filter_imager(
@@ -103,7 +108,18 @@ def signal(family, *, time_order=5, angular_order=9, **kwargs):
         **inputs,
         time_order=time_order,
         angular_order=angular_order,
-        detector=DetectorMaps(quantum_efficiency=0.7),
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=0.7,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
     ).photoelectrons
 
 
@@ -127,7 +143,24 @@ def test_independent_axis_refinement_and_under_sampling(family):
 def test_rolling_rows_with_evolving_scene_and_moving_pointing(family):
     field, inputs = case(family)
     inputs["pixel_bounds_m"] = regular_pixel_bounds((2, 2), pitch_m=6e-5)
-    rolled = simulate_images(field, **inputs, time_order=5, angular_order=9)
+    rolled = simulate_images(
+        field,
+        **inputs,
+        time_order=5,
+        angular_order=9,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    )
     for row in range(2):
         exposures = exposure_sequence(
             start_s=np.array([0, 0.05]) + row * 0.001,
@@ -142,6 +175,18 @@ def test_rolling_rows_with_evolving_scene_and_moving_pointing(family):
             exposures=exposures,
             time_order=5,
             angular_order=9,
+            detector=DetectorProperties(
+                pixel_bounds_m=inputs["pixel_bounds_m"][row : row + 1],
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
         )
         np.testing.assert_allclose(
             rolled.photoelectrons[:, row : row + 1], reference.photoelectrons, rtol=BLOCK_BUDGET
@@ -152,7 +197,18 @@ def test_rolling_rows_with_evolving_scene_and_moving_pointing(family):
 @pytest.mark.parametrize("family", FAMILIES)
 def test_source_composition_matches_integrated_path(family):
     field, inputs = case(family)
-    detector = DetectorMaps(quantum_efficiency=0.7)
+    detector = DetectorProperties(
+        pixel_bounds_m=inputs["pixel_bounds_m"],
+        pitch_m=None,
+        quantum_efficiency=0.7,
+        dark_electrons_per_s=0,
+        read_noise_electrons=0,
+        full_well_electrons=1e6,
+        electrons_per_dn=1,
+        bias_dn=0,
+        nonlinearity=0,
+        adc_bits=16,
+    )
     integrated = simulate_images(field, **inputs, detector=detector, time_order=5, angular_order=9)
     _, background_inputs = case(family, throughput=0.4)
     background = RadianceField(field.grid, field.times_s, field.u, field.v, 0.2 * field.values)
@@ -174,7 +230,7 @@ def test_source_composition_matches_integrated_path(family):
             angular_order=9,
         ),
     ]
-    composed = image_readout(combine_image_source_paths(*paths))
+    composed = image_readout(combine_image_source_paths(*paths), detector=detector)
     np.testing.assert_allclose(
         composed.photoelectrons, 1.08 * integrated.photoelectrons, rtol=BLOCK_BUDGET
     )
@@ -196,10 +252,30 @@ def test_independent_continuous_reference_and_finite_detector_loss():
     inputs["optics"] = filter_imager(
         focal_length_m=0.02,
         collecting_area_m2=1e-8,
-        psf_sigma_m=3e-5,
+        spatial=GaussianPSF(3e-5),
         filter=lambda wave: np.ones_like(wave),
     )
-    actual = simulate_images(field, **inputs, angular_order=15).photoelectrons[0].ravel()
+    actual = (
+        simulate_images(
+            field,
+            **inputs,
+            angular_order=15,
+            detector=DetectorProperties(
+                pixel_bounds_m=inputs["pixel_bounds_m"],
+                pitch_m=None,
+                quantum_efficiency=1,
+                dark_electrons_per_s=0,
+                read_noise_electrons=0,
+                full_well_electrons=1e6,
+                electrons_per_dn=1,
+                bias_dn=0,
+                nonlinearity=0,
+                adc_bits=16,
+            ),
+        )
+        .photoelectrons[0]
+        .ravel()
+    )
     spectral = 1e-3 * np.log(5100 / 4900) / (100 * h * c)
     references = []
     for xmin, xmax, ymin, ymax in inputs["pixel_bounds_m"].reshape(-1, 4):
@@ -241,7 +317,23 @@ def test_family_image_against_independent_static_reference(family):
         duration_s=0.02,
         direction_bounds_uv=(-0.003, 0.003, -0.003, 0.003),
     )
-    actual = simulate_images(field, **inputs, angular_order=15).photoelectrons
+    actual = simulate_images(
+        field,
+        **inputs,
+        angular_order=15,
+        detector=DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
+            quantum_efficiency=1,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            full_well_electrons=1e6,
+            electrons_per_dn=1,
+            bias_dn=0,
+            nonlinearity=0,
+            adc_bits=16,
+        ),
+    ).photoelectrons
 
     # Closed-form truncated Gaussian product for LVF replaces pixel quadrature;
     # adaptive spectral integration replaces Orsia's sampled trapezoids. Spatial
@@ -314,7 +406,18 @@ def evaluate_parameters(parameters):
         band_shift=parameters["band"] * 1e-9,
     )
     inputs["exposures"] = replace(inputs["exposures"], bounds_s=inputs["exposures"].bounds_s[:1])
-    detector = DetectorMaps(quantum_efficiency=0.7 * (1 + parameters["qe"]))
+    detector = DetectorProperties(
+        pixel_bounds_m=inputs["pixel_bounds_m"],
+        pitch_m=None,
+        quantum_efficiency=0.7 * (1 + parameters["qe"]),
+        dark_electrons_per_s=0,
+        read_noise_electrons=0,
+        full_well_electrons=1e6,
+        electrons_per_dn=1,
+        bias_dn=0,
+        nonlinearity=0,
+        adc_bits=16,
+    )
     paths = [
         image_photoelectrons(
             field,
@@ -398,7 +501,7 @@ def test_joint_optical_qe_and_gain_uncertainty_with_conditional_readout():
     expected_covariance = parameter_only + conditional
     rng = np.random.default_rng(371)
     count = 1800
-    draws = sample_gaussian(covariance, rng, count)
+    draws = sample_gaussian(factor_covariance(covariance, method="eigh"), rng, count)
     readings = np.empty((count, 2))
     for index, draw in enumerate(draws):
         perturbed = dict(zip(parameters, draw, strict=True))
@@ -424,12 +527,17 @@ def test_joint_optical_qe_and_gain_uncertainty_with_conditional_readout():
 
 def test_composed_readout_common_noise_and_saturation_boundaries():
     field, inputs = case("filter")
-    detector = DetectorMaps(
+    detector = DetectorProperties(
+        pixel_bounds_m=inputs["pixel_bounds_m"],
+        pitch_m=None,
         quantum_efficiency=0.7,
         electrons_per_dn=0.01,
         bias_dn=10000,
         adc_bits=32,
         full_well_electrons=1e9,
+        dark_electrons_per_s=0,
+        read_noise_electrons=0,
+        nonlinearity=0,
     )
 
     def paths():
@@ -463,12 +571,17 @@ def test_composed_readout_common_noise_and_saturation_boundaries():
     assert np.linalg.norm(covariance - reference) / np.linalg.norm(reference) < 0.06
     # Gain perturbations are recomputed by readout, not folded into optical QE.
     for gain in (0.01, 0.02):
-        trial = DetectorMaps(
+        trial = DetectorProperties(
+            pixel_bounds_m=inputs["pixel_bounds_m"],
+            pitch_m=None,
             quantum_efficiency=0.7,
             electrons_per_dn=gain,
             bias_dn=10000,
             adc_bits=32,
             full_well_electrons=1e9,
+            dark_electrons_per_s=0,
+            read_noise_electrons=0,
+            nonlinearity=0,
         )
         draws = image_readout(
             paths(),
@@ -482,11 +595,17 @@ def test_composed_readout_common_noise_and_saturation_boundaries():
             abs(empirical - draws.photoelectrons) < 6 * np.sqrt(draws.photoelectrons / 2000) + gain
         )
     threshold = float(images.photoelectrons[0, 0, 0])
-    clipping = DetectorMaps(
+    clipping = DetectorProperties(
+        pixel_bounds_m=inputs["pixel_bounds_m"],
+        pitch_m=None,
         quantum_efficiency=0.7,
         full_well_electrons=threshold,
         electrons_per_dn=1,
         adc_bits=32,
+        dark_electrons_per_s=0,
+        read_noise_electrons=0,
+        bias_dn=0,
+        nonlinearity=0,
     )
     clipped = image_readout(
         paths(),

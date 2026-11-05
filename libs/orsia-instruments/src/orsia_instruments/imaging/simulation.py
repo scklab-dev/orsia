@@ -3,11 +3,11 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from ..detector import DetectorMaps
+from ..detector import DetectorProperties
 from ..optics.response import ImagingOptics
 from .acquisition import ExposureSequence
-from .charge import ImageQuantumEfficiency, ImageScene, image_photoelectrons
 from .measurements import ImageMeasurements
+from .photodetection import ImageQuantumEfficiency, ImageScene, image_photoelectrons
 from .readout import image_readout
 
 
@@ -17,7 +17,7 @@ def simulate_images(
     pixel_bounds_m: NDArray[np.float64],
     optics: ImagingOptics,
     exposures: ExposureSequence,
-    detector: DetectorMaps | None = None,
+    detector: DetectorProperties,
     rng: np.random.Generator | None = None,
     realisations: int = 1,
     time_order: int = 3,
@@ -40,7 +40,7 @@ def simulate_images(
         pixel_bounds_m: (rows,columns,4) active pixel bounds in metres.
         optics: Image acceptance, pupil area, setting and throughput.
         exposures: Time bounds, pointing and optional rolling row delay.
-        detector: Pixel QE and electronics, with uniform defaults when omitted.
+        detector: Supplied fixed pixel QE and electronics.
         rng: Optional explicit generator for Poisson/electronic noise and DN.
         realisations: Positive number of independently sampled images.
         time_order: Gauss order over each read's exposure.

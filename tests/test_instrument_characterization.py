@@ -144,7 +144,7 @@ def test_numerical_characterization() -> None:
     variance_error = float(np.max(abs(electrons.var(axis=0) / variance - 1)))
     # Noiseless unsaturated detector gain law, independent of photon integration.
     noise = np.zeros((1, len(mean)))
-    dn = digitize(nominal.acquisition, mean[None, :], noise, detector).dn
+    dn = digitize(nominal.reads, mean[None, :], noise, detector).dn
     dn_reference = np.rint(mean / 0.01 + 10000)
     results["detector"] = {
         "mean_z": z,
@@ -161,6 +161,7 @@ def test_numerical_characterization() -> None:
 
 
 @pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.skipif(sys.platform != "linux", reason="Resource protocol requires Linux /proc VmHWM")
 def test_resource_budget(family):
     # Fresh interpreter; inherit the launcher's CPU affinity and numerical thread limits.
     child = subprocess.run(
