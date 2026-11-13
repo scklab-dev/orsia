@@ -1,6 +1,6 @@
 # Covariance algebra and Gaussian ensembles
 
-Use this reference for array shapes, conditioning, prepared factors and explicit source cross-covariances. See the [package introduction](../README.md) for linear transport.
+Use this reference for dense/diagonal array shapes, conditioning, prepared factors and explicit source cross-covariances. See the [package introduction](../README.md) for linear transport and the [source-projection reference](source-projection.md) for covariance retained through dense or CSR maps.
 
 ## Source responsibilities
 
@@ -8,9 +8,10 @@ Use this reference for array shapes, conditioning, prepared factors and explicit
 | --- | --- | --- |
 | `covariance.py` | Numerical validation, covariance application/transport, reusable factors, solves, whitening and Gaussian draws | Variance vectors or dense matrices; singular PSD is allowed except for solving/whitening. |
 | `operations.py` | Signed-vector transport, source sums, cross terms and empirical covariance | Arrays and ordinary mappings; no source-metadata records or physical laws. |
+| `projection.py` | Source-projected products, transport, selection, marginals, budgeted materialization and diagonal-plus-low-rank solve | Explicit uncorrelated blocks or one joint source covariance; no general projected solve. |
 | NumPy / SciPy | Arrays, linear algebra and explicit numerical factors | Inputs remain unchanged; prepared factors are independent snapshots. |
 
-`operations.py` uses the covariance core for source sums and empirical covariance. Callers can use either module directly; physical source identity and units remain application-owned.
+`operations.py` uses the covariance core for source sums and empirical covariance. `projection.py` reuses covariance validation and conditioned factors. Callers can use each module directly; physical source identity and units remain application-owned.
 
 ## Array contracts
 
@@ -30,11 +31,13 @@ Functions do not modify inputs and return independent writable arrays. Prepared 
 | `sample_gaussian(factor, rng, count)` | Centred Gaussian deviations `(count, n)` with realisations in rows. |
 | `empirical_covariance(samples)` | Dense covariance of centred rows `(N, n)`, using denominator `N-1`; require `N>=2`, `n>=1`. |
 
+`empirical_covariance` scales each coordinate by a power of two before centring and accumulation, then restores covariance exponents. Constant finite coordinates return zero variance, including offsets near the float64 limit. Unrepresentable covariance entries raise `ValueError`.
+
 Singular PSD covariances can be applied, transported and sampled. Solving and whitening reject eigenvalue ratios `<=1e-12`, including zero covariance, with `ValueError`; no regularisation or pseudoinverse is implicit. Gaussian factors clip the tiny negative eigenvalues accepted by the PSD tolerance to zero, without adding artificial variance. Invalid numerical dimensions, dtypes, finiteness or covariance properties raise `ValueError`.
 
 ## Explicit preparation for repeated use
 
-`factor_covariance(C, method="eigh")` creates a `CovarianceFactor` with independent immutable buffers. Preparation normalizes the finite snapshot before symmetry and spectral checks, including scales such as `1e-300` and `1e300`. Dense spectral preparation computes one eigensystem for PSD validation, conditioning and the square root. `method="cholesky"` checks the spectrum once and retains a normalized lower-triangular root. Variance vectors retain O(n) storage for either method; dense factors use O(n²) storage.
+`factor_covariance(C, method="eigh")` creates a `CovarianceFactor` with independent immutable buffers. Preparation normalizes the finite snapshot before symmetry and spectral checks, including scales such as `1e-300` and `1e300`. General dense spectral preparation computes one eigensystem for PSD validation, conditioning and the square root. For exactly diagonal dense input, preparation sorts the known spectrum and computes roots before normalization to retain extreme positive variance ratios. The factor retains its requested dense backend and spectral or triangular basis. Normalized eigenvalues can still underflow to zero; inverse operations retain the conditioning cutoff. General ill-conditioned eigensystems have no relative-accuracy guarantee for their smallest eigenvalues. `method="cholesky"` checks the spectrum once and retains a normalized lower-triangular root. Variance vectors retain O(n) storage for either method; dense factors use O(n²) storage.
 
 With normalized root `R`, the represented covariance is `scale * R @ R.T`. `whiten(factor, values, transpose=False)` applies `R^-1 / sqrt(scale)` to `(n,)` vectors or `(n, columns)` right-hand sides. Set `transpose=True` to apply the transposed whitening operator for sensitivity propagation. Cholesky and spectral roots can rotate whitened components while preserving the quadratic form `whiten(factor,v) @ whiten(factor,v) = v @ solve_covariance(factor,v)`.
 

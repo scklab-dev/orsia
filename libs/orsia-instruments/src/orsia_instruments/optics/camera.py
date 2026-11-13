@@ -5,7 +5,7 @@ uses a forward virtual focal plane, with columns along x and rows along y.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 
 import numpy as np
@@ -13,11 +13,11 @@ from numpy.typing import NDArray
 from scipy.optimize import brentq
 from scipy.special import j0, j1
 
-from ..acquisition import Acquisition
-from ..detector import DetectorProperties
-from .pixels import pixel_acceptance
-from .psfs import GaussianPSF, SpatialDensity, airy_psf
-from .response import ImagingOptics
+from orsia_instruments.acquisition.quadrature import Acquisition
+from orsia_instruments.detector import DetectorProperties
+from orsia_instruments.optics.pixels import pixel_acceptance
+from orsia_instruments.optics.psfs import GaussianPSF, SpatialDensity, airy_psf
+from orsia_instruments.optics.response import ImagingOptics
 
 type FilterTransmission = Callable[[NDArray[np.float64]], NDArray[np.float64]]
 
@@ -65,34 +65,63 @@ class FilterStrip:
 
 @dataclass(frozen=True, eq=False)
 class FilterCamera:
-    """Physical detector, strip layout and finite-support optics.
+    """Bind detector photoelectric properties to one coherent row-strip optical model.
 
-    Detector arrays are independent read-only snapshots. Optical callbacks remain borrowed and
-    stable during use. The support truncates incident centroids outside each
-    pixel expanded by support_radius_m; retained optical tails are not renormalized.
+    Construct with filter_camera. Optical declarations are read-only properties
+    of the same model that evaluates the response. Rebuild with filter_camera to
+    change strips, support or optics. dataclasses.replace may change detector QE
+    or electronics when the active pixel rectangles remain exactly unchanged.
 
     Attributes:
         detector: Stable active geometry, pixel QE and electronics.
-        pixel_bounds_m: Delegated read-only (row,column,4) active rectangles in metres.
+        pixel_bounds_m: Shared read-only (row,column,4) active rectangles in metres.
         strips: Row-strip declarations; uncovered rows have zero optical response.
         optics: Finite-pixel response with area and throughput applied downstream once.
-        support_radius_m: Positive radial PSF truncation bound on the focal plane, metres.
+        support_radius_m: Positive radial PSF truncation bound, focal-plane metres.
         omitted_psf_mass: Bound on omitted whole-plane PSF mass, or None for
-            caller-certified support.
+            caller-certified support. Retained tails are not renormalized.
         row_bands: Band identity per row; empty strings identify uncovered rows.
+
+    Detector arrays are read-only snapshots. Borrowed filter and PSF laws must
+    remain pure and stable, including during concurrent use.
     """
 
     detector: DetectorProperties
-    strips: tuple[FilterStrip, ...]
-    optics: ImagingOptics
-    support_radius_m: float
-    omitted_psf_mass: float | None
-    row_bands: tuple[str, ...]
+    _filter_optics: _FilterOptics = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if not np.array_equal(self.detector.pixel_bounds_m, self._filter_optics.pixel_bounds_m):
+            raise ValueError("replacement detector must retain the camera pixel geometry")
 
     @property
     def pixel_bounds_m(self) -> NDArray[np.float64]:
-        """Return the detector's shared read-only active rectangles in metres."""
+        """Return shared read-only active detector rectangles in metres."""
         return self.detector.pixel_bounds_m
+
+    @property
+    def strips(self) -> tuple[FilterStrip, ...]:
+        """Return the row-strip declarations used by the optical response."""
+        return self._filter_optics.strips
+
+    @property
+    def optics(self) -> ImagingOptics:
+        """Return imaging optics bound to the camera's physical strip model."""
+        return self._filter_optics.optics
+
+    @property
+    def support_radius_m(self) -> float:
+        """Return the response's finite radial PSF support in focal-plane metres."""
+        return self._filter_optics.support_radius_m
+
+    @property
+    def omitted_psf_mass(self) -> float | None:
+        """Return the omitted PSF mass bound, or None for caller-certified support."""
+        return self._filter_optics.omitted_psf_mass
+
+    @property
+    def row_bands(self) -> tuple[str, ...]:
+        """Return physical row identities derived from the strip layout."""
+        return self._filter_optics.row_bands
 
 
 @dataclass(frozen=True, eq=False)
@@ -258,19 +287,6 @@ def filter_camera(
     if pixel_order < 1:
         raise ValueError("pixel order must be positive")
     strips = tuple(strips)
-    rows = [""] * pixels.shape[0]
-    laws: list[FilterTransmission | None] = [None] * pixels.shape[0]
-    for strip in strips:
-        if strip.stop_row > len(rows) or any(
-            law is not None for law in laws[strip.start_row : strip.stop_row]
-        ):
-            raise ValueError("strips overlap or exceed detector rows")
-        rows[strip.start_row : strip.stop_row] = [strip.band] * (strip.stop_row - strip.start_row)
-        laws[strip.start_row : strip.stop_row] = [strip.transmission] * (
-            strip.stop_row - strip.start_row
-        )
-    if not allow_uncovered_rows and any(law is None for law in laws):
-        raise ValueError("every detector row must be covered by a strip")
     tail: float | None = omitted_psf_mass
     if airy_wavelength_max_m is not None:
         if spatial is not None or support_radius_m is not None:
@@ -295,15 +311,112 @@ def filter_camera(
         raise ValueError("custom PSFs require finite positive radial support")
     support = float(radius)
 
+    model = _FilterOptics(
+        pixels,
+        strips,
+        spatial,
+        support,
+        tail,
+        focal_length_m,
+        f_number,
+        area,
+        throughput,
+        pixel_order,
+        allow_uncovered_rows,
+    )
+    return FilterCamera(detector, model)
+
+
+@dataclass(frozen=True, eq=False)
+class _FilterOptics:
+    """Own a fixed strip layout, PSF support and the response computed from them.
+
+    Attributes:
+        pixel_bounds_m: Borrowed immutable (row,column,4) detector rectangles, metres.
+        strips: Stable row ranges, physical band identities and borrowed spectral laws.
+        spatial: Pure borrowed spatial density model in inverse square metres.
+        support_radius_m: Positive focal-plane centroid expansion, metres.
+        omitted_psf_mass: Radial tail bound, or None for caller-certified support.
+        focal_length_m: Positive physical projection focal length, metres.
+        f_number: Positive focal-length/pupil-diameter ratio.
+        collecting_area_m2: Circular pupil collecting area, square metres.
+        throughput: Post-response physical intensity fraction.
+        pixel_order: Finite-pixel spatial quadrature order.
+        allow_uncovered_rows: Permit optically dark detector rows.
+        row_bands: Derived band identity per row, empty for uncovered rows.
+        optics: Fixed imaging adapter bound to this model's response method.
+    """
+
+    pixel_bounds_m: NDArray[np.float64]
+    strips: tuple[FilterStrip, ...]
+    spatial: SpatialDensity
+    support_radius_m: float
+    omitted_psf_mass: float | None
+    focal_length_m: float
+    f_number: float
+    collecting_area_m2: float
+    throughput: float
+    pixel_order: int
+    allow_uncovered_rows: bool
+    row_bands: tuple[str, ...] = field(init=False)
+    optics: ImagingOptics = field(init=False, repr=False)
+    _row_laws: tuple[FilterTransmission | None, ...] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        rows = [""] * self.pixel_bounds_m.shape[0]
+        laws: list[FilterTransmission | None] = [None] * len(rows)
+        for strip in self.strips:
+            if strip.stop_row > len(rows) or any(
+                law is not None for law in laws[strip.start_row : strip.stop_row]
+            ):
+                raise ValueError("strips overlap or exceed detector rows")
+            rows[strip.start_row : strip.stop_row] = [strip.band] * (
+                strip.stop_row - strip.start_row
+            )
+            laws[strip.start_row : strip.stop_row] = [strip.transmission] * (
+                strip.stop_row - strip.start_row
+            )
+        if not self.allow_uncovered_rows and any(law is None for law in laws):
+            raise ValueError("every detector row must be covered by a strip")
+        object.__setattr__(self, "row_bands", tuple(rows))
+        object.__setattr__(self, "_row_laws", tuple(laws))
+        object.__setattr__(
+            self,
+            "optics",
+            ImagingOptics(
+                self.focal_length_m,
+                self.collecting_area_m2,
+                self.response,
+                {"f_number": self.f_number},
+                self.throughput,
+            ),
+        )
+
     def response(
-        exposure: int, read: int, wave: NDArray[np.float64], acquisition: Acquisition
+        self, exposure: int, read: int, wave: NDArray[np.float64], acquisition: Acquisition
     ) -> NDArray[np.float64]:
-        matches = np.all(pixels == acquisition.pixel_bounds_m[read], axis=-1)
+        """Evaluate accepted fractions from this layout, PSF and support.
+
+        Args:
+            exposure: Original exposure index for the borrowed spatial density.
+            read: Acquisition read index identifying one physical detector rectangle.
+            wave: Wavelengths in metres, shape (wavelengths,).
+            acquisition: Borrowed incident focal-plane coordinates and directions.
+
+        Returns:
+            Fresh (nodes,wavelengths) fractions including filter transmission,
+            finite support and pupil projection, excluding area, throughput and QE.
+
+        Raises:
+            ValueError: The pixel is ambiguous or the transmission has invalid
+                shape, nonfinite values or fractions outside [0,1].
+        """
+        matches = np.all(self.pixel_bounds_m == acquisition.pixel_bounds_m[read], axis=-1)
         locations = np.argwhere(matches)
         if len(locations) != 1:
             raise ValueError("acquisition pixel must identify one camera detector pixel")
         row = int(locations[0, 0])
-        law = laws[row]
+        law = self._row_laws[row]
         image = acquisition.image_xy_m[read]
         if law is None:
             return np.zeros((len(image), len(wave)))
@@ -316,14 +429,20 @@ def filter_camera(
             raise ValueError("strip transmission must be same-shaped finite fractions in [0,1]")
         bounds = acquisition.pixel_bounds_m[read]
         fraction = pixel_acceptance(
-            wave, bounds, image, spatial=spatial, exposure_index=exposure, pixel_order=pixel_order
+            wave,
+            bounds,
+            image,
+            spatial=self.spatial,
+            exposure_index=exposure,
+            pixel_order=self.pixel_order,
         )
-        return fraction * transmission
-
-    optics = ImagingOptics(focal_length_m, area, response, {"f_number": f_number}, throughput)
-    return FilterCamera(
-        detector, strips, _supported_optics(optics, support), support, tail, tuple(rows)
-    )
+        inside = np.all(
+            (image >= bounds[[0, 2]] - self.support_radius_m)
+            & (image <= bounds[[1, 3]] + self.support_radius_m),
+            axis=1,
+        )
+        pupil_projection = np.sqrt(1 - np.sum(acquisition.directions_uv[read] ** 2, axis=1))
+        return fraction * transmission * (inside * pupil_projection)[:, None]
 
 
 def _supported_optics(optics: ImagingOptics, support: float) -> ImagingOptics:

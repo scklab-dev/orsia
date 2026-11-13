@@ -8,13 +8,13 @@ from math import isfinite
 import numpy as np
 from numpy.typing import NDArray
 
-from orsia_radiative.atmosphere import Atmosphere
+from orsia_radiative.atmosphere import LayerAtmosphere
 from orsia_radiative.spectral.grid import SpectralGrid, wavenumber_grid
 from orsia_radiative.spectroscopy.lines import Line, LineSet
 
 
 @dataclass(frozen=True)
-class LineDatabase:
+class SpectralLineTable:
     """One molecule/local-isotope's lines within declared centre coverage [cm-1].
 
     Empty lines are valid. Coverage describes completeness supplied by the caller,
@@ -121,9 +121,9 @@ def evaluate_partition_function(
 
 
 def line_set(
-    database: LineDatabase,
+    database: SpectralLineTable,
     partition_table: PartitionFunctionTable,
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     grid: SpectralGrid | NDArray[np.float64],
     *,
     species: str,

@@ -1,126 +1,170 @@
-"""Fixed layer cross sections, explicit spectral preparation and column application."""
+"""Retain fixed layer cross sections with explicit conditions and spectral resampling."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from orsia_radiative.atmosphere import Atmosphere
-from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid, wavenumber_grid
+from orsia_radiative.atmosphere import LayerAtmosphere
+from orsia_radiative.optics.cross_sections import cross_section_optical_depth
+from orsia_radiative.spectral.grid import (
+    SpectralGrid,
+    convert_spectral_grid,
+    require_wavenumber_grid,
+)
 from orsia_radiative.spectral.interpolation import spectral_interpolation_weights
 from orsia_radiative.spectroscopy.components import AbsorptionComponent, _gas
 
 
 def table_absorption(
-    atmosphere: Atmosphere,
-    wavenumbers_cm1: NDArray[np.float64] | SpectralGrid,
-    inputs: CrossSectionField,
+    atmosphere: LayerAtmosphere, spectral: SpectralGrid, inputs: LayerCrossSections
 ) -> AbsorptionComponent:
-    """Compute layer optical depths from tabulated cross sections and current columns.
+    """Resample fixed cross sections and apply current molecular columns.
 
     Args:
-        atmosphere: Atmospheric gas columns and layer temperature/pressure.
-        wavenumbers_cm1: Target spectral grid or wavenumbers in cm-1.
-        inputs: Fixed layer cross sections and their declared layer conditions.
+        atmosphere: Layer conditions and molecular amounts.
+        spectral: Target wavenumber grid required by the current optical component.
+        inputs: Species table with explicit interfaces and evaluation conditions.
 
     Returns:
-        Gas absorption component with (layers,points) dimensionless optical depths.
+        Dimensionless absorption component with (layer,spectral) axes.
 
     Raises:
-        ValueError: Spectral interpolation exceeds table support or layer conditions differ.
+        ValueError: Spectral support, exact layer conditions or physical values disagree.
     """
-    return evaluate_table_absorption(atmosphere, cross_sections(wavenumbers_cm1, inputs))
+    return evaluate_table_absorption(atmosphere, resample_layer_cross_sections(spectral, inputs))
 
 
-def cross_sections(
-    wavenumbers_cm1: NDArray[np.float64] | SpectralGrid, inputs: CrossSectionField
-) -> PreparedCrossSections:
-    """Interpolate fixed tabulated cross sections once, without extrapolation.
+def resample_layer_cross_sections(
+    spectral: SpectralGrid, inputs: LayerCrossSections
+) -> LayerCrossSections[np.float64]:
+    """Interpolate a fixed table in its source coordinate without extrapolation.
 
-    The result belongs to the caller and can be applied to different columns
-    only at the table's exact T/p and layer support. No hidden cache is created.
+    Reciprocal target coordinates are converted for the interpolation and the
+    output spectral axis is reversed. Cross sections are point values in m2/molecule;
+    no spectral-density Jacobian applies. Exact source knots, including singleton
+    tables, remain exact. The caller retains the original table for other grids.
 
     Args:
-        wavenumbers_cm1: Target spectral grid or wavenumbers in cm-1.
-        inputs: Source cross sections in m2/molecule on declared spectral support.
+        spectral: Increasing wavelength-nm or wavenumber-cm-1 target samples.
+        inputs: Immutable species table in either supported spectral coordinate.
 
     Returns:
-        Fixed cross sections interpolated onto the target grid as an owned
-        (layers,points) float64 array, with the original table attached.
+        The same physical table concept with float64 values on the target grid,
+        independent immutable conditions/interfaces and no retained source-table owner.
+        Known source coverage is retained when the target omits a domain; an explicit
+        target domain may narrow that coverage but cannot widen it.
 
     Raises:
-        ValueError: Target extrapolates or interpolation crosses a declared gap.
+        ValueError: A target requires extrapolation or an interpolation stencil crosses a gap.
     """
-    sampling = wavenumber_grid(wavenumbers_cm1)
-    wavenumbers_cm1 = sampling.points
-    grid = wavenumbers_cm1
-    left_indices, right_indices, left_weights, fractions = spectral_interpolation_weights(
-        inputs.grid, sampling
-    )
-    rows = np.empty((inputs.temperature_k.size, grid.size), dtype=np.float64)
-    for row, source_values in zip(rows, inputs.cross_sections_m2_per_molecule, strict=True):
-        # Nonnegative weighted terms avoid cancellation across large dynamic
-        # ranges; exact nodes have weights 0/1 and preserve the tabulated value.
-        row[:] = (
-            left_weights * source_values[left_indices] + fractions * source_values[right_indices]
-        )
-    return PreparedCrossSections(inputs, sampling, rows)
-
-
-def evaluate_table_absorption(
-    atmosphere: Atmosphere, prepared: PreparedCrossSections
-) -> AbsorptionComponent:
-    """Convert prepared cross sections into optical depths for current gas columns.
-
-    Args:
-        atmosphere: Gas amounts in molecules/m2 and current layer conditions.
-        prepared: Fixed per-layer cross sections and their evaluation grid.
-
-    Returns:
-        Dimensionless (layers,points) absorption component on the prepared grid.
-
-    Raises:
-        ValueError: Layer counts or temperature/pressure differ from the fixed table.
-    """
-    inputs = prepared.inputs
-    amounts, _ = _gas(atmosphere, inputs.species)
-    if not np.array_equal(inputs.temperature_k, atmosphere.temperature_k) or not np.array_equal(
-        inputs.pressure_pa, atmosphere.pressure_pa
-    ):
-        raise ValueError("cross-section layer conditions must match atmosphere exactly")
-    if amounts.shape != inputs.temperature_k.shape:
-        raise ValueError("cross-section rows must align with atmospheric layers")
-    rows = amounts[:, None] * prepared.cross_sections_m2_per_molecule
-    return AbsorptionComponent(
-        prepared.grid,
+    reverse = spectral.coordinate != inputs.grid.coordinate
+    source_in_target = convert_spectral_grid(inputs.grid) if reverse else inputs.grid
+    queries = spectral
+    if reverse:
+        # An exactly selected reciprocal source knot denotes that original knot,
+        # even when two floating-point reciprocal operations would move it by one ULP.
+        reciprocal = source_in_target
+        indices = np.searchsorted(reciprocal.points, spectral.points)
+        clipped = np.minimum(indices, reciprocal.points.size - 1)
+        exact = (indices < reciprocal.points.size) & (reciprocal.points[clipped] == spectral.points)
+        mapped = 1e7 / spectral.points
+        mapped[exact] = inputs.grid.points[::-1][clipped[exact]]
+        queries = SpectralGrid(inputs.grid.coordinate, mapped[::-1])
+    left, right, wl, wr = spectral_interpolation_weights(inputs.grid, queries)
+    source = inputs.cross_sections_m2_per_molecule
+    rows = wl * source[:, left] + wr * source[:, right]
+    if reverse:
+        rows = rows[:, ::-1]
+    domain = source_in_target.domain
+    if domain is not None:
+        if spectral.domain is None:
+            spectral = SpectralGrid(spectral.coordinate, spectral.points, domain)
+        elif any(
+            not any(a <= low <= high <= b for a, b in domain.intervals)
+            for low, high in spectral.domain.intervals
+        ):
+            raise ValueError("requested coverage exceeds the known source domain")
+    return LayerCrossSections(
         inputs.species,
         inputs.isotopologue,
         inputs.kind,
+        spectral,
+        inputs.temperature_k,
+        inputs.pressure_pa,
         rows,
+        height_edges_m=inputs.height_edges_m,
+        line_wing_convention=inputs.line_wing_convention,
+        includes_water_continuum=inputs.includes_water_continuum,
+    )
+
+
+def evaluate_table_absorption(
+    atmosphere: LayerAtmosphere, table: LayerCrossSections
+) -> AbsorptionComponent:
+    """Contract fixed cross sections with current gas columns on identical layers.
+
+    Args:
+        atmosphere: Molecular amounts and current exact layer conditions.
+        table: Immutable table on a wavenumber grid, with declared evaluation T/p.
+
+    Returns:
+        Fresh dimensionless (layer,spectral) absorption component.
+
+    Raises:
+        ValueError: Interfaces, temperatures, pressures, species or optical depths fail.
+    """
+    require_wavenumber_grid(table.grid)
+    amounts, _ = _gas(atmosphere, table.species)
+    if (
+        not np.array_equal(table.height_edges_m, atmosphere.height_boundaries_m)
+        or not np.array_equal(table.temperature_k, atmosphere.temperature_k)
+        or not np.array_equal(table.pressure_pa, atmosphere.pressure_pa)
+    ):
+        raise ValueError(
+            "cross-section layer interfaces and conditions must match atmosphere exactly"
+        )
+    rows = cross_section_optical_depth(
+        np.asarray(table.cross_sections_m2_per_molecule, dtype=np.float64),
+        np.asarray(amounts, dtype=np.float64),
+    )
+    return AbsorptionComponent(
+        table.grid,
+        table.species,
+        table.isotopologue,
+        table.kind,
+        rows,
+        line_wing_convention=table.line_wing_convention,
+        includes_water_continuum=table.includes_water_continuum,
     )
 
 
 @dataclass(frozen=True, eq=False)
-class CrossSectionField:
-    """Pre-materialised layer cross sections [m2/molecule] on a cm-1 axis.
+class LayerCrossSections[Scalar: np.floating | np.integer]:
+    """Own fixed species absorption cross sections on declared layers and samples.
 
-    Temperature/pressure must *exactly* match the supplied atmosphere; only
-    spectral interpolation is performed here. Continuum excludes any line-wing
-    contributions already present in the supplied LineSet(s).
-    Layer conditions have shape (n_layers,), cross sections
-    (n_layers, n_points); numerical values are independent writable float64 copies.
+    Values keep their supplied numerical dtype. Conditions and coefficient buffers
+    are independent immutable snapshots; a frozen wrapper alone would not protect
+    their consistency. One spectral sample is valid for evaluated tables. Resampling
+    beyond an exact singleton knot requires additional source samples.
 
     Attributes:
-        species: Absorbing molecular species.
-        isotopologue: Optional identity for isotope-specific cross sections.
-        kind: Fixed cross-section or continuum-excluding-lines interpretation.
-        grid: Materialised wavenumber support in cm-1.
-        temperature_k: (layers,) exact table temperature conditions in kelvin.
-        pressure_pa: (layers,) exact table pressure conditions in pascals.
-        cross_sections_m2_per_molecule: (layers,points) absorption cross sections.
+        species: Nonempty absorber identity.
+        isotopologue: Required identity for complete cross sections; optional for continuum.
+        kind: Complete cross section or continuum excluding line contributions.
+        grid: Increasing nm or cm-1 samples and optional independent coverage.
+        temperature_k: Exact positive evaluation temperatures (layer,), kelvin.
+        pressure_pa: Exact positive evaluation pressures (layer,), pascals.
+        cross_sections_m2_per_molecule: Nonnegative fixed values (layer,spectral), m2/molecule.
+        height_edges_m: Increasing physical interfaces (layer+1,), metres in the
+            caller-declared altitude datum. No index-only or fabricated support is inferred.
+        line_wing_convention: Optional explicit local-line cutoff/pedestal convention.
+        includes_water_continuum: Whether a supplied H2O cross section includes continuum.
+            None leaves this unknown. Pairing with separate water continuum requires False
+            and a matching line convention; no inclusion is inferred from the type name.
     """
 
     species: str
@@ -129,90 +173,69 @@ class CrossSectionField:
     grid: SpectralGrid
     temperature_k: NDArray[np.float64]
     pressure_pa: NDArray[np.float64]
-    cross_sections_m2_per_molecule: NDArray[np.float64]
+    cross_sections_m2_per_molecule: NDArray[Scalar]
+    height_edges_m: NDArray[np.float64] = field(kw_only=True)
+    line_wing_convention: Literal["unbounded", "truncated", "mt_ckd_local_25"] | None = None
+    includes_water_continuum: bool | None = None
     __hash__ = None
 
     def __post_init__(self) -> None:
+        """Validate physical domains and freeze the retained numerical values.
+
+        Raises:
+            ValueError: Identity, layer support, dimensions or physical values are invalid.
+        """
         if not self.species or self.kind not in ("cross_section", "continuum_excluding_lines"):
             raise ValueError("cross sections need species and supported kind")
         if self.kind == "cross_section" and not self.isotopologue:
             raise ValueError("cross sections require isotopologue identity")
-        require_wavenumber_grid(self.grid)
-        grid = self.grid.points
-        if len(grid) < 2:
-            raise ValueError("cross-section interpolation requires at least two points")
+        if self.line_wing_convention not in (None, "unbounded", "truncated", "mt_ckd_local_25"):
+            raise ValueError("unsupported line-wing convention")
         if (
             self.temperature_k.ndim != 1
             or self.temperature_k.size == 0
             or self.pressure_pa.shape != self.temperature_k.shape
         ):
-            raise ValueError(
-                "tabulated layer conditions must have matching nonempty shape (layers,)"
-            )
-        if self.cross_sections_m2_per_molecule.shape != (self.temperature_k.size, grid.size):
+            raise ValueError("tabulated conditions need matching nonempty shape (layers,)")
+        edges = self.height_edges_m
+        if (
+            edges.shape != (self.temperature_k.size + 1,)
+            or not np.isfinite(edges).all()
+            or np.any(np.diff(edges) <= 0)
+        ):
+            raise ValueError("cross-section interfaces must be increasing finite layer edges")
+        if self.cross_sections_m2_per_molecule.shape != (
+            self.temperature_k.size,
+            self.grid.points.size,
+        ):
             raise ValueError("cross sections must have shape (layers, spectral points)")
         if (
-            not np.all(np.isfinite(self.temperature_k))
-            or not np.all(np.isfinite(self.pressure_pa))
+            not np.isfinite(self.temperature_k).all()
+            or not np.isfinite(self.pressure_pa).all()
             or np.any(self.temperature_k <= 0)
             or np.any(self.pressure_pa <= 0)
         ):
             raise ValueError("tabulated layer conditions must be finite and positive")
-        if not np.all(np.isfinite(self.cross_sections_m2_per_molecule)) or np.any(
+        if not np.isfinite(self.cross_sections_m2_per_molecule).all() or np.any(
             self.cross_sections_m2_per_molecule < 0
         ):
             raise ValueError("cross section must be finite and nonnegative")
-        for name in ("temperature_k", "pressure_pa", "cross_sections_m2_per_molecule"):
-            object.__setattr__(self, name, np.copy(getattr(self, name)))
-
-    @property
-    def wavenumbers_cm1(self) -> NDArray[np.float64]:
-        """Expose the tabulated cross section's sampling coordinates.
-
-        Returns:
-            Borrowed read-only (points,) wavenumbers in cm-1.
-        """
-        return self.grid.points
-
-
-@dataclass(frozen=True, eq=False)
-class PreparedCrossSections:
-    """Fixed, interpolated cross sections, not a reference optical-depth basis.
-
-    The table declares T/p, species and provenance; the retained target
-    grid and writable float64 (n_layers, n_points) array contain m2/molecule.
-    Safely immutable target coordinates are shared, not copied or reselected.
-    Columns are supplied at evaluation.
-    No line-profile, broadening or atmospheric-state update is approximated.
-
-    Attributes:
-        inputs: Original species, source grid and layer-condition declarations.
-        grid: Target wavenumber grid after spectral interpolation.
-        cross_sections_m2_per_molecule: (layers,points) interpolated cross sections.
-    """
-
-    inputs: CrossSectionField
-    grid: SpectralGrid
-    cross_sections_m2_per_molecule: NDArray[np.float64]
-    __hash__ = None
-
-    def __post_init__(self) -> None:
-        require_wavenumber_grid(self.grid)
-        values = self.cross_sections_m2_per_molecule
-        if (
-            values.shape != (self.inputs.temperature_k.size, self.wavenumbers_cm1.size)
-            or values.size == 0
+        for name in (
+            "height_edges_m",
+            "temperature_k",
+            "pressure_pa",
+            "cross_sections_m2_per_molecule",
         ):
-            raise ValueError("prepared cross sections must have shape (layers, points)")
-        if not np.all(np.isfinite(values)) or np.any(values < 0):
-            raise ValueError("prepared cross section must be finite and nonnegative")
-        object.__setattr__(self, "cross_sections_m2_per_molecule", np.copy(values))
+            values = getattr(self, name)
+            owned = np.frombuffer(values.tobytes(), dtype=values.dtype).reshape(values.shape)
+            object.__setattr__(self, name, owned)
 
     @property
     def wavenumbers_cm1(self) -> NDArray[np.float64]:
-        """Expose the prepared cross section's sampling coordinates.
+        """Return borrowed cm-1 samples when this table uses that coordinate.
 
-        Returns:
-            Borrowed read-only (points,) wavenumbers in cm-1.
+        Raises:
+            ValueError: The table is sampled in wavelength; use its grid explicitly.
         """
+        require_wavenumber_grid(self.grid)
         return self.grid.points

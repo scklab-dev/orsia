@@ -11,10 +11,7 @@ from numpy.typing import NDArray
 from orsia_radiative.profiles import LayerProfileBasis
 from orsia_radiative.profiles import check_profile_bounds as _check_bounds
 from orsia_radiative.profiles import validate_profile_values as _finite
-from orsia_radiative.spectral.grid import (
-    SpectralGrid,
-    require_wavenumber_grid,
-)
+from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid
 
 
 @dataclass(frozen=True, eq=False)

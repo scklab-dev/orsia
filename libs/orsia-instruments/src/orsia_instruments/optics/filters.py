@@ -3,19 +3,63 @@
 Physical transmission is peak-normalized, never implicitly unit-area normalized."""
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.special import expit
 
-from ..quadrature import validate_quadrature_order
-from .psfs import SpatialDensity
-from .response import (
+from orsia_instruments.acquisition.quadrature import validate_quadrature_order
+from orsia_instruments.optics.psfs import SpatialDensity
+from orsia_instruments.optics.response import (
     ImagingOptics,
     exposure_setting,
     imaging_optics,
     setting_at_exposure,
 )
+
+
+@dataclass(frozen=True)
+class FilterPassband:
+    """Describe one peak-scaled parametric spectral passband independently of reads.
+
+    Attributes:
+        centre_nm: Positive finite centre wavelength, nm.
+        fwhm_nm: Positive finite full width at half maximum, nm.
+        profile: Lorentzian or positive-power super-Gaussian transmission law.
+        peak_transmission: Finite peak accepted intensity fraction in [0,1].
+        exponent: Positive finite full power for supergaussian. None for lorentzian,
+            whose quadratic denominator is fixed. Blocking and detector QE are separate.
+    """
+
+    centre_nm: float
+    fwhm_nm: float
+    profile: Literal["lorentzian", "supergaussian"]
+    peak_transmission: float = 1.0
+    exponent: float | None = None
+
+    def __post_init__(self) -> None:
+        """Validate the supported profile and its physical scalar parameters.
+
+        Raises:
+            ValueError: Profile, scalar domains or exponent selection are invalid.
+        """
+        if (
+            not np.isfinite([self.centre_nm, self.fwhm_nm, self.peak_transmission]).all()
+            or self.centre_nm <= 0
+            or self.fwhm_nm <= 0
+            or not 0 <= self.peak_transmission <= 1
+            or self.profile not in ("lorentzian", "supergaussian")
+        ):
+            raise ValueError(
+                "valid filter profile, positive centre/width and peak fraction required"
+            )
+        if self.profile == "supergaussian":
+            if self.exponent is None or not np.isfinite(self.exponent) or self.exponent <= 0:
+                raise ValueError("supergaussian requires a positive finite exponent")
+        elif self.exponent is not None:
+            raise ValueError("lorentzian uses its fixed law; omit the exponent")
 
 
 def gaussian_filter(

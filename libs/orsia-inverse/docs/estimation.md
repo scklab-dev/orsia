@@ -6,7 +6,9 @@ This reference specifies fitted coordinates, fixed covariance weighting and the 
 
 | Source | Responsibility | Boundary |
 | --- | --- | --- |
-| `estimation.py` | `solve_map`, callable adaptation and `GaussianEstimate` | Fixed observation/prior covariance, explicit bounds and deterministic prediction/Jacobian callables. |
+| `nonlinear/estimation.py` | Shared model adaptation, `GaussianEstimate`, `FitTermination`, `TrialDomainError` | Immutable terminal state and explicit numerical termination. |
+| `nonlinear/map.py`, `nonlinear/damped.py` | Distinct nonlinear algorithms | Common half-squared objective, fixed weighting and optional prior. |
+| `priors.py` | `QuadraticPrior` and covariance/precision constructors | Explicit mean and rectangular precision root. |
 | `diagnostics.py` | `retrieval_diagnostics` and `RetrievalDiagnostics` | Local undamped Gauss-Newton information; no second fit or constrained posterior. |
 | Orsia Uncertainty | Prepare covariance factors, whiten, solve and sample | Consumers import these capabilities directly from their owner. |
 | NumPy and SciPy | Arrays, Jacobian SVD and least squares | Physical models and file handling stay with callers. |
@@ -15,17 +17,59 @@ Estimation and diagnostics depend on Orsia Uncertainty for covariance weighting 
 
 ## Numerical contract
 
-`solve_map(fun, jac, observations, initial_state, *, observation_factor, prior_mean=None, prior_factor=None, lower_bounds=None, upper_bounds=None, method="trf", ftol=1e-8, xtol=1e-8, gtol=1e-8, max_nfev=1000)` minimises `0.5*(F(q)-y).T Se^-1 (F(q)-y) + 0.5*(q-qa).T Sa^-1 (q-qa)`. Omit both prior arguments to remove the second term. The supplied immutable `CovarianceFactor` objects remain fixed during the solve; frozen reference weighting is not a state-dependent Gaussian likelihood. No robust loss, covariance fitting, silent regularisation, pseudoinverse or automatic solver fallback is offered.
+Both nonlinear solvers minimize `0.5 * ||We (F(q)-y)||² + 0.5 * ||Rp (q-qa)||²`. `We` is supplied by an immutable observation covariance factor. `QuadraticPrior` retains `qa` and `Rp`. Its rectangular precision root can regularize selected directions; a rank-deficient penalty need not define a proper probability distribution. The numerical algorithm introduces no hidden state transformation or prior.
 
-- `q` and `initial_state` are float64 `(n,)`; `fun(q)` returns model values `F(q)` as float64 `(m,)`, not residuals; `jac(q)` returns only `dF/dq` as float64 `(m,n)`, not a tuple. `solve_map` constructs the covariance-weighted residuals and prior term internally. Inputs and outputs must be finite. Jacobian columns differentiate the actual dimensionless retrieval coordinates, including caller-supplied affine, log or basis transformations. Analytic Jacobians are the normal route; callers may supply a numerically differentiated callable explicitly.
-- `observations` and `initial_state` must be nonempty vectors. Observation and prior factors have sizes `m` and `n`, respectively. Prepare finite float64 variance vectors or dense covariances with `orsia_uncertainty.factor_covariance(C, method=...)`. Inverse operations require minimum/maximum eigenvalue ratio strictly greater than `1e-12`. Diagonal factors retain linear storage. Cholesky and spectral factors share the objective while their whitened components can differ. No dense observation whitening matrix is constructed.
-- Array order is the contract: observation covariance rows/columns and Jacobian rows follow `observations`; prior covariance rows/columns, prior mean, bounds and Jacobian columns follow `initial_state`. The caller must supply consistent units: observation covariance entry `(i,j)` has units `unit(y[i])*unit(y[j])`; prior covariance is in squared dimensionless retrieval coordinates. No metadata, unit checking, reordering or conversion is performed.
-- The caller defines parameter identities, physical scales and transformations. For `x=xref+Dq`, supply `Kq=Kx D`, transform the prior and bounds consistently, and transport output uncertainty with `D`. A Gaussian prior in `q` need not be Gaussian in physical coordinates. No normalization by the prior is inferred.
-- Bounds are float64 `(n,)` arrays. Each side may be infinite and each coordinate independently unbounded, one-sided or two-sided. Omitted sides are infinite. NaNs, equal/reversed bounds and initial states outside bounds are rejected. Remove fixed parameters rather than using equal bounds. `method="lm"` is explicit and requires all bounds infinite and at least `n` augmented residuals. TRF is the default; relative performance has not been established.
-- The backend is SciPy `least_squares` with `loss="linear"` and `x_scale=1.0`. All tolerances must be finite and above machine epsilon. `max_nfev` is positive and limits backend residual evaluations, not total physical calls. No iteration callback is exposed in this initial contract.
+Choose exactly one model form:
 
-The callable contract is deterministic and non-mutating within each solve. Inputs passed to callables are independent writable copies, which callables must not modify; outputs must be stable and must not be concurrently mutated or reused by another caller. The adapter snapshots returned arrays and retains only its last exactly equal state, never an approximate cache key or a previous-state Jacobian. Trial states use `fun` without derivatives; `jac` is evaluated only when derivatives are requested and not already cached at that state. Model exceptions propagate; invalid shapes, nonfinite outputs and nonfinite residual cost raise `ValueError`, with no artificial penalty. Derivative correctness remains the caller's responsibility; the adapter does not compare `jac` with numerical derivatives.
-`GaussianEstimate` represents the estimated dimensionless state, final prediction/residual/Jacobian, the exact immutable factors used for fitting and prior mean, bounds and numerical termination. Returned floating arrays are writable copies, independent of caller and SciPy work arrays. The integer `active_mask` retains its separate bytes-backed read-only storage. Residual sign is `F(q)-y`; measurement and prior costs include the factor one half. `success`, `status`, `message`, `optimality`, `nfev` and `njev` report the backend outcome, not scientific validity. Budget exhaustion returns `success=False` with the final estimate and linearisation. The existing fields `prediction_calls` and `linearization_calls` count actual adapter calls to `fun` and `jac`, respectively, including final evaluation; they need not equal backend counts and exclude any calls made internally by the supplied functions. Accepted/rejected step counts are `None`, not zero or estimates from evaluation counts. No performance comparison between LM and TRF is implied.
+- `solve_map(fun, jac, observations, initial_state, observation_factor=..., prior=...)` and the matching `solve_damped_gaussian` signature use separate prediction and derivative calls.
+- `solve_map(observations=..., initial_state=..., evaluate=value_and_jacobian, observation_factor=..., prior=...)` and the matching damped signature use fused calls.
+
+`q` has shape `(n,)`, observations and predictions `(m,)`, and Jacobians `(m,n)`. Required arrays are finite float64. The caller defines fitted coordinate units and order; observation covariance uses the product units of its rows and columns. Jacobian columns, prior mean/root and bounds follow the same state order. Derivatives include any caller-selected log, affine or basis transformation.
+
+The observation factor must admit Uncertainty's inverse operations: its minimum/maximum eigenvalue ratio must exceed `1e-12`. `prior_from_covariance(mean, factor)` uses the existing whitening operation. `prior_from_precision(mean, precision)` accepts positive-semidefinite diagonal or dense precision using Uncertainty's scale-relative symmetry and PSD tolerance. Both constructors return an owned precision root. Direct `QuadraticPrior(mean, root)` construction supports zero penalty rows and partial regularization.
+
+The per-solve adapter copies observations, initial state, bounds and callback outputs. It caches only its last exactly equal state. Callbacks receive independent writable state copies and must leave them unchanged. Keep output buffers stable until they are snapshotted. Separate prediction calls permit value-only trials; a fused call always computes both outputs. Returned estimate arrays and prior buffers have immutable storage. Use `.copy()` for writable results.
+
+### Numerical methods and failure behavior
+
+`solve_map` uses SciPy `least_squares`, `loss="linear"` and `x_scale=1.0`. TRF supports independent finite or infinite bounds. LM rejects finite bounds and requires at least as many augmented residuals as states. Bounds have shape `(n,)`; NaNs, equal/reversed bounds and infeasible initial states fail. Positive `ftol`, `xtol` and `gtol` must exceed machine epsilon. `max_nfev` limits backend residual calls; total model calls can differ.
+
+`solve_damped_gaussian` supports unbounded states, diagonal damping, decreasing-cost trials and undamped stationary-step checks. `max_iterations` limits attempted outer iterations. Exhaustion and failed trial search retain an unsuccessful estimate. The default `cost_tolerance=5e-11` uses the half-squared objective, matching the former full-square threshold `1e-10`. Numerical damping is excluded from posterior information.
+
+An application adapter may raise `TrialDomainError` for a known unsupported trial. The damped solver rejects that trial and increases damping. Invalid initial states always fail; MAP also propagates trial-domain errors. Other exceptions propagate from either method, including `ValueError` for invalid shapes, nonfinite outputs or cost overflow. Contract errors never become artificial residual penalties.
+
+`GaussianEstimate` stores state, prediction, `F(q)-y` residual, final Jacobian, observation factor, optional prior, bounds/activity and separate half-squared costs. `objective` derives their sum. Its `termination` stores method, success, reason, optional backend status/counts, optimality and actual prediction/linearization call counts. A fused callback increments both actual counts once. Damped termination reports attempted iterations and accepted/rejected steps; unavailable backend counts are `None`. MAP retains backend counts; unavailable step counts are `None`.
+
+## Switch nonlinear methods with one model
+
+This example uses the same fused model, nonzero prior mean and observation factor with both solvers.
+
+```python
+import numpy as np
+from orsia_inverse import QuadraticPrior, retrieval_diagnostics, solve_damped_gaussian, solve_map
+from orsia_uncertainty import factor_covariance
+
+matrix = np.array([[1.0, 2.0], [2.0, -1.0], [0.5, 1.0]])
+
+
+def evaluate(state):
+    return matrix @ state, matrix
+
+
+arguments = dict(
+    observations=np.array([1.0, -2.0, 0.5]),
+    initial_state=np.zeros(2),
+    evaluate=evaluate,
+    observation_factor=factor_covariance(np.ones(3), method="cholesky"),
+    prior=QuadraticPrior(np.array([0.4, -0.3]), np.array([[0.0, 0.5]])),
+)
+first = solve_map(**arguments, method="trf")
+second = solve_damped_gaussian(**arguments)
+assert first.termination.success and second.termination.success
+np.testing.assert_allclose(first.state, second.state, atol=1e-8)
+assert retrieval_diagnostics(first).available
+assert retrieval_diagnostics(second).available
+```
 
 ## Check a derivative in fitted coordinates
 
@@ -54,13 +98,16 @@ Expected output: `[2.0, 4.0]`. This checks one synthetic derivative at one state
 
 ## Local diagnostics and source transport
 
-`retrieval_diagnostics(estimate, *, include_gain=False, include_averaging_kernel=False, rank_rtol=1e-12)` uses the retained final Jacobian and reuses the exact covariance factors from the solve without refactorization. `RetrievalDiagnostics` represents local state information and measurement sensitivity. It reports ranks and condition numbers of the measurement-whitened Jacobian and prior-augmented Jacobian separately. These condition numbers are for the Jacobians, not squared normal matrices; rank deficiency gives infinite condition. `rank_rtol` is a finite relative singular-value threshold strictly between zero and one.
+`retrieval_diagnostics(estimate, include_gain=False, include_averaging_kernel=False, rank_rtol=1e-12, max_bytes=256*1024*1024)` accepts either solver's immutable estimate. `local_gaussian_information(jacobian, observation_factor, prior=..., ...)` exposes the same numerical calculation for a supplied unconstrained local model. It reports ranks and condition numbers of measurement-whitened and prior-augmented Jacobians separately. `rank_rtol` is strictly between zero and one; deficient rank gives infinite condition.
 
-The posterior is the undamped Gauss-Newton approximation `(K.T Se^-1 K + Sa^-1)^-1`, computed by SVD of the augmented whitened Jacobian without forming its normal matrix. No trust-region damping is counted as prior information. Gain `G=Spost K.T Se^-1` (shape `(n,m)`) and averaging kernel `A=G K` (shape `(n,n)`) are retained only on request. `degrees_of_freedom=trace(A)` is computed even without retaining `A`. Posterior covariance is a writable float64 `(n,n)` array in state order and squared dimensionless retrieval coordinates; gain is in retrieval-coordinate units per observation unit, and averaging kernels are dimensionless in retrieval coordinates, not automatically vertical kernels. Estimate arrays, remain writable while covariance factors are immutable; keep the final state/Jacobian stable before diagnostics if the original fitted weighting and linearisation are required.
+SVD of `[We K; Rp]` yields the undamped posterior `(K.T Se^-1 K + Rp.T Rp)^-1`. The optional gain `G=Spost K.T Se^-1` has shape `(n,m)`; the averaging kernel `A=G K` has shape `(n,n)`. `degrees_of_freedom=trace(A)` is available even when the full kernel is omitted. These returned diagnostic arrays are fresh writable float64 buffers. Their state and observation axes follow the supplied problem.
 
-If numerical termination failed, a bound is active according to the backend, or the augmented Jacobian has deficient rank at the selected tolerance, `available=False` and `reason` explains why; posterior, gain, averaging kernel and degrees of freedom are `None`, while ranks and conditions remain available. There is no silent truncated inverse. Backend-active bounds are a numerical indicator, not a distance-based safety guarantee: inspect the retained bounds and use perturbation/ensemble checks near inactive bounds and in strongly nonlinear cases. Numerical decomposition errors propagate instead of producing diagnostics. This API does not estimate a constrained posterior or prove statistical coverage.
+Failed numerical termination, active bounds or deficient augmented rank leave posterior/gain/kernel unavailable with an explicit reason. Ranks remain available. No truncated inverse or damping replacement is supplied. The direct information function assumes the caller has established applicability of an unconstrained model. `max_bytes` checks a conservative estimate of dense array storage before whitening and SVD; native factorization scratch remains additional storage. An exceeded budget raises `MemoryError`.
 
-The assumed posterior is distinct from propagated measurement error. With a requested gain `G`, compute `G @ actual_covariance @ G.T` for a dense actual error law, `(G * actual_variances) @ G.T` for diagonal variances, and `G @ bias` for signed measurement bias. Keep contributions and cross terms separate when attribution matters; actual covariance need not equal the weighting covariance. A prior-mean error propagates locally with `I-A` under the stated residual/state convention. No actual-error law, cross-correlation or physical bias is inferred.
+`linear_target_uncertainty(design, observation_factor, target, prior=..., ...)` uses this shared information calculation. It returns `LinearTargetUncertainty` with posterior covariance, `target.T @ gain` and `sqrt(target.T @ posterior @ target)`. Supply a unit basis vector for a coordinate or explicit coefficients for a derived linear quantity. Rank failure raises `numpy.linalg.LinAlgError`; discrete channel search can reject such candidates explicitly.
+
+The assumed posterior differs from actual-source sampling covariance. Given local gain `G`, propagate actual error with `G @ C_actual @ G.T` and signed bias with `G @ bias`. Preserve cross terms between correlated sources. A prior-mean error propagates locally with `I-A`. Neither numerical success nor a local Gaussian approximation establishes nonlinear coverage, physical validity or constrained posterior uncertainty.
+
 ## Verification scope
 
-Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-inverse/tests` for focused regressions and `devbox run -- just check` for workspace gates. Tests cover independent affine references, dense/diagonal whitening, nonlinear derivative checks and multiple starts, affine coordinate transforms, mixed/active bounds, weak information with/without priors, actual-source and signed-bias transport, seeded perturbation/Monte Carlo cases, invalid models, exhaustion and independent writable ownership. Documentation examples are executable tests. A physical retrieval needs separate model and uncertainty validation. These are bounded synthetic checks, not atmospheric retrieval qualification, a realistic solar/thermal forward coupling, a throughput comparison or concurrent-native safety qualification.
+Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-inverse/tests` for focused regressions and `devbox run -- just check` for workspace gates. Tests cover independent affine references, dense/diagonal whitening, nonlinear derivative checks and multiple starts, affine coordinate transforms, mixed/active bounds, weak information with/without priors, actual-source and signed-bias transport, seeded perturbation/Monte Carlo cases, invalid models, exhaustion and immutable estimate ownership, fused/separate callback parity, partial priors, explicit trial rejection and dense information budgets. Documentation examples are executable tests. A physical retrieval needs separate model and uncertainty validation. These are bounded synthetic checks, not atmospheric retrieval qualification, a realistic solar/thermal forward coupling, a throughput comparison or concurrent-native safety qualification.

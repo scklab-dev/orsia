@@ -10,14 +10,15 @@ import numpy as np
 from numpy.typing import NDArray
 from orsia_data import read_cross_section_measurements, read_rfm_atmosphere
 from orsia_radiative import (
-    CrossSectionField,
     CrossSectionMeasurements,
     CrossSectionSpectrum,
+    LayerCrossSections,
     gas_columns_from_fraction,
     interpolate_cross_section_measurements,
     pressure_level_layer_means,
     table_absorption,
 )
+from orsia_radiative.spectral.grid import wavenumber_grid
 
 
 def project_trace_gases(path, interfaces, humidity, species):
@@ -130,7 +131,7 @@ def uv_components(base, entries, atmosphere, grid):
             1e7 / grid.points,
             temperature_policy=entry["temperature_policy"],
         )
-        field = CrossSectionField(
+        field = LayerCrossSections(
             entry["species"],
             "all",
             "cross_section",
@@ -138,8 +139,9 @@ def uv_components(base, entries, atmosphere, grid):
             atmosphere.temperature_k,
             atmosphere.pressure_pa,
             values,
+            height_edges_m=atmosphere.height_boundaries_m,
         )
-        components.append(table_absorption(atmosphere, grid, field))
+        components.append(table_absorption(atmosphere, wavenumber_grid(grid), field))
         diagnostics[entry["species"]] = dict(
             actual_temperature_k=atmosphere.temperature_k.tolist(),
             effective_temperature_k=effective.tolist(),

@@ -111,6 +111,36 @@ class SpectralGrid:
         )
 
 
+def spectral_trapezoid_weights(grid: SpectralGrid) -> NDArray[np.float64]:
+    """Prepare coordinate-measure weights without crossing declared spectral gaps.
+
+    Args:
+        grid: Explicitly covered positive samples in nm or cm-1. Every interval
+            requires at least two samples, including its exact two endpoints.
+
+    Returns:
+        Fresh nonnegative (spectral,) trapezoid weights in the grid coordinate's
+        unit. Compute on the full selected domain before slicing an integral.
+
+    Raises:
+        ValueError: Coverage, endpoint sampling or finite interval widths are invalid.
+    """
+    if grid.domain is None:
+        raise ValueError("spectral quadrature requires declared spectral coverage")
+    points = grid.points
+    weights = np.zeros(points.size)
+    for lower, upper in grid.domain.intervals:
+        selected = np.flatnonzero((points >= lower) & (points <= upper))
+        if selected.size < 2 or points[selected[0]] != lower or points[selected[-1]] != upper:
+            raise ValueError("spectral intervals require at least two points and both endpoints")
+        ds = np.diff(points[selected])
+        weights[selected[:-1]] += ds / 2
+        weights[selected[1:]] += ds / 2
+    if not np.isfinite(weights).all():
+        raise ValueError("spectral quadrature exceeds finite support")
+    return weights
+
+
 def wavenumber_grid(
     values: NDArray[np.float64] | SpectralGrid,
     *,

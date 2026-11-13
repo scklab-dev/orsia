@@ -19,18 +19,20 @@ Named service access lives in `services/`, alongside the independent `stac/` pro
 | `aerosols` | `read_cams_aod` | Native-wavelength total-column AOD samples, not reconstructed aerosol optics. |
 | `services.cds`, `services.ads`, `services.nomads` | `download_era5`, `download_cams`, `download_gfs`, `gfs_valid_time` | Explicit native-file acquisition; old `atmosphere` imports remain available. |
 | `atmosphere` | `read_netcdf_profiles`, `read_netcdf_surface_fields`, `read_gfs_profiles` | Native-unit profiles/context, with explicit field/time/support validation. |
-| `atmosphere` | `read_pressure_level_atmosphere` | Existing radiative `Atmosphere` from pressure-level NetCDF, explicit terrain/interface support and caller-selected hydrostatic assumptions. |
+| `atmosphere` | `read_pressure_level_atmosphere` | Existing radiative `LayerAtmosphere` from pressure-level NetCDF, explicit terrain/interface support and caller-selected hydrostatic assumptions. |
 | `services.mipas` | `download_mipas_profile(edition="2001", profile="equatorial_day", destination=...)` | Native `Path` for one of five historical MIPAS reference profiles. |
 | `atmosphere.rfm` | `read_rfm_atmosphere(path)` | Native-level altitude [m], pressure [Pa], temperature [K] and uppercase species fractions [mol/mol total air]. |
 | `services.lisird` (also `solar.lisird`) | `fetch_solar_spectrum(product=..., edition="current", directory=..., ...)` | Radiative `SolarIrradianceSpectrum`; experimental LISIRD adapter. |
 | `solar.irradiance` | `read_solar_spectrum_csv(path)` | Radiative `SolarIrradianceSpectrum`. |
-| `services.hitran` (also `spectroscopy.hitran`) | `fetch_hitran_lines(molecule_id=..., isotopologue_id=..., interval_cm1=..., edition="current", directory=...)` | Radiative `LineDatabase`, acquired through HAPI. |
-| `spectroscopy.lines` | `read_hitran_lines(path, molecule_id=..., isotopologue_id=..., interval_cm1=...)`, `read_aer_lines(..., coupling="reject")` | Radiative `LineDatabase` for one molecule/local isotope and declared centre coverage. |
+| `services.hitran` (also `spectroscopy.hitran`) | `fetch_hitran_lines(molecule_id=..., isotopologue_id=..., interval_cm1=..., edition="current", directory=...)` | Radiative `SpectralLineTable`, acquired through HAPI. |
+| `spectroscopy.lines` | `read_hitran_lines(path, molecule_id=..., isotopologue_id=..., interval_cm1=...)`, `read_aer_lines(..., coupling="reject")` | Radiative `SpectralLineTable` for one molecule/local isotope and declared centre coverage. |
 | `spectroscopy.partition_sums` | `read_partition_table(path, molecule_id=..., isotopologue_id=...)` | Radiative `PartitionFunctionTable`. |
 | `spectroscopy.continuum` | `download_mt_ckd_water(edition="4.3", destination=..., ...)`, `fetch_mt_ckd_water(edition="4.3", directory=..., temperature_range_k=..., ...)`, `read_mt_ckd_water(path, temperature_range_k=...)` | Local `Path` for download-only; radiative `WaterContinuumReference` for fetch/read. |
-| `spectroscopy.cross_sections` | `read_cross_section_table(path, species=..., isotopologue=..., kind=...)` | Radiative `CrossSectionField`. |
+| `spectroscopy.cross_sections` | `read_cross_section_table(path, species=..., isotopologue=..., kind=..., height_edges_m=...)` | Immutable Radiative `LayerCrossSections`. |
 
 Existing function exports from `orsia_data` and their domain namespaces are preserved. Client/authentication classes are imported from their named `services` namespaces; generic STAC operations are imported from `orsia_data.stac`. A spectroscopy-specific collection manifest associates reusable numerical references and source facts. Generic scientific file records, automatic caches and provider registries remain outside this API. Atmospheric acquisition accepts explicitly selected native product requests; the caller retains their identity and supplies configured CDS/ADS retrieval methods. Atmospheric readers call SciPy/h5netcdf directly for NetCDF and optional ecCodes for GRIB. Named dimensions, bounded CF packing/time decoding and native scan mapping remain internal to their NumPy contracts. See the [atmospheric boundary](atmosphere.md) for supported formats, optional native dependencies, pure numerical materialisation and qualification limits. The existing solar/spectroscopy fetch functions require scientific selections, not caller-defined column mappings. The separate catalogue/download interfaces retain native pages and explicitly selected product IDs or asset links; see [data products](products.md).
+
+The normalized cross-section NPZ schema retains `wavenumbers_cm1`, `temperature_k`, `pressure_pa` and `cross_sections_m2_per_molecule`. Supply `height_edges_m` in file layer order because these files contain no physical interfaces. The reader preserves the original keys and performs no temperature/pressure resampling or inferred layer construction.
 
 ## Spectroscopy collections
 
@@ -132,9 +134,9 @@ Both acquisition functions require explicit `edition="4.3"`; no default edition,
 
 Solar CSV columns are exactly `wavelength (nm),irradiance (W/m^2/nm)`, optionally followed by `uncertainty (W/m^2/nm)`, then `bandwidth (nm)`. Wavelengths are increasing point centres; irradiance and uncertainty are W m-2 nm-1. Bandwidth [nm] is not sample spacing or a declared integration bin. Arrays are independent writable float64 copies. Missing ancillary fields remain `None`; their meaning is not inferred. The [offline solar example](#solar-csv-usage-and-evidence) demonstrates physical-spectrum conversion to target irradiance and a solar source. The CSV contract is synthetic/local, not live LASP qualification.
 
-HITRAN reading supports 160-character HITRAN2004+ records. AER/LNFL reading accepts UTF-8 `>` headers and exact `%%%%%%%%` separators and consumes mandatory negative-IFLAG coefficient rows. Selected flagged lines are rejected by default; `coupling="ignore"` explicitly selects independent lines, not full LBLRTM line mixing. Molecule and local-isotope IDs are caller-supplied; no species catalogue excludes N2O/O3. An empty selection returns a valid `LineDatabase` with `lines=()`, while malformed or missing files fail. `interval_cm1` declares centre-coverage completeness supplied by the caller; the reader cannot establish completeness from absent line centres. Read sufficient margin for the later wing/pressure-shift selection.
+HITRAN reading supports 160-character HITRAN2004+ records. AER/LNFL reading accepts UTF-8 `>` headers and exact `%%%%%%%%` separators and consumes mandatory negative-IFLAG coefficient rows. Selected flagged lines are rejected by default; `coupling="ignore"` explicitly selects independent lines, not full LBLRTM line mixing. Molecule and local-isotope IDs are caller-supplied; no species catalogue excludes N2O/O3. An empty selection returns a valid `SpectralLineTable` with `lines=()`, while malformed or missing files fail. `interval_cm1` declares centre-coverage completeness supplied by the caller; the reader cannot establish completeness from absent line centres. Read sufficient margin for the later wing/pressure-shift selection.
 
-Partition CSV columns are `molecule_id,isotopologue_id,temperature_k,partition_sum`. `PartitionFunctionTable` contains positive increasing temperature knots [K] and dimensionless Q for one isotope, with independent writable float64 arrays of shape `(n_knots,)`, at least two knots. The reader performs no interpolation. `orsia_radiative.evaluate_partition_function` explicitly evaluates linear Q(T), without extrapolation; this is not HAPI/TIPS interpolation. `orsia_radiative.line_set` consumes `LineDatabase`, `PartitionFunctionTable`, atmosphere and target grid, enforcing coverage beyond cutoff plus maximum pressure shift. It computes Q(296 K)/Q(T_layer), requiring mass [kg/molecule], pressure support [Pa] and finite cutoff [cm-1]. Intensities already include isotope abundance relative to the whole-species column; no second abundance factor is applied. Covered empty materialisation raises radiative `EmptyLineSelection` rather than silently producing transparent absorption.
+Partition CSV columns are `molecule_id,isotopologue_id,temperature_k,partition_sum`. `PartitionFunctionTable` contains positive increasing temperature knots [K] and dimensionless Q for one isotope, with independent writable float64 arrays of shape `(n_knots,)`, at least two knots. The reader performs no interpolation. `orsia_radiative.evaluate_partition_function` explicitly evaluates linear Q(T), without extrapolation; this is not HAPI/TIPS interpolation. `orsia_radiative.line_set` consumes `SpectralLineTable`, `PartitionFunctionTable`, atmosphere and target grid, enforcing coverage beyond cutoff plus maximum pressure shift. It computes Q(296 K)/Q(T_layer), requiring mass [kg/molecule], pressure support [Pa] and finite cutoff [cm-1]. Intensities already include isotope abundance relative to the whole-species column; no second abundance factor is applied. Covered empty materialisation raises radiative `EmptyLineSelection` rather than silently producing transparent absorption.
 
 The MT_CKD water reader accepts only classic NetCDF CDF-1/CDF-2, converts reference pressure from mbar to Pa and retains ABSCO units without the radiation term. HDF5/NetCDF4 is rejected; no heavy backend is imported implicitly. Reference nodes retain negative interpolation padding while evaluation points remain positive. `water_continuum_absorption` belongs to radiative, applies temperature/radiation scaling before four-point cubic interpolation and requires complete stencil support. Compose only with H2O local ±25 cm-1 lines with the Lorentz pedestal removed, without renormalisation. Other continua, CIA and CO2 line mixing are not supplied by this reader.
 
@@ -154,18 +156,7 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 from orsia_data.solar import read_solar_spectrum_csv
-from orsia_radiative import (
-    Atmosphere,
-    ObservationGeometry,
-    RadiativeScene,
-    SpectralGrid,
-    SurfaceState,
-    compose_atmospheric_optics,
-    solar_irradiance,
-    scale_spectral_irradiance,
-    solar_source,
-    transfer,
-)
+from orsia_radiative import LayerAtmosphere, ObservationGeometry, ColumnScene, SpectralGrid, SurfaceState, compose_atmospheric_optics, solar_irradiance, scale_spectral_irradiance, solar_source, transfer
 
 with TemporaryDirectory() as directory:
     root = Path(directory)
@@ -180,7 +171,7 @@ with TemporaryDirectory() as directory:
     # The 1 AU reference is a declaration of this synthetic example only.
     scaled = scale_spectral_irradiance(nominal, distance_au=2.0, reference_distance_au=1.0)
     source = solar_source(scaled, direction=(30.0, 0.0))
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0]),
         np.array([100000.0, 90000.0]),
         np.array([95000.0]),
@@ -189,7 +180,7 @@ with TemporaryDirectory() as directory:
         np.array([1.9e29]),
         np.array([1e28]),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(target, reflectance=np.full(11, 0.2)),
         ObservationGeometry(10.0),

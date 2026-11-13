@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from .atmosphere.netcdf import read_netcdf_surface_fields
+from orsia_data.atmosphere.netcdf import read_netcdf_surface_fields
 
 
 def read_cams_aod(

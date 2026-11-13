@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from ..acquisition import download_file
+from orsia_data.acquisition import download_file
 
 _FILES = {
     "midlatitude_day": "day.atm",

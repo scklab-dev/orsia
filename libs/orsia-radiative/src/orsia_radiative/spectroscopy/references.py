@@ -6,10 +6,14 @@ from typing import Literal
 
 import numpy as np
 
-from orsia_radiative.atmosphere import Atmosphere
+from orsia_radiative.atmosphere import LayerAtmosphere
 from orsia_radiative.spectral.grid import SpectralGrid
 from orsia_radiative.spectroscopy.components import AbsorptionComponent
-from orsia_radiative.spectroscopy.line_tables import LineDatabase, PartitionFunctionTable, line_set
+from orsia_radiative.spectroscopy.line_tables import (
+    PartitionFunctionTable,
+    SpectralLineTable,
+    line_set,
+)
 from orsia_radiative.spectroscopy.lines import line_absorption
 
 
@@ -32,7 +36,7 @@ class LineSpectroscopy:
     """
 
     species: str
-    databases: tuple[LineDatabase, ...]
+    databases: tuple[SpectralLineTable, ...]
     partition_table: PartitionFunctionTable
     molecular_mass_kg: float
     intensity_convention: Literal["hitran_natural_abundance"] = "hitran_natural_abundance"
@@ -66,7 +70,7 @@ class LineSpectroscopy:
 
 
 def evaluate_line_absorption(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     grid: SpectralGrid,
     reference: LineSpectroscopy,
     *,

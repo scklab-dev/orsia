@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 import pytest
-from orsia_geometry import project_local_east_north, wgs84_surface_projection
+from orsia_geometry import WGS84SurfaceProjection, project_local_east_north
 from orsia_geometry.constants import WGS84_FLATTENING, WGS84_SEMIAXES_M
 
 
@@ -64,7 +64,7 @@ def test_invalid_chart_origins_fail_for_projection_and_factory(origin):
     with pytest.raises(ValueError, match="origin"):
         project_local_east_north(np.empty((0, 3)), origin_itrf_m=origin)
     with pytest.raises(ValueError, match="origin"):
-        wgs84_surface_projection(
+        WGS84SurfaceProjection(
             epoch=datetime(2023, 1, 1, tzinfo=UTC), validity_s=(0, 1), chart_origin_itrf_m=origin
         )
 
@@ -113,11 +113,11 @@ def test_surface_factory_is_lazy_and_validates_time_domain(monkeypatch):
         validity_s=(0.0, 1.0),
         chart_origin_itrf_m=np.array([WGS84_SEMIAXES_M[0], 0, 0]),
     )
-    surface = wgs84_surface_projection(**options)
+    surface = WGS84SurfaceProjection(**options)
     with pytest.raises(AssertionError, match="native import boundary reached"):
         surface(np.array([7e6, 0, 0]), np.array([-1.0, 0, 0]), np.array(0.0))
     with pytest.raises(ValueError, match="UTC"):
-        wgs84_surface_projection(
+        WGS84SurfaceProjection(
             epoch=datetime(2023, 1, 1),
             validity_s=(0, 1),
             chart_origin_itrf_m=np.array([WGS84_SEMIAXES_M[0], 0, 0]),
@@ -127,7 +127,7 @@ def test_surface_factory_is_lazy_and_validates_time_domain(monkeypatch):
 @pytest.mark.parametrize("interval", [(1, 0), (0, np.inf), (np.nan, 1), (0,)])
 def test_surface_factory_invalid_time_domain(interval):
     with pytest.raises(ValueError, match="interval"):
-        wgs84_surface_projection(
+        WGS84SurfaceProjection(
             epoch=datetime(2023, 1, 1, tzinfo=UTC),
             validity_s=interval,
             chart_origin_itrf_m=np.array([WGS84_SEMIAXES_M[0], 0, 0]),

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from orsia_radiative import (
     Absorber,
-    Atmosphere,
+    LayerAtmosphere,
     WaterContinuumReference,
     water_continuum_absorption,
 )
@@ -58,11 +58,11 @@ def test_public_kernel_decomposition_geometry_and_density(fraction: float) -> No
         )
 
 
-def _layer(pressure: float, fraction: float, thickness: float = 1000.0) -> Atmosphere:
+def _layer(pressure: float, fraction: float, thickness: float = 1000.0) -> LayerAtmosphere:
     """One owned 280 K layer; pressure in Pa, thickness in m, fraction wet mol/mol."""
     total = np.array([pressure / (k * 280.0) * thickness])
     water = total * fraction
-    return Atmosphere(
+    return LayerAtmosphere(
         np.array([0.0, thickness]),
         np.array([pressure * 1.01, pressure * 0.99]),
         np.array([pressure]),

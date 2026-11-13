@@ -11,16 +11,16 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from orsia_radiative.atmosphere import Atmosphere
+from orsia_radiative.atmosphere import LayerAtmosphere
+from orsia_radiative.columns import ColumnScene
 from orsia_radiative.optics.absorption import Absorption
 from orsia_radiative.optics.scattering import AerosolComponent, RayleighComponent
-from orsia_radiative.scene import RadiativeScene
 from orsia_radiative.solar.source import SolarSource
 from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid
 
 
 def compose_atmospheric_optics(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     source: SolarSource,
     *,
     absorption: Absorption | None = None,
@@ -60,7 +60,7 @@ def compose_atmospheric_optics(
 
 
 def atmospheric_optics(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     grid: SpectralGrid,
     *,
     absorption: Absorption | None = None,
@@ -97,11 +97,11 @@ def atmospheric_optics(
 
 
 def validate_atmospheric_optics(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     source: SolarSource,
     optics: AtmosphericOptics,
     *,
-    reference_atmosphere: Atmosphere | None = None,
+    reference_atmosphere: LayerAtmosphere | None = None,
 ) -> None:
     """Check original support and an optional explicit atmospheric reference.
 
@@ -125,10 +125,10 @@ def validate_atmospheric_optics(
 
 
 def validate_scene_optics(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     optics: AtmosphericOptics,
     *,
-    reference_atmosphere: Atmosphere | None = None,
+    reference_atmosphere: LayerAtmosphere | None = None,
 ) -> None:
     """Check support; optionally check a separately retained atmosphere by identity.
 
@@ -155,7 +155,7 @@ def validate_scene_optics(
 
 
 def validate_optical_inputs(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     source: SolarSource,
     absorption: Absorption | None = None,
     *,

@@ -6,13 +6,13 @@ from datetime import UTC, datetime, timedelta, timezone
 import numpy as np
 import pytest
 from orsia_geometry import (
+    attitude_interval_speeds,
     axis_rotations,
     compose_rays,
     compute_lines_of_sight,
     ellipsoid_intersections,
     instrument_tracking,
     platform_tracking,
-    pointing_rates,
     radial_nadir,
     sphere_intersections,
     surface_visibility,
@@ -412,7 +412,7 @@ def test_scan_and_pointing_rate_refinement():
     for n in (5, 9, 17):
         times = np.linspace(0, 1, n)
         rotations = axis_rotations(X, 0.2 * times**2)
-        rates = pointing_rates(times, rotations)
+        rates = attitude_interval_speeds(times, rotations)
         # For a fixed axis quadratic angle law the interval mean is exact, rad/s.
         np.testing.assert_allclose(rates, 0.2 * (times[1:] + times[:-1]), atol=2e-15)
     # General moving axes approach an independently differentiated matrix rate.
@@ -420,7 +420,7 @@ def test_scan_and_pointing_rate_refinement():
     for n in (9, 17, 33):
         times = np.linspace(0, 1, n)
         rotations = axis_rotations(Z, times * 0.3) @ axis_rotations(X, times**2 * 0.2)
-        rates = pointing_rates(times, rotations)
+        rates = attitude_interval_speeds(times, rotations)
         mid = (times[1:] + times[:-1]) / 2
         errors.append(np.max(np.abs(rates - np.sqrt(0.3**2 + (0.4 * mid) ** 2))))
     assert errors[2] < errors[1] / 3 and errors[1] < errors[0] / 3
@@ -464,4 +464,4 @@ def test_scan_normalizes_accepted_axis_for_rotation_composition(error, direction
 )
 def test_invalid_rates(times):
     with pytest.raises(ValueError, match="times"):
-        pointing_rates(times, np.empty((len(times), 3, 3)))
+        attitude_interval_speeds(times, np.empty((len(times), 3, 3)))

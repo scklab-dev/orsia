@@ -68,6 +68,7 @@ def physical_values() -> dict[str, Any]:
                 "kind",
                 "optical_depth",
                 "line_wing_convention",
+                "includes_water_continuum",
             ),
         ),
         ("rayleigh", ("grid", "optical_depth")),
@@ -90,15 +91,17 @@ def test_cross_section_inputs_are_independently_reconstructible() -> None:
     scene, irradiance, _, _ = case()
     table = field(scene)
     np.testing.assert_equal(
-        asdict(table_absorption(scene.atmosphere, irradiance.grid, table)),
-        asdict(table_absorption(scene.atmosphere, irradiance.grid, replace(table))),
+        asdict(table_absorption(scene.atmosphere, wavenumber_grid(irradiance.grid), table)),
+        asdict(
+            table_absorption(scene.atmosphere, wavenumber_grid(irradiance.grid), replace(table))
+        ),
     )
 
 
 def test_reference_sequence_is_explicit_and_must_align() -> None:
     scene, irradiance, _, _ = case()
     source = solar_source(irradiance, direction=(30.0, 70.0))
-    component = table_absorption(scene.atmosphere, irradiance.grid, field(scene))
+    component = table_absorption(scene.atmosphere, wavenumber_grid(irradiance.grid), field(scene))
     for references in ((), (scene.atmosphere, scene.atmosphere)):
         with pytest.raises(ValueError, match="align"):
             compose_absorption(

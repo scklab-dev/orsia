@@ -1,13 +1,17 @@
 """Explicit atmospheric acquisition and offline readers; imports never download."""
 
-from ..acquisition import file_sha256
-from ..services.ads import download_cams
-from ..services.cds import download_era5
-from ..services.nomads import download_gfs, gfs_valid_time
-from .columns import read_pressure_level_atmosphere
-from .grib import read_gfs_profiles
-from .netcdf import read_netcdf_profiles, read_netcdf_surface_fields
-from .rfm import read_rfm_atmosphere
+from orsia_data.acquisition import file_sha256
+from orsia_data.atmosphere.columns import read_pressure_level_atmosphere
+from orsia_data.atmosphere.grib import read_gfs_profiles
+from orsia_data.atmosphere.netcdf import (
+    read_netcdf_profiles,
+    read_netcdf_surface_fields,
+    read_netcdf_surface_grid,
+)
+from orsia_data.atmosphere.rfm import read_rfm_atmosphere
+from orsia_data.services.ads import download_cams
+from orsia_data.services.cds import download_era5
+from orsia_data.services.nomads import download_gfs, gfs_valid_time
 
 __all__ = [
     "download_cams",
@@ -20,4 +24,5 @@ __all__ = [
     "read_pressure_level_atmosphere",
     "read_netcdf_profiles",
     "read_netcdf_surface_fields",
+    "read_netcdf_surface_grid",
 ]

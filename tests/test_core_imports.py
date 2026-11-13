@@ -5,12 +5,16 @@ import sys
 from importlib.metadata import metadata
 
 
-def test_orbital_libraries_require_pinned_satkit_without_extras():
+def test_orbital_libraries_expose_explicit_backend_extra():
     for name in ("orsia-geometry", "orsia-data"):
         package = metadata(name)
         requirements = package.get_all("Requires-Dist") or []
-        assert "satkit==0.24.1" in requirements, (name, requirements)
-        assert "orbital" not in (package.get_all("Provides-Extra") or [])
+        assert any(
+            "satkit==0.24.1" in r and "extra == 'orbital'" in r.replace('"', "'")
+            for r in requirements
+        ), requirements
+        assert "satkit==0.24.1" not in requirements
+        assert "orbital" in (package.get_all("Provides-Extra") or [])
 
 
 def test_core_native_imports_preserve_free_threading():
@@ -27,11 +31,14 @@ assert os.environ.get("PYTHON_GIL") != "0" and sys._xoptions.get("gil") != "0", 
 )
 for name in (
     "orsia_geometry", "orsia_geometry.frames", "orsia_geometry.los", "orsia_geometry.attitude",
-    "orsia_numerics.execution", "orsia_uncertainty", "orsia_radiative",
+    "orsia_numerics.execution", "orsia_uncertainty", "orsia_radiative", "orsia_dispersion",
+    "orsia_scene",
     "orsia_radiative.irradiance", "orsia_radiative.radiance",
     "orsia_radiative.transfer.native.transfer_native",
-    "orsia_instruments", "orsia_instruments.photoelectrons", "orsia_instruments.imaging.radiometry",
-    "orsia_instruments.quadrature", "orsia_inverse", "orsia_data", "orsia_data.surface.sentinel2",
+    "orsia_instruments", "orsia_instruments.photodetection.coefficients",
+    "orsia_instruments.photodetection.frames",
+    "orsia_instruments.acquisition.quadrature", "orsia_inverse",
+    "orsia_data", "orsia_data.surface.sentinel2",
 ):
     importlib.import_module(name)
     assert not sys._is_gil_enabled(), f"Importing {name} enabled the GIL"
@@ -65,10 +72,10 @@ deferred = {
     "rasterio", "pyproj", "hapi", "sasktran2", "satkit",
 }
 assert not (deferred & sys.modules.keys()), deferred & sys.modules.keys()
-# SatKit is required but remains deferred until an operation needs its native backend.
+# The development environment includes the orbital extra; base imports remain deferred.
 importlib.import_module("satkit")
 assert version("satkit") == "0.24.1"
-assert not sys._is_gil_enabled(), "Importing required SatKit enabled the GIL"
+assert not sys._is_gil_enabled(), "Importing orbital SatKit enabled the GIL"
 """
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr

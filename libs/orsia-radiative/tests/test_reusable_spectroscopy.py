@@ -9,9 +9,9 @@ from orsia_radiative import (
     CrossSectionMeasurements,
     CrossSectionSpectrum,
     Line,
-    LineDatabase,
     LineSpectroscopy,
     PartitionFunctionTable,
+    SpectralLineTable,
     evaluate_line_absorption,
     hydrostatic_atmosphere,
     interpolate_cross_section_measurements,
@@ -43,7 +43,7 @@ def reference():
     )
     return LineSpectroscopy(
         "CO2",
-        (LineDatabase((line,), 2, 1, (970, 1030)), LineDatabase((), 2, 1, (1970, 2030))),
+        (SpectralLineTable((line,), 2, 1, (970, 1030)), SpectralLineTable((), 2, 1, (1970, 2030))),
         table,
         44 * 1.660539e-27,
     )

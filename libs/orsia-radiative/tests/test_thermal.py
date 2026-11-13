@@ -14,11 +14,11 @@ from orsia_radiative import (
     Absorber,
     Absorption,
     AerosolComponent,
-    Atmosphere,
     AtmosphericOptics,
-    CrossSectionField,
+    ColumnScene,
+    LayerAtmosphere,
+    LayerCrossSections,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SpectralIrradiance,
     SurfaceState,
@@ -42,11 +42,11 @@ def case(
     temperatures: NDArray[np.float64] | None = None,
     emissivity: float = 1.0,
     view: float = 0.0,
-) -> tuple[RadiativeScene, AtmosphericOptics]:
+) -> tuple[ColumnScene, AtmosphericOptics]:
     n, points = depths.shape
     grid = np.linspace(500.0, 1500.0, points)
     boundaries = np.linspace(100000.0, 10000.0, n + 1)
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.arange(n + 1, dtype=np.float64) * 1000,
         boundaries,
         (boundaries[1:] + boundaries[:-1]) / 2,
@@ -56,7 +56,7 @@ def case(
         np.full(n, 1e28),
         (Absorber("X", np.full(n, 1e25), "dry_air"),),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(
             wavenumber_grid(grid), emissivity=np.full(points, emissivity), temperature_k=300.0
@@ -236,7 +236,7 @@ def test_relayering_absorbing_aerosol_zero_rayleigh_and_explicit_surface_reflect
 def test_explicit_grid_spectroscopy_composition_matches_solar_and_tracks_freshness() -> None:
     scene, _ = case(np.zeros((2, 3)))
     grid = scene.surface.wavenumbers_cm1
-    table = CrossSectionField(
+    table = LayerCrossSections(
         "X",
         "1",
         "cross_section",
@@ -244,8 +244,9 @@ def test_explicit_grid_spectroscopy_composition_matches_solar_and_tracks_freshne
         scene.atmosphere.temperature_k,
         scene.atmosphere.pressure_pa,
         np.full((2, 3), 1e-26),
+        height_edges_m=scene.atmosphere.height_boundaries_m,
     )
-    gas = table_absorption(scene.atmosphere, grid, table)
+    gas = table_absorption(scene.atmosphere, wavenumber_grid(grid), table)
     total = compose_absorption_on_grid(scene.atmosphere, wavenumber_grid(grid), (gas,))
     source = solar_source(
         SpectralIrradiance(wavenumber_grid(grid), np.ones(3)), direction=(20.0, 0.0)

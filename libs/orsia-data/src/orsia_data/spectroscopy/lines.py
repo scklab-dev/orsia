@@ -4,7 +4,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Literal
 
-from orsia_radiative import Line, LineDatabase
+from orsia_radiative import Line, SpectralLineTable
 
 
 def read_hitran_lines(
@@ -13,7 +13,7 @@ def read_hitran_lines(
     molecule_id: int,
     isotopologue_id: int,
     interval_cm1: tuple[float, float],
-) -> LineDatabase:
+) -> SpectralLineTable:
     """Select HITRAN2004+ 160-character records into a declared covered database.
 
     Interval [cm-1] is caller-declared completeness, not inferred from line centres.
@@ -42,7 +42,7 @@ def read_aer_lines(
     isotopologue_id: int,
     interval_cm1: tuple[float, float],
     coupling: Literal["reject", "ignore"] = "reject",
-) -> LineDatabase:
+) -> SpectralLineTable:
     """Select AER/LNFL lines, consuming mandatory negative-IFLAG coefficient rows.
 
     Default reject disallows selected coupled lines; explicit ignore means an
@@ -74,10 +74,10 @@ def _read_lines(
     interval_cm1: tuple[float, float],
     format: Literal["hitran160", "aer"],
     coupling: Literal["reject", "ignore"],
-) -> LineDatabase:
+) -> SpectralLineTable:
     if coupling not in ("reject", "ignore"):
         raise ValueError("unsupported line coupling policy")
-    LineDatabase((), molecule_id, isotopologue_id, interval_cm1)
+    SpectralLineTable((), molecule_id, isotopologue_id, interval_cm1)
     lines: list[Line] = []
     with path.open(encoding="utf-8" if format == "aer" else "ascii") as stream:
         records = enumerate(stream, 1)
@@ -126,7 +126,7 @@ def _read_lines(
                 )
             except ValueError as error:
                 raise ValueError(f"invalid line record at row {number}: {error}") from error
-    return LineDatabase(
+    return SpectralLineTable(
         tuple(sorted(lines, key=lambda line: line.centre_cm1)),
         molecule_id,
         isotopologue_id,

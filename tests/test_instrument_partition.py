@@ -31,7 +31,7 @@ def test_full_grid_qe_callback_matches_constant_physical_fraction() -> None:
 
 
 def test_batched_interpolation_matches_scalar(monkeypatch: pytest.MonkeyPatch) -> None:
-    import orsia_instruments.photoelectrons as photoelectrons
+    import orsia_instruments.photodetection.coefficients as photoelectrons
 
     original = photoelectrons.sample_radiance
     batch_sizes = []

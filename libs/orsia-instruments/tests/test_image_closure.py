@@ -10,10 +10,10 @@ from functools import partial
 import numpy as np
 import pytest
 from orsia_instruments import (
+    AngularRadianceSamples,
     DetectorElectronics,
     DetectorProperties,
     GaussianPSF,
-    RadianceField,
     cavity_imager,
     combine_image_source_paths,
     dispersive_imager,
@@ -60,7 +60,7 @@ def case(family, *, points=257, pixel_order=8, pointing=0.0, band_shift=0.0, thr
         * (1 + 30 * u[None, :, None, None] - 20 * v[None, None, :, None])
         * spectrum
     )
-    field = RadianceField(grid, t, u, v, values)
+    field = AngularRadianceSamples(grid, t, u, v, values)
     common = dict(
         focal_length_m=0.02,
         collecting_area_m2=1e-8,
@@ -211,7 +211,9 @@ def test_source_composition_matches_integrated_path(family):
     )
     integrated = simulate_images(field, **inputs, detector=detector, time_order=5, angular_order=9)
     _, background_inputs = case(family, throughput=0.4)
-    background = RadianceField(field.grid, field.times_s, field.u, field.v, 0.2 * field.values)
+    background = AngularRadianceSamples(
+        field.grid, field.times_s, field.u, field.v, 0.2 * field.values
+    )
     paths = [
         image_photoelectrons(
             field,
@@ -243,7 +245,7 @@ def test_independent_continuous_reference_and_finite_detector_loss():
     # Flat spectrum, static uniform field: independently integrate Gaussian pixel
     # probabilities with adaptive QUADPACK, not Orsia quadratures/response helpers.
     field, inputs = case("filter", points=513)
-    field = RadianceField(
+    field = AngularRadianceSamples(
         field.grid, field.times_s, field.u, field.v, np.full_like(field.values, 1e-3)
     )
     inputs["exposures"] = exposure_sequence(
@@ -309,7 +311,7 @@ def test_independent_continuous_reference_and_finite_detector_loss():
 @pytest.mark.parametrize("family", FAMILIES)
 def test_family_image_against_independent_static_reference(family):
     field, inputs = case(family, points=1025, pixel_order=12)
-    field = RadianceField(
+    field = AngularRadianceSamples(
         field.grid, field.times_s, field.u, field.v, np.full_like(field.values, 1e-3)
     )
     inputs["exposures"] = exposure_sequence(

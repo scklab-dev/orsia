@@ -4,7 +4,7 @@ from math import ceil, floor, isfinite
 from pathlib import Path
 from typing import Literal, overload
 
-from ..acquisition import download_file
+from orsia_data.acquisition import download_file
 
 
 @overload

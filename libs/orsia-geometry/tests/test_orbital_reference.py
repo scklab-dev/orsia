@@ -13,23 +13,22 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from orsia_geometry import (
+    NumericalPropagator,
+    SGP4Propagator,
+    WGS84SurfaceProjection,
+    attitude_interval_speeds,
     axis_rotations,
     compute_lines_of_sight,
     ellipsoid_intersections,
     frame_rotations,
     instrument_tracking,
-    numerical_propagator,
     platform_tracking,
-    pointing_rates,
     project_local_east_north,
     radial_nadir,
-    sgp4_propagator,
     sphere_intersections,
     surface_visibility,
     transform_rays,
     transform_states,
-    wgs84_surface_projection,
-    wgs84_surface_projection_from_ray,
 )
 from orsia_geometry.constants import WGS84_SEMIAXES_M, WGS84_SEMIMAJOR_AXIS_M
 
@@ -105,7 +104,7 @@ def test_native_sgp4_vallado_reference_and_both_element_inputs():
     from orsia_data import parse_orbital_elements
 
     (elements,) = parse_orbital_elements("\n".join(TLE).encode(), format="tle")
-    callback = sgp4_propagator(elements, epoch=epoch, validity_s=(0, 21600))
+    callback = SGP4Propagator(elements, epoch=epoch, validity_s=(0, 21600))
     gpos, gvel = callback(times)
     expected_p, expected_v = transform_states(
         times, pos, vel, epoch=epoch, validity_s=(0, 21600), from_frame="TEME", to_frame="GCRS"
@@ -134,7 +133,7 @@ def test_native_sgp4_vallado_reference_and_both_element_inputs():
         "MEAN_ELEMENT_THEORY": "SGP4",
     }
     (omm_elements,) = parse_orbital_elements(json.dumps(omm).encode(), format="omm")
-    other = sgp4_propagator(omm_elements, epoch=epoch, validity_s=(0, 21600))
+    other = SGP4Propagator(omm_elements, epoch=epoch, validity_s=(0, 21600))
     np.testing.assert_allclose(other(times)[0], gpos, atol=0.02, rtol=0)
 
 
@@ -175,7 +174,7 @@ def test_native_numerical_classical_dense_against_gmat_and_refinement():
         ]
     )
     force_model = dict(gravity_degree=2, gravity_order=2, sun_gravity=True, moon_gravity=True)
-    callback = numerical_propagator(
+    callback = NumericalPropagator(
         elements,
         epoch=epoch,
         validity_s=(0, 7200),
@@ -190,7 +189,7 @@ def test_native_numerical_classical_dense_against_gmat_and_refinement():
     assert p_error.max() < 0.1 and v_error.max() < 1e-4
     # Tighter force-matched arc vs ordinary default numerical tolerances, dense dates between nodes.
     dense_times = np.linspace(0, 7200, 39)
-    coarse = numerical_propagator(elements, epoch=epoch, validity_s=(0, 7200), **force_model)
+    coarse = NumericalPropagator(elements, epoch=epoch, validity_s=(0, 7200), **force_model)
     error = np.linalg.norm(callback(dense_times)[0] - coarse(dense_times)[0], axis=-1).max()
     print("Dense refinement max metres:", error)
     assert error < 0.1
@@ -207,7 +206,7 @@ def test_native_numerical_classical_dense_against_gmat_and_refinement():
 def test_native_two_body_analytic_limit(epoch):
     satkit = native()
     radius = 7e6
-    callback = numerical_propagator(
+    callback = NumericalPropagator(
         np.array([radius, 0.0, 0.0, 0.0, 0.0, 0.0]),
         epoch=epoch,
         validity_s=(0, 600),
@@ -226,7 +225,7 @@ def test_native_two_body_analytic_limit(epoch):
 def test_native_numerical_requires_eop_coverage():
     native()
     with pytest.raises(RuntimeError, match="(?i)eop|earth.orientation"):
-        numerical_propagator(
+        NumericalPropagator(
             np.array([7e6, 0.0, 0.0, 0.0, 0.0, 0.0]),
             epoch=datetime(2100, 1, 1, tzinfo=UTC),
             validity_s=(0, 1),
@@ -318,12 +317,13 @@ def test_native_wgs84_projection_matches_primitives_with_missed_rays():
     directions = np.einsum("...ji,...j->...i", rotations, directions_itrf)
     expected_hits, points = ellipsoid_intersections(positions_itrf, directions_itrf)
     expected_xy = project_local_east_north(points, origin_itrf_m=chart_origin)
-    surface = wgs84_surface_projection(
+    surface = WGS84SurfaceProjection(
         epoch=epoch, validity_s=(0, 10), chart_origin_itrf_m=chart_origin
     )
-    xy, hits = surface(origins, directions, times)
+    xy, view, hits = surface(origins, directions, times)
     np.testing.assert_array_equal(hits, expected_hits)
     np.testing.assert_allclose(xy, expected_xy, atol=5e-9, rtol=0)
+    np.testing.assert_allclose(view, -directions_itrf[..., [1, 2, 0]], atol=2e-15, rtol=0)
     assert np.isnan(xy[0, 1]).all()
     reference_hit, reference_point = ellipsoid_intersections(
         *transform_rays(
@@ -331,20 +331,23 @@ def test_native_wgs84_projection_matches_primitives_with_missed_rays():
         )
     )
     assert reference_hit
-    expected_surface = wgs84_surface_projection(
+    expected_surface = WGS84SurfaceProjection(
         epoch=epoch, validity_s=(0, 10), chart_origin_itrf_m=reference_point
     )
-    ray_surface = wgs84_surface_projection_from_ray(
+    ray_surface = WGS84SurfaceProjection.from_ray(
         origin_gcrs_m=origins[0, 0],
         direction_gcrs=directions[0, 0],
         time_s=float(times[0, 0]),
         epoch=epoch,
         validity_s=(0, 10),
     )
-    ray_xy, ray_hits = ray_surface(origins, directions, times)
-    expected_ray_xy, expected_ray_hits = expected_surface(origins, directions, times)
+    ray_xy, ray_view, ray_hits = ray_surface(origins, directions, times)
+    expected_ray_xy, expected_ray_view, expected_ray_hits = expected_surface(
+        origins, directions, times
+    )
     np.testing.assert_allclose(ray_xy, expected_ray_xy, atol=5e-9, rtol=0)
     np.testing.assert_array_equal(ray_hits, expected_ray_hits)
+    np.testing.assert_array_equal(ray_view, expected_ray_view)
     assert not sys._is_gil_enabled()
 
 
@@ -447,7 +450,7 @@ def test_native_wgs84_four_mode_ground_motion(mode):
     native()
     epoch = datetime(2023, 5, 16, 20, tzinfo=UTC)
     validity = (0.0, 61.0)
-    trajectory = numerical_propagator(
+    trajectory = NumericalPropagator(
         np.array([WGS84_SEMIMAJOR_AXIS_M + 700000.0, 0.001, np.deg2rad(98), 0.0, 0.0, 0.0]),
         epoch=epoch,
         validity_s=validity,
@@ -515,7 +518,7 @@ def test_native_wgs84_four_mode_ground_motion(mode):
     assert surface_visibility(
         origins_itrf[:, 0], np.broadcast_to(target_itrf, (len(times), 3))
     ).all()
-    rates = pointing_rates(times, platform(times) @ instrument(times))
+    rates = attitude_interval_speeds(times, platform(times) @ instrument(times))
     assert np.isfinite(rates).all() and rates.max() > 0
     exposure_points = points_itrf[np.searchsorted(times, [30.0, 30.1]), 0]
     displacement_m = np.linalg.norm(exposure_points[1] - exposure_points[0])

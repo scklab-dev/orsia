@@ -1,8 +1,8 @@
 """Explicit acquisition and local scientific readers; imports never download."""
 
-from .acquisition import download_bearer_file, download_file, retrieve_file
-from .aerosols import read_cams_aod
-from .atmosphere import (
+from orsia_data.acquisition import download_bearer_file, download_file, retrieve_file
+from orsia_data.aerosols import read_cams_aod
+from orsia_data.atmosphere import (
     download_cams,
     download_era5,
     download_gfs,
@@ -11,10 +11,11 @@ from .atmosphere import (
     read_gfs_profiles,
     read_netcdf_profiles,
     read_netcdf_surface_fields,
+    read_netcdf_surface_grid,
     read_pressure_level_atmosphere,
     read_rfm_atmosphere,
 )
-from .geospatial import (
+from orsia_data.geospatial import (
     RasterBand,
     RasterGrid,
     crop_raster,
@@ -27,13 +28,13 @@ from .geospatial import (
     window_from_bounds,
     window_grid,
 )
-from .orbits import parse_orbital_elements, read_orbital_elements, select_orbital_elements
-from .services.cdse.odata import download_cdse, search_sentinel2_l2a
-from .services.copernicus_dem import download_copernicus_dem
-from .services.earthdata.cmr import download_earthdata, earthdata_links, search_earthdata
-from .services.mipas import download_mipas_profile
-from .solar import fetch_solar_spectrum, read_solar_spectrum_csv
-from .spectroscopy import (
+from orsia_data.orbits import parse_orbital_elements, read_orbital_elements, select_orbital_elements
+from orsia_data.services.cdse.odata import download_cdse, search_sentinel2_l2a
+from orsia_data.services.copernicus_dem import download_copernicus_dem
+from orsia_data.services.earthdata.cmr import download_earthdata, earthdata_links, search_earthdata
+from orsia_data.services.mipas import download_mipas_profile
+from orsia_data.solar import fetch_solar_spectrum, read_solar_spectrum_csv
+from orsia_data.spectroscopy import (
     acquire_hitran_references,
     download_mt_ckd_water,
     fetch_hitran_lines,
@@ -44,15 +45,20 @@ from .spectroscopy import (
     read_mt_ckd_water,
     read_partition_table,
 )
-from .spectroscopy.collections import (
+from orsia_data.spectroscopy.collections import (
     SpectroscopyCollection,
     import_spectroscopy_collection,
     read_line_spectroscopy_collection,
     read_spectroscopy_collection,
 )
-from .spectroscopy.measurements import read_cross_section_measurements
-from .surface import read_aster_ged, read_ecostress_l2t, read_sentinel2_l2a, read_sentinel2_metadata
-from .terrain import read_copernicus_dem
+from orsia_data.spectroscopy.measurements import read_cross_section_measurements
+from orsia_data.surface import (
+    read_aster_ged,
+    read_ecostress_l2t,
+    read_sentinel2_l2a,
+    read_sentinel2_metadata,
+)
+from orsia_data.terrain import read_copernicus_dem
 
 __all__ = [
     "SpectroscopyCollection",
@@ -97,6 +103,7 @@ __all__ = [
     "read_gfs_profiles",
     "read_netcdf_profiles",
     "read_netcdf_surface_fields",
+    "read_netcdf_surface_grid",
     "read_pressure_level_atmosphere",
     "read_rfm_atmosphere",
     "download_mipas_profile",

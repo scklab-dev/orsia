@@ -1,6 +1,12 @@
 """Materialised radiative state, atmospheric optics and bounded radiance contracts."""
 
-from orsia_radiative.atmosphere import Absorber, Atmosphere
+from orsia_radiative.atmosphere import (
+    Absorber,
+    AtmosphericColumnIntegrals,
+    LayerAtmosphere,
+    LevelAtmosphere,
+    integrate_log_linear_columns,
+)
 from orsia_radiative.atmosphere.hydrostatic import (
     gas_columns_from_fraction,
     hydrostatic_atmosphere,
@@ -11,11 +17,13 @@ from orsia_radiative.atmosphere.layers import (
     pressure_level_layer_means,
     remap_layer_columns,
 )
-from orsia_radiative.bands import RadianceCube, SpectralBand, spectral_band
+from orsia_radiative.atmosphere.terrain import clip_atmosphere_height, retained_layer_fractions
+from orsia_radiative.columns import ColumnScene
 from orsia_radiative.geometry import ObservationGeometry
 from orsia_radiative.irradiance import SpectralIrradiance
 from orsia_radiative.optics.absorption import (
     Absorption,
+    column_absorption_optical_depth,
     compose_absorption,
     compose_absorption_on_grid,
 )
@@ -25,6 +33,14 @@ from orsia_radiative.optics.atmosphere import (
     compose_atmospheric_optics,
     validate_atmospheric_optics,
     validate_optical_inputs,
+)
+from orsia_radiative.optics.cross_sections import (
+    cross_section_optical_depth,
+    cross_section_optical_depth_tangent,
+)
+from orsia_radiative.optics.paths import (
+    integrate_path_optical_depth,
+    integrate_path_optical_depth_tangent,
 )
 from orsia_radiative.optics.phases import henyey_greenstein_phase, rayleigh_phase
 from orsia_radiative.optics.scattering import (
@@ -40,9 +56,9 @@ from orsia_radiative.optics.scattering import (
 from orsia_radiative.profiles import LayerProfileBasis, evaluate_profile
 from orsia_radiative.radiance import Radiance
 from orsia_radiative.radiometry import scale_spectral_irradiance
-from orsia_radiative.scene import RadiativeScene
 from orsia_radiative.solar.source import SolarSource, solar_irradiance, solar_source
 from orsia_radiative.solar.spectrum import SolarIrradianceSpectrum
+from orsia_radiative.spectral.bands import SpectralBand, spectral_band
 from orsia_radiative.spectral.conversions import (
     density_per_cm1_to_per_nm,
     density_per_nm_to_per_cm1,
@@ -59,20 +75,21 @@ from orsia_radiative.spectral.grid import (
 from orsia_radiative.spectral.interpolation import interpolate_point_density
 from orsia_radiative.spectroscopy.components import AbsorptionComponent
 from orsia_radiative.spectroscopy.continuum import (
+    WaterContinuumCoefficients,
     WaterContinuumReference,
     water_continuum_absorption,
+    water_continuum_coefficients,
 )
 from orsia_radiative.spectroscopy.cross_sections import (
-    CrossSectionField,
-    PreparedCrossSections,
-    cross_sections,
+    LayerCrossSections,
     evaluate_table_absorption,
+    resample_layer_cross_sections,
     table_absorption,
 )
 from orsia_radiative.spectroscopy.line_tables import (
     EmptyLineSelection,
-    LineDatabase,
     PartitionFunctionTable,
+    SpectralLineTable,
     evaluate_partition_function,
     line_set,
 )
@@ -90,6 +107,16 @@ from orsia_radiative.surface import SurfaceState
 from . import transfer
 
 __all__ = [
+    "LevelAtmosphere",
+    "AtmosphericColumnIntegrals",
+    "integrate_log_linear_columns",
+    "column_absorption_optical_depth",
+    "WaterContinuumCoefficients",
+    "water_continuum_coefficients",
+    "clip_atmosphere_height",
+    "retained_layer_fractions",
+    "integrate_path_optical_depth",
+    "integrate_path_optical_depth_tangent",
     "LineSpectroscopy",
     "evaluate_line_absorption",
     "CrossSectionSpectrum",
@@ -97,7 +124,6 @@ __all__ = [
     "CrossSectionTemperatures",
     "measurement_absorption",
     "interpolate_cross_section_measurements",
-    "RadianceCube",
     "SpectralBand",
     "spectral_band",
     "gas_columns_from_fraction",
@@ -107,7 +133,7 @@ __all__ = [
     "remap_layer_columns",
     "specific_humidity",
     "EmptyLineSelection",
-    "LineDatabase",
+    "SpectralLineTable",
     "PartitionFunctionTable",
     "SolarIrradianceSpectrum",
     "evaluate_partition_function",
@@ -117,15 +143,14 @@ __all__ = [
     "Absorber",
     "Absorption",
     "AbsorptionComponent",
-    "Atmosphere",
+    "LayerAtmosphere",
     "AtmosphericOptics",
-    "CrossSectionField",
+    "LayerCrossSections",
     "LayerProfileBasis",
     "Line",
     "LineSet",
     "ObservationGeometry",
-    "PreparedCrossSections",
-    "RadiativeScene",
+    "ColumnScene",
     "Radiance",
     "RayleighComponent",
     "ScatteringProperties",
@@ -150,7 +175,9 @@ __all__ = [
     "interpolate_point_density",
     "line_absorption",
     "solar_irradiance",
-    "cross_sections",
+    "resample_layer_cross_sections",
+    "cross_section_optical_depth",
+    "cross_section_optical_depth_tangent",
     "rayleigh_component",
     "rayleigh_from_air_columns",
     "rayleigh_phase",

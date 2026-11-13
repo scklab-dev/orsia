@@ -6,7 +6,7 @@ from time import monotonic
 from typing import Any
 from urllib.parse import urlencode
 
-from ...http import JsonSession
+from orsia_data.http import JsonSession
 
 TOKEN_URL = (
     "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"

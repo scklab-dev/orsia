@@ -10,11 +10,11 @@ from orsia_radiative import (
     Absorber,
     AbsorptionComponent,
     AerosolOptics,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     Line,
     LineSet,
     ObservationGeometry,
-    RadiativeScene,
     ScatteringProperties,
     SpectralIrradiance,
     SurfaceState,
@@ -31,8 +31,8 @@ from orsia_radiative import (
 )
 
 
-def atmosphere() -> Atmosphere:
-    return Atmosphere(
+def atmosphere() -> LayerAtmosphere:
+    return LayerAtmosphere(
         height_boundaries_m=np.array([0.0, 1000.0]),
         pressure_boundaries_pa=np.array([100000.0, 90000.0]),
         pressure_pa=np.array([95000.0]),
@@ -48,7 +48,7 @@ def axis() -> NDArray[np.float64]:
     return np.array([1000.0, 1001.0], dtype=np.float64)
 
 
-def scene(**changes: Any) -> RadiativeScene:
+def scene(**changes: Any) -> ColumnScene:
     values: dict[str, Any] = dict(
         atmosphere=atmosphere(),
         surface=SurfaceState(wavenumber_grid(axis()), reflectance=np.array([0.2, 0.4])),
@@ -57,7 +57,7 @@ def scene(**changes: Any) -> RadiativeScene:
     values.update(changes)
     if "wavenumbers_cm1" in values:
         values["grid"] = wavenumber_grid(values.pop("wavenumbers_cm1"))
-    return RadiativeScene(**values)
+    return ColumnScene(**values)
 
 
 def absorption(optical_depth: tuple[tuple[float, ...], ...]) -> AbsorptionComponent:
@@ -296,7 +296,7 @@ def test_independent_radiative_records_use_identity_but_produce_equal_values() -
 def test_absorption_components_are_summed_over_layers() -> None:
     two_layer = replace(
         scene(),
-        atmosphere=Atmosphere(
+        atmosphere=LayerAtmosphere(
             height_boundaries_m=np.array([0.0, 1000.0, 2000.0]),
             pressure_boundaries_pa=np.array([100000.0, 90000.0, 80000.0]),
             pressure_pa=np.array([95000.0, 85000.0]),
@@ -443,7 +443,7 @@ def test_vectorised_rayleigh_matches_scalar_layer_integral_at_many_points() -> N
         surface=SurfaceState(
             wavenumber_grid(spectral_axis), reflectance=np.zeros(spectral_axis.size)
         ),
-        atmosphere=Atmosphere(
+        atmosphere=LayerAtmosphere(
             np.array([0.0, 1000.0, 2000.0, 3000.0]),
             np.array([100000.0, 90000.0, 80000.0, 70000.0]),
             np.array([95000.0, 85000.0, 75000.0]),

@@ -5,7 +5,7 @@ from collections.abc import Mapping
 import numpy as np
 from numpy.typing import NDArray
 
-from .covariance import _minimum_eigenvalue, propagate_vector, validate_covariance
+from orsia_uncertainty.covariance import _minimum_eigenvalue, propagate_vector, validate_covariance
 
 
 def propagate_bias(bias: NDArray[np.float64], jacobian: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -107,7 +107,8 @@ def empirical_covariance(samples: NDArray[np.float64]) -> NDArray[np.float64]:
         Independent dense (n,n) unbiased sample covariance.
 
     Raises:
-        ValueError: Samples have invalid shape, dtype or nonfinite values.
+        ValueError: Samples have invalid shape, dtype or nonfinite values, or
+            the covariance is not representable as finite float64 values.
     """
     if (
         samples.dtype != np.float64
@@ -117,6 +118,15 @@ def empirical_covariance(samples: NDArray[np.float64]) -> NDArray[np.float64]:
         or not np.all(np.isfinite(samples))
     ):
         raise ValueError("ensemble must have at least two finite float64 rows and one column")
-    deviations = samples - np.mean(samples, axis=0)
+    # Binary scaling preserves each coordinate's significand while bounding
+    # both the mean and the sum of squares, including constant huge offsets.
+    _, exponents = np.frexp(np.max(np.abs(samples), axis=0))
+    scaled = np.ldexp(samples, -exponents)
+    # Centre relative to a sample so a constant coordinate is exactly zero,
+    # independent of rounding in the mean of repeated nonzero offsets.
+    deviations = scaled - scaled[0]
+    deviations -= np.mean(deviations, axis=0)
     matrix = deviations.T @ deviations / (samples.shape[0] - 1)
+    with np.errstate(over="ignore", under="ignore"):
+        matrix = np.ldexp(matrix, exponents[:, None] + exponents[None, :])
     return validate_covariance(matrix)

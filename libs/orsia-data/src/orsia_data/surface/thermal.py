@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..geospatial import RasterBand, RasterGrid, Window, read_raster_band, window_grid
+from orsia_data.geospatial import RasterBand, RasterGrid, Window, read_raster_band, window_grid
 
 
 def read_ecostress_l2t(

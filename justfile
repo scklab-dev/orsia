@@ -32,7 +32,15 @@ test:
 check: fmt-check lint typecheck test
 
 build:
-    for package in orsia-geometry orsia-numerics orsia-uncertainty orsia-radiative orsia-data orsia-instruments orsia-inverse; do uv build --package "$package"; done
+    for package in orsia-geometry orsia-numerics orsia-uncertainty orsia-radiative orsia-data orsia-instruments orsia-inverse orsia-dispersion orsia-scene; do uv build --package "$package"; done
+
+# Run bounded examples and validation scripts in the locked workspace.
+python +args:
+    uv run --locked --all-packages python "$@"
+
+# Resolve declared dependency changes without hand-editing the lockfile.
+lock:
+    uv lock
 
 # Refresh the editable native extension after changing C++ source.
 rebuild-native:

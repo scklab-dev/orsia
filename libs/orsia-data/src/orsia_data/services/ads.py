@@ -3,8 +3,8 @@
 from pathlib import Path
 from typing import Literal
 
-from ..acquisition import retrieve_dataset
-from .cds import Retrieve
+from orsia_data.acquisition import retrieve_dataset
+from orsia_data.services.cds import Retrieve
 
 CamsProduct = Literal[
     "cams-global-greenhouse-gas-forecasts", "cams-global-atmospheric-composition-forecasts"

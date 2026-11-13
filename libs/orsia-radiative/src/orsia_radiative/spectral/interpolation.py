@@ -5,10 +5,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 
-from orsia_radiative.spectral.grid import (
-    SpectralGrid,
-    require_wavenumber_grid,
-)
+from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid
 
 
 def interpolate_point_density(
@@ -64,8 +61,8 @@ def spectral_interpolation_weights(
     a singleton source. Unknown domains enforce the sampled envelope only.
 
     Args:
-        source_grid: Increasing source cm^-1 samples with optional physical domain.
-        target_grid: Increasing target cm^-1 samples requiring in-domain brackets.
+        source_grid: Increasing source samples with optional physical domain.
+        target_grid: Increasing same-coordinate target samples requiring in-domain brackets.
 
     Returns:
         Owned left/right int64 indices and left/right float64 weights on target points.
@@ -73,8 +70,8 @@ def spectral_interpolation_weights(
     Raises:
         ValueError: Coordinates mismatch, extrapolation is needed or a stencil crosses a gap.
     """
-    require_wavenumber_grid(source_grid)
-    require_wavenumber_grid(target_grid)
+    if source_grid.coordinate != target_grid.coordinate:
+        raise ValueError("spectral interpolation coordinates must match")
     source, target = source_grid.points, target_grid.points
     right = np.searchsorted(source, target, side="left").astype(np.int64)
     exact = (right < len(source)) & (source[np.minimum(right, len(source) - 1)] == target)

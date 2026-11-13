@@ -9,12 +9,7 @@ from urllib.error import HTTPError
 
 import numpy as np
 import pytest
-from orsia_data import (
-    acquisition,
-    download_mt_ckd_water,
-    fetch_mt_ckd_water,
-    read_mt_ckd_water,
-)
+from orsia_data import acquisition, download_mt_ckd_water, fetch_mt_ckd_water, read_mt_ckd_water
 from orsia_data.spectroscopy import continuum
 from scipy.io import netcdf_file
 

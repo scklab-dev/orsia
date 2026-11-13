@@ -6,17 +6,17 @@ import pytest
 from numpy.typing import NDArray
 from orsia_radiative import (
     Absorber,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     LayerProfileBasis,
     ObservationGeometry,
-    RadiativeScene,
     SurfaceState,
     evaluate_profile,
     wavenumber_grid,
 )
 
 
-def atmosphere(**changes: Any) -> Atmosphere:
+def atmosphere(**changes: Any) -> LayerAtmosphere:
     defaults: dict[str, Any] = dict(
         height_boundaries_m=np.array([0.0, 1000.0, 2000.0]),
         pressure_boundaries_pa=np.array([100000.0, 90000.0, 80000.0]),
@@ -28,7 +28,7 @@ def atmosphere(**changes: Any) -> Atmosphere:
         absorbers=(Absorber("X", np.array([1.0e25, 2.0e25]), "dry_air"),),
     )
     defaults.update(changes)
-    return Atmosphere(**defaults)
+    return LayerAtmosphere(**defaults)
 
 
 def axis() -> NDArray[np.float64]:
@@ -101,7 +101,7 @@ def test_surface_properties_do_not_select_illumination_or_observation_geometry()
     )
     geometry = ObservationGeometry(10.0)
     for surface in (solar, thermal, mixed):
-        scene = RadiativeScene(atmosphere(), surface, geometry)
+        scene = ColumnScene(atmosphere(), surface, geometry)
         assert scene.surface == surface
         assert scene.geometry is geometry
     assert not hasattr(geometry, "solar_zenith_deg")

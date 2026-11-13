@@ -23,7 +23,12 @@ from test_thermal import case
 
 
 def test_scene_level_thermal_api_exports_radiance_and_terms():
-    assert thermal.__all__ == ["thermal_radiance", "schwarzschild_terms"]
+    assert thermal.__all__ == [
+        "thermal_radiance",
+        "schwarzschild_terms",
+        "thermal_radiance_tangent",
+        "schwarzschild_terms_tangent",
+    ]
 
 
 @pytest.mark.parametrize("method", ["quadrature", "expn"])

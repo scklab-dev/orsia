@@ -6,8 +6,8 @@ from typing import Literal
 
 from orsia_radiative import SolarIrradianceSpectrum
 
-from ..acquisition import download_file
-from ..solar.irradiance import read_solar_spectrum_csv
+from orsia_data.acquisition import download_file
+from orsia_data.solar.irradiance import read_solar_spectrum_csv
 
 
 def fetch_solar_spectrum(

@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from orsia_instruments.quadrature import interval_quadrature, validate_quadrature_order
+from orsia_instruments.acquisition.quadrature import interval_quadrature, validate_quadrature_order
 
 
 def test_quadrature_exactness():
@@ -20,11 +20,11 @@ def test_quadrature_exactness():
 
 
 def test_quadrature_ownership_and_consumers():
-    from orsia_instruments import acquisition
+    from orsia_instruments.acquisition import quadrature as acquisition
     from orsia_instruments.optics import cavities, dispersion, filters, pixels, response, two_beam
 
-    assert interval_quadrature.__module__ == "orsia_instruments.quadrature"
-    assert validate_quadrature_order.__module__ == "orsia_instruments.quadrature"
+    assert interval_quadrature.__module__ == "orsia_instruments.acquisition.quadrature"
+    assert validate_quadrature_order.__module__ == "orsia_instruments.acquisition.quadrature"
     assert acquisition.interval_quadrature is pixels.interval_quadrature is interval_quadrature
     for module in (cavities, dispersion, filters, response, two_beam):
         assert module.validate_quadrature_order is validate_quadrature_order

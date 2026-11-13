@@ -9,13 +9,13 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from orsia_radiative import LineDatabase
+from orsia_radiative import SpectralLineTable
 from orsia_radiative.spectroscopy.line_tables import PartitionFunctionTable
 from orsia_radiative.spectroscopy.references import LineSpectroscopy
 from scipy.constants import atomic_mass
 
-from ..spectroscopy.collections import import_spectroscopy_collection
-from ..spectroscopy.lines import read_hitran_lines
+from orsia_data.spectroscopy.collections import import_spectroscopy_collection
+from orsia_data.spectroscopy.lines import read_hitran_lines
 
 
 def acquire_hitran_references(
@@ -65,7 +65,7 @@ def acquire_hitran_references(
         table = PartitionFunctionTable(molecule, isotope, knots, np.ones_like(knots))
         LineSpectroscopy(
             species,
-            tuple(LineDatabase((), molecule, isotope, interval) for interval in intervals),
+            tuple(SpectralLineTable((), molecule, isotope, interval) for interval in intervals),
             table,
             atomic_mass,
         )
@@ -140,7 +140,7 @@ def fetch_hitran_lines(
     interval_cm1: tuple[float, float],
     edition: Literal["current"],
     directory: Path,
-) -> LineDatabase:
+) -> SpectralLineTable:
     """Use HAPI fetch(M, I, min, max), retaining native lines.data/lines.header.
 
     One HITRAN molecule/local isotopologue per call; combine multiple returned
@@ -182,7 +182,7 @@ def fetch_hitran_lines(
     if edition != "current":
         raise ValueError("HAPI fetch supports only the explicit current service")
     # Validate physical support before acquiring resources or contacting HAPI.
-    LineDatabase((), molecule_id, isotopologue_id, interval_cm1)
+    SpectralLineTable((), molecule_id, isotopologue_id, interval_cm1)
     directory.mkdir(parents=True, exist_ok=False)
     try:
         import hapi  # type: ignore[import-not-found]

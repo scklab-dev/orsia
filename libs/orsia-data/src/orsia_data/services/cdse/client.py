@@ -4,10 +4,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ...http import JsonSession
-from .auth import CdseAuth
-from .odata import download_cdse, search_sentinel2_l2a
-from .stac import stac_client
+from orsia_data.http import JsonSession
+from orsia_data.services.cdse.auth import CdseAuth
+from orsia_data.services.cdse.odata import download_cdse, search_sentinel2_l2a
+from orsia_data.services.cdse.stac import stac_client
 
 
 class CdseClient:

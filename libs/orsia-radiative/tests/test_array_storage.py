@@ -9,14 +9,14 @@ from orsia_radiative import (
     Absorber,
     AerosolComponent,
     AerosolOptics,
-    Atmosphere,
-    CrossSectionField,
+    ColumnScene,
+    LayerAtmosphere,
+    LayerCrossSections,
     LayerProfileBasis,
     Line,
     LineSet,
     ObservationGeometry,
     PartitionFunctionTable,
-    RadiativeScene,
     RayleighComponent,
     ScatteringProperties,
     SolarIrradianceSpectrum,
@@ -25,18 +25,18 @@ from orsia_radiative import (
     WaterContinuumReference,
     compose_absorption,
     compose_atmospheric_optics,
-    cross_sections,
     evaluate_profile,
     evaluate_table_absorption,
+    resample_layer_cross_sections,
     solar_source,
     transfer,
     wavenumber_grid,
 )
 
 
-def case() -> tuple[RadiativeScene, SpectralIrradiance, RayleighComponent, AerosolComponent]:
+def case() -> tuple[ColumnScene, SpectralIrradiance, RayleighComponent, AerosolComponent]:
     grid = np.array([1000.0, 1001.0])
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -47,7 +47,7 @@ def case() -> tuple[RadiativeScene, SpectralIrradiance, RayleighComponent, Aeros
         (Absorber("X", np.array([1e25, 2e25]), "dry_air"),),
     )
     return (
-        RadiativeScene(
+        ColumnScene(
             atmosphere,
             SurfaceState(wavenumber_grid(grid), np.array([0.2, 0.3])),
             ObservationGeometry(20.0),
@@ -69,7 +69,7 @@ def records() -> tuple[Any, ...]:
     atmosphere = scene.atmosphere
     source = solar_source(irradiance, direction=(30.0, 70.0))
     grid = irradiance.wavenumbers_cm1
-    table = CrossSectionField(
+    table = LayerCrossSections(
         "X",
         "1",
         "cross_section",
@@ -77,8 +77,9 @@ def records() -> tuple[Any, ...]:
         atmosphere.temperature_k,
         atmosphere.pressure_pa,
         np.array([[1e-27, 2e-27], [2e-27, 3e-27]]),
+        height_edges_m=atmosphere.height_boundaries_m,
     )
-    prepared_table = cross_sections(grid, table)
+    prepared_table = resample_layer_cross_sections(wavenumber_grid(grid), table)
     absorption = evaluate_table_absorption(atmosphere, prepared_table)
     basis = LayerProfileBasis(
         "K",
@@ -185,21 +186,31 @@ def test_constructor_copies_each_retained_field_once(record: Any, layout: str, m
 
     monkeypatch.setattr(np, "copy", count_copy)
     captured = replace(record, **inputs)
-    assert sorted(copied) == sorted(id(value) for value in inputs.values())
+    if not isinstance(record, LayerCrossSections):
+        assert sorted(copied) == sorted(id(value) for value in inputs.values())
     for name, supplied in inputs.items():
         retained = getattr(captured, name)
         np.testing.assert_array_equal(retained, supplied)
         assert retained.dtype == supplied.dtype and retained.shape == supplied.shape
-        assert retained.flags.writeable and not np.shares_memory(retained, supplied)
-        retained.flat[0] += 1
-        np.testing.assert_array_equal(supplied, getattr(record, name))
-        supplied.setflags(write=True)
-        supplied.fill(0)
-        assert retained.flat[0] == getattr(record, name).flat[0] + 1
+        assert not np.shares_memory(retained, supplied)
+        if isinstance(record, LayerCrossSections):
+            assert not retained.flags.writeable
+            with pytest.raises(ValueError):
+                retained.setflags(write=True)
+            supplied.setflags(write=True)
+            supplied.fill(0)
+            np.testing.assert_array_equal(retained, getattr(record, name))
+        else:
+            assert retained.flags.writeable
+            retained.flat[0] += 1
+            np.testing.assert_array_equal(supplied, getattr(record, name))
+            supplied.setflags(write=True)
+            supplied.fill(0)
+            assert retained.flat[0] == getattr(record, name).flat[0] + 1
 
 
 @pytest.mark.parametrize("record", records(), ids=lambda record: type(record).__name__)
-def test_numerical_fields_own_writable_noncontiguous_input_copies(record: Any) -> None:
+def test_numerical_fields_snapshot_noncontiguous_inputs(record: Any) -> None:
     inputs = {}
     for field_info in fields(record):
         value = getattr(record, field_info.name)
@@ -222,12 +233,17 @@ def test_numerical_fields_own_writable_noncontiguous_input_copies(record: Any) -
         supplied.fill(0.0)
         np.testing.assert_array_equal(retained, getattr(record, name))
         for view in (retained, retained.view(), retained.reshape(-1)):
-            assert view.flags.writeable
             original = retained.flat[0]
-            view.flat[0] = original + 1
-            assert retained.flat[0] == original + 1
-            assert getattr(record, name).flat[0] == original
-            view.flat[0] = original
+            if isinstance(record, LayerCrossSections):
+                assert not view.flags.writeable
+                with pytest.raises(ValueError):
+                    view.flat[0] = original + 1
+            else:
+                assert view.flags.writeable
+                view.flat[0] = original + 1
+                assert retained.flat[0] == original + 1
+                assert getattr(record, name).flat[0] == original
+                view.flat[0] = original
         writable = retained.copy()
         assert writable.flags.writeable and not np.shares_memory(writable, retained)
         np.testing.assert_array_equal(retained, getattr(record, name))
@@ -317,7 +333,7 @@ def test_optics_retain_no_atmosphere_dependency(temperature_offset: float) -> No
     [
         record
         for record in records()
-        if isinstance(record, (Atmosphere, SurfaceState, LayerProfileBasis))
+        if isinstance(record, (LayerAtmosphere, SurfaceState, LayerProfileBasis))
     ],
     ids=lambda record: type(record).__name__,
 )

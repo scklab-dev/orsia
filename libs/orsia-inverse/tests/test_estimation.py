@@ -6,7 +6,13 @@ from typing import Any
 import numpy as np
 import pytest
 from numpy.typing import NDArray
-from orsia_inverse import GaussianEstimate, retrieval_diagnostics, solve_map
+from orsia_inverse import (
+    GaussianEstimate,
+    QuadraticPrior,
+    prior_from_covariance,
+    retrieval_diagnostics,
+    solve_map,
+)
 from orsia_uncertainty import factor_covariance
 
 type Vector = NDArray[np.float64]
@@ -32,7 +38,7 @@ def test_affine_reference(method: Any, diagonal: bool, with_prior: bool) -> None
     if with_prior:
         precision += np.linalg.inv(sa)
         rhs += np.linalg.solve(sa, qa)
-        options = {"prior_mean": qa, "prior_factor": factor_covariance(sa, method="cholesky")}
+        options = {"prior": prior_from_covariance(qa, factor_covariance(sa, method="cholesky"))}
     expected = np.linalg.solve(precision, rhs)
     result = _solve(
         k,
@@ -41,7 +47,8 @@ def test_affine_reference(method: Any, diagonal: bool, with_prior: bool) -> None
         method=method,
         **options,
     )
-    assert result.success and result.status > 0
+    assert result.termination.success and result.termination.status is not None
+    assert result.termination.status > 0
     np.testing.assert_allclose(result.state, expected, atol=1e-10)
     np.testing.assert_allclose(result.prediction, k @ expected, atol=1e-10)
     np.testing.assert_allclose(result.residual, k @ expected - y, atol=1e-10)
@@ -68,8 +75,12 @@ def test_affine_reference(method: Any, diagonal: bool, with_prior: bool) -> None
     lean = retrieval_diagnostics(result)
     assert lean.gain is lean.averaging_kernel is None
     assert lean.degrees_of_freedom == diagnostics.degrees_of_freedom
-    assert result.accepted_steps is result.rejected_steps is None
-    assert result.prediction_calls >= result.nfev and result.linearization_calls >= result.njev
+    assert result.termination.accepted_steps is result.termination.rejected_steps is None
+    assert (
+        result.termination.backend_nfev is not None and result.termination.backend_njev is not None
+    )
+    assert result.termination.prediction_calls >= result.termination.backend_nfev
+    assert result.termination.linearization_calls >= result.termination.backend_njev
 
 
 def test_mixed_bounds_coupled_state_and_active_bound_policy() -> None:
@@ -115,7 +126,7 @@ def test_nonlinear_derivatives_multiple_starts_and_final_freshness() -> None:
         )
         np.testing.assert_allclose(jac(q), finite, atol=2e-9, rtol=2e-9)
         result = solve_map(fun, jac, fun(truth), q, **_options(3, 2))
-        assert result.success
+        assert result.termination.success
         np.testing.assert_allclose(result.state, truth, atol=1e-7)
         np.testing.assert_allclose(result.jacobian, jac(result.state))
 
@@ -124,7 +135,7 @@ def test_affine_coordinate_transform_preserves_physical_solution_and_information
     k = np.array([[1.0, 2.0], [-1.0, 1.0], [2.0, 0.5]])
     y, qa = np.array([1.0, 2.0, -1.0]), np.array([0.4, -0.1])
     sa = np.array([[1.0, 0.2], [0.2, 2.0]])
-    base = _solve(k, y, prior_mean=qa, prior_factor=factor_covariance(sa, method="cholesky"))
+    base = _solve(k, y, prior=prior_from_covariance(qa, factor_covariance(sa, method="cholesky")))
     offset, d = np.array([0.3, -0.5]), np.diag([0.05, 7.0])
     invd = np.linalg.inv(d)
     transformed = solve_map(
@@ -133,8 +144,9 @@ def test_affine_coordinate_transform_preserves_physical_solution_and_information
         y,
         invd @ (-offset),
         **_options(3, 2),
-        prior_mean=invd @ (qa - offset),
-        prior_factor=factor_covariance(invd @ sa @ invd, method="cholesky"),
+        prior=prior_from_covariance(
+            invd @ (qa - offset), factor_covariance(invd @ sa @ invd, method="cholesky")
+        ),
     )
     np.testing.assert_allclose(offset + d @ transformed.state, base.state, atol=1e-10)
     a = retrieval_diagnostics(base, include_gain=True, include_averaging_kernel=True)
@@ -158,8 +170,9 @@ def test_confusion_prior_information_and_underdetermined_states() -> None:
         estimate = _solve(
             k,
             np.array([1.0, 2.0]),
-            prior_mean=np.zeros(2),
-            prior_factor=factor_covariance(np.full(2, variance), method="cholesky"),
+            prior=prior_from_covariance(
+                np.zeros(2), factor_covariance(np.full(2, variance), method="cholesky")
+            ),
         )
         diagnosis = retrieval_diagnostics(estimate, include_averaging_kernel=True)
         assert (
@@ -178,8 +191,9 @@ def test_confusion_prior_information_and_underdetermined_states() -> None:
     prior_only = _solve(
         np.zeros((2, 2)),
         np.ones(2),
-        prior_mean=np.array([0.2, 0.3]),
-        prior_factor=factor_covariance(np.ones(2), method="cholesky"),
+        prior=prior_from_covariance(
+            np.array([0.2, 0.3]), factor_covariance(np.ones(2), method="cholesky")
+        ),
     )
     diagnosis = retrieval_diagnostics(prior_only)
     assert diagnosis.available and diagnosis.measurement_rank == 0
@@ -191,7 +205,7 @@ def test_actual_error_and_signed_bias_transport_with_misspecified_weighting() ->
     y = np.array([1.0, 2.0, 3.0])
     prior = np.ones(2)
     estimate = _solve(
-        k, y, prior_mean=np.zeros(2), prior_factor=factor_covariance(prior, method="cholesky")
+        k, y, prior=prior_from_covariance(np.zeros(2), factor_covariance(prior, method="cholesky"))
     )
     diagnostics = retrieval_diagnostics(estimate, include_gain=True)
     assert diagnostics.gain is not None
@@ -201,8 +215,7 @@ def test_actual_error_and_signed_bias_transport_with_misspecified_weighting() ->
     shifted = _solve(
         k,
         y + bias,
-        prior_mean=np.zeros(2),
-        prior_factor=factor_covariance(prior, method="cholesky"),
+        prior=prior_from_covariance(np.zeros(2), factor_covariance(prior, method="cholesky")),
     )
     np.testing.assert_allclose(shifted.state - estimate.state, transported, atol=1e-12)
     propagated = diagnostics.gain @ actual @ diagnostics.gain.T
@@ -226,7 +239,7 @@ def test_nonlinear_small_noise_monte_carlo_and_large_noise_limit() -> None:
                 np.zeros(1),
                 **_options(1, 1),
             )
-            assert result.success
+            assert result.termination.success
             recovered.append(result.state[0])
         np.testing.assert_allclose(recovered, np.log1p(errors * amplitude), atol=2e-8)
         # Compare to linearized errors on the same draws (no sampling ambiguity).
@@ -244,8 +257,12 @@ def test_budget_exhaustion_and_snapshot_ownership() -> None:
         **_options(1, 1),
         max_nfev=1,
     )
-    assert not result.success and result.status == 0 and result.nfev == 1
-    assert result.prediction_calls == result.linearization_calls == 1
+    assert (
+        not result.termination.success
+        and result.termination.status == 0
+        and result.termination.backend_nfev == 1
+    )
+    assert result.termination.prediction_calls == result.termination.linearization_calls == 1
     diagnostics = retrieval_diagnostics(result)
     assert not diagnostics.available and diagnostics.reason is not None
     assert "not successful" in diagnostics.reason
@@ -261,10 +278,11 @@ def test_budget_exhaustion_and_snapshot_ownership() -> None:
         result.lower_bounds,
         result.upper_bounds,
     ):
-        assert values.flags.writeable
+        assert not values.flags.writeable
         assert not np.shares_memory(values, q0)
         assert not np.shares_memory(values, y)
-    result.state[0] = 2.0
+    with pytest.raises(ValueError):
+        result.state[0] = 2.0
     assert q0[0] == 99
     assert not result.active_mask.flags.writeable
 
@@ -298,8 +316,7 @@ def test_nonlinear_gaussian_ensemble_matches_local_posterior_at_small_noise() ->
 @pytest.mark.parametrize(
     "options, message",
     [
-        ({"prior_mean": np.zeros(1)}, "together"),
-        ({"prior_factor": factor_covariance(np.ones(1), method="cholesky")}, "together"),
+        ({"prior": QuadraticPrior(np.zeros(2), np.eye(2))}, "prior size"),
         ({"method": "dogbox"}, "method"),
         ({"ftol": 0.0}, "tolerances"),
         ({"xtol": np.nan}, "tolerances"),
@@ -387,15 +404,15 @@ def test_fun_jac_keywords_counts_cache_and_output_snapshots(method: Any, max_nfe
         max_nfev=max_nfev,
         **_options(1, 1),
     )
-    assert result.prediction_calls == len(fun_states)
-    assert result.linearization_calls == len(jac_states)
+    assert result.termination.prediction_calls == len(fun_states)
+    assert result.termination.linearization_calls == len(jac_states)
     assert all(not np.array_equal(a, b) for a, b in zip(fun_states, fun_states[1:], strict=False))
     for states in (fun_states, jac_states):
         np.testing.assert_array_equal(states[-1], result.state)
     if max_nfev == 1 and method == "trf":
-        assert result.prediction_calls == result.linearization_calls == 1
+        assert result.termination.prediction_calls == result.termination.linearization_calls == 1
     if max_nfev == 100:
-        assert result.success
+        assert result.termination.success
         np.testing.assert_allclose(result.state, [np.log(4.0)])
     values.fill(-99)
     derivatives.fill(-99)
@@ -447,13 +464,16 @@ def test_retained_factors_reused_for_diagnostics_and_root_invariant_information(
                 np.array([1.0, 2.0, 3.0]),
                 np.zeros(2),
                 observation_factor=observation,
-                prior_mean=np.zeros(2),
-                prior_factor=prior,
+                prior=prior_from_covariance(np.zeros(2), prior),
             )
             diagnosis = retrieval_diagnostics(
                 result, include_gain=True, include_averaging_kernel=True
             )
-        assert result.observation_factor is observation and result.prior_factor is prior
+        assert result.observation_factor is observation
+        assert result.prior is not None
+        np.testing.assert_allclose(
+            result.prior.precision_root.T @ result.prior.precision_root, np.linalg.inv(sa)
+        )
         assert diagnosis.posterior_covariance is not None
         assert diagnosis.gain is not None and diagnosis.averaging_kernel is not None
         np.testing.assert_allclose(

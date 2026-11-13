@@ -2,6 +2,7 @@
 
 import csv
 import json
+import os
 from pathlib import Path
 
 import cdsapi
@@ -16,7 +17,6 @@ BASE = ROOT / "outputs/five-band-inputs"
 
 def main():
     BASE.mkdir(parents=True, exist_ok=True)
-    credentials = dotenv_values(ROOT / ".env")
     request: dict[str, object] = dict(
         product_type=["reanalysis"],
         variable=["temperature", "specific_humidity"],
@@ -44,13 +44,10 @@ def main():
     )
     raw = BASE / "era5-native.nc"
     if not raw.exists():
-        url = credentials.get("CDSAPI_URL")
-        key = credentials.get("CDSAPI_KEY")
-        if not url or not key:
-            raise ValueError("Set CDSAPI_URL and CDSAPI_KEY in the repository-root .env")
+        credentials = _cds_credentials()
         client = cdsapi.Client(
-            url=url,
-            key=key,
+            url=credentials["CDSAPI_URL"],
+            key=credentials["CDSAPI_KEY"],
             quiet=True,
             debug=False,
             timeout=120,
@@ -171,6 +168,19 @@ def main():
     destination = BASE / "manifest.json"
     destination.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"Offline manifest: {destination}")
+
+
+def _cds_credentials() -> dict[str, str | None]:
+    """Read literal CDS settings from the repository .env, with environment precedence.
+
+    Return only CDSAPI_URL and CDSAPI_KEY without changing the environment. Missing
+    settings remain None so the CDS client can apply its own configuration defaults.
+    """
+    values = dotenv_values(ROOT / ".env", interpolate=False)
+    return {
+        name: os.environ[name] if name in os.environ else values.get(name)
+        for name in ("CDSAPI_URL", "CDSAPI_KEY")
+    }
 
 
 if __name__ == "__main__":

@@ -13,9 +13,9 @@ import pytest
 import radiance_terms_support as terms_support
 from orsia_radiative import (
     AerosolComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SpectralIrradiance,
     SurfaceState,
@@ -27,9 +27,9 @@ from scipy.integrate import quad
 from scipy.special import expn
 
 
-def _inputs(layers: int = 1, reflectance: float = 0.3) -> tuple[RadiativeScene, SpectralIrradiance]:
+def _inputs(layers: int = 1, reflectance: float = 0.3) -> tuple[ColumnScene, SpectralIrradiance]:
     axis = np.array([12000.0], dtype=np.float64)
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         1000.0 * np.arange(layers + 1, dtype=np.float64),
         100000.0 - 10000.0 * np.arange(layers + 1, dtype=np.float64),
         95000.0 - 10000.0 * np.arange(layers, dtype=np.float64),
@@ -39,7 +39,7 @@ def _inputs(layers: int = 1, reflectance: float = 0.3) -> tuple[RadiativeScene, 
         np.full(layers, 1e28),
     )
     return (
-        RadiativeScene(
+        ColumnScene(
             atmosphere,
             SurfaceState(wavenumber_grid(axis), reflectance=np.array([reflectance])),
             ObservationGeometry(20.0),

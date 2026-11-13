@@ -7,11 +7,11 @@ from orsia_radiative import (
     Absorber,
     Absorption,
     AbsorptionComponent,
-    Atmosphere,
     AtmosphericOptics,
-    CrossSectionField,
+    ColumnScene,
+    LayerAtmosphere,
+    LayerCrossSections,
     ObservationGeometry,
-    RadiativeScene,
     SpectralDomain,
     SpectralGrid,
     SpectralIrradiance,
@@ -21,16 +21,16 @@ from orsia_radiative import (
     compose_absorption_on_grid,
     compose_atmospheric_optics,
     convert_spectral_grid,
-    cross_sections,
     evaluate_table_absorption,
+    resample_layer_cross_sections,
     solar_source,
     transfer,
     wavenumber_grid,
 )
 
 
-def inputs() -> tuple[Atmosphere, CrossSectionField]:
-    atmosphere = Atmosphere(
+def inputs() -> tuple[LayerAtmosphere, LayerCrossSections]:
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -40,7 +40,7 @@ def inputs() -> tuple[Atmosphere, CrossSectionField]:
         np.full(2, 1e28),
         (Absorber("X", np.array([1e25, 2e25]), "dry_air"),),
     )
-    table = CrossSectionField(
+    table = LayerCrossSections(
         "X",
         "1",
         "cross_section",
@@ -48,6 +48,7 @@ def inputs() -> tuple[Atmosphere, CrossSectionField]:
         atmosphere.temperature_k,
         atmosphere.pressure_pa,
         np.array([[1e-27, 5e-27], [2e-27, 6e-27]]),
+        height_edges_m=atmosphere.height_boundaries_m,
     )
     return atmosphere, table
 
@@ -126,12 +127,12 @@ def test_one_grid_is_retained_through_spectroscopy_composition_and_transfer() ->
     )
     irradiance = SpectralIrradiance(grid, np.ones(2))
     source = solar_source(irradiance, direction=(30.0, 70.0))
-    prepared = cross_sections(grid, table)
+    prepared = resample_layer_cross_sections(wavenumber_grid(grid), table)
     component = evaluate_table_absorption(atmosphere, prepared)
     total = compose_absorption(atmosphere, source, (component,))
     optics = compose_atmospheric_optics(atmosphere, source, absorption=total)
     surface = SurfaceState(grid, reflectance=np.full(2, 0.2))
-    scene = RadiativeScene(atmosphere, surface, ObservationGeometry(20.0))
+    scene = ColumnScene(atmosphere, surface, ObservationGeometry(20.0))
     result = transfer.solar.reflected_radiance(
         scene, max_order=0, delta_m_moments=None, source=source, optics=optics
     )
@@ -150,11 +151,11 @@ def test_one_grid_is_retained_through_spectroscopy_composition_and_transfer() ->
     assert transfer.thermal.thermal_radiance(thermal_scene, optics=optics).grid is grid
 
 
-def test_radiative_records_reject_wavelength_units_at_construction() -> None:
+def test_column_transfer_records_reject_wavelength_units_at_construction() -> None:
     atmosphere, _ = inputs()
     grid = SpectralGrid("wavelength_nm", np.array([1000.0, 1001.0]))
     constructors = (
-        lambda: SpectralIrradiance(grid, np.ones(2)),
+        lambda: solar_source(SpectralIrradiance(grid, np.ones(2)), direction=(30.0, 0.0)),
         lambda: SurfaceState(grid, reflectance=np.ones(2)),
         lambda: Absorption(grid, np.zeros((2, 2))),
         lambda: AbsorptionComponent(grid, "X", "1", "cross_section", np.zeros((2, 2))),
@@ -170,10 +171,10 @@ def test_native_table_domain_does_not_authorize_interpolation_across_gaps() -> N
     domain = SpectralDomain("wavenumber_cm1", ((999.0, 1000.0), (1002.0, 1003.0)))
     table = replace(table, grid=wavenumber_grid(table.wavenumbers_cm1, domain=domain))
     with pytest.raises(ValueError, match="outside declared"):
-        cross_sections(wavenumber_grid(np.array([1001.0])), table)
+        resample_layer_cross_sections(wavenumber_grid(np.array([1001.0])), table)
     with pytest.raises(ValueError, match="crosses.*gap"):
-        cross_sections(wavenumber_grid(np.array([999.5])), table)
-    prepared = cross_sections(table.grid, table)
+        resample_layer_cross_sections(wavenumber_grid(np.array([999.5])), table)
+    prepared = resample_layer_cross_sections(table.grid, table)
     np.testing.assert_array_equal(
         prepared.cross_sections_m2_per_molecule, table.cross_sections_m2_per_molecule
     )

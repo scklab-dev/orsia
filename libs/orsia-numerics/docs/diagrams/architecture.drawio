@@ -1,36 +1,81 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <mxfile host="Electron" version="31.7.0" type="device" compressed="false">
   <diagram id="orsia-numerics-architecture" name="Orsia numerics architecture">
-    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="940" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="Inside orsia_numerics" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=32;fontStyle=1;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="20" width="1500" height="45" />
-        </mxCell>
-        <mxCell id="subtitle" value="Application-owned tasks and an explicit CPU execution boundary" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="75" width="1500" height="35" />
-        </mxCell>
-        <mxCell id="application" value="&lt;b&gt;Caller&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Own task decomposition, stable inputs and pool lifetime&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="310" y="140" width="980" height="90" />
+        <mxCell id="application" value="&lt;b&gt;Caller-owned callback: sine_of_square(x, D)&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:24px&quot;&gt;h(x) = sin(x²), componentwise&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="80" y="40" width="1440" height="280" />
         </mxCell>
         <mxCell id="package" value="orsia_numerics" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=0;align=left;verticalAlign=top;spacingLeft=24;spacingTop=16;fontFamily=Helvetica;fontSize=23;fontStyle=1;fontColor=#52647A;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="170" y="325" width="1260" height="360" />
+          <mxGeometry as="geometry" x="40" y="410" width="1520" height="440" />
         </mxCell>
-        <mxCell id="execution" value="&lt;b&gt;execution.py · CpuThreadPoolExecutor&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Standard futures: submit / map / shutdown&lt;br&gt;Distinct pinned Linux worker CPUs&lt;br&gt;Pthreads OpenBLAS: one native thread process-wide&lt;br&gt;OpenMP: serialized within each worker&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#714A20;fillColor=#FFF4E5;strokeColor=#C49A60;strokeWidth=1.5;" vertex="1" parent="package">
-          <mxGeometry as="geometry" x="40" y="75" width="1180" height="245" />
+        <mxCell id="execution" value="&lt;b&gt;Optional execution&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;execution.py&lt;br&gt;CpuThreadPoolExecutor&lt;br&gt;submit / map / shutdown&lt;br&gt;&lt;br&gt;Linux worker affinity&lt;br&gt;Native thread limits&lt;br&gt;Caller-owned pool&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#714A20;fillColor=#FFF4E5;strokeColor=#C49A60;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="1140" y="80" width="350" height="310" />
         </mxCell>
-        <mxCell id="execution-backend" value="&lt;b&gt;Execution facilities&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;concurrent.futures · Linux affinity · threadpoolctl · native runtime controls&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="310" y="735" width="980" height="120" />
+        <mxCell id="tangents" value="&lt;b&gt;Evaluate composition&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;tangents.py&lt;br&gt;jacobian&lt;br&gt;directional_derivative&lt;br&gt;&lt;br&gt;Identity or supplied seeds&lt;br&gt;Value + dense Jacobian&lt;br&gt;or directional products&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="30" y="80" width="350" height="310" />
         </mxCell>
-        <mxCell id="caller-execution" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="application" target="execution">
+        <mxCell id="operators" value="&lt;b&gt;General linear maps&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;operators.py&lt;br&gt;linear_operator&lt;br&gt;materialize_operator&lt;br&gt;&lt;br&gt;Forward + transpose&lt;br&gt;SciPy operator or&lt;br&gt;budgeted dense matrix&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="400" y="80" width="350" height="310" />
+        </mxCell>
+        <mxCell id="native" value="&lt;b&gt;Native arithmetic&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;get_include()&lt;br&gt;C++ tangent.h&lt;br&gt;&lt;br&gt;Scale and product rules&lt;br&gt;Allocation-free operations&lt;br&gt;Used by Radiative kernels&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="770" y="80" width="350" height="310" />
+        </mxCell>
+        <mxCell id="caller-tangents" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=0;entryX=0.11458333333333333;entryY=1;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="tangents" target="application">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="execution-facilities" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="execution" target="execution-backend">
+        <mxCell id="caller-operators" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="other-caller-inputs" target="operators">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="key" value="Arrows: caller invocation and underlying execution dependencies. Scientific kernels remain independently callable." style="text;html=0;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="140" y="875" width="1320" height="30" />
+        <mxCell id="caller-native" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="native-caller-inputs" target="native">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="caller-execution" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="execution-caller-inputs" target="execution">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="composition-tangents" value="z = x²" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#FFFFFF;fontColor=#FFFFFF;fillColor=none;fontFamily=Helvetica;fontSize=22;verticalAlign=bottom;spacingBottom=10;labelBackgroundColor=#243B58;" edge="1" parent="1" source="square-stage" target="projection-stage">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="propagate-tangents" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#CBD5E1;fontColor=#FFFFFF;fillColor=none;dashed=1;" edge="1" parent="1" source="square-tangent" target="sine-tangent">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="input-to-square" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#FFFFFF;fontColor=#FFFFFF;fillColor=none;dashed=0;" edge="1" parent="1" source="input-value" target="square-stage">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="sine-to-output" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#FFFFFF;fontColor=#FFFFFF;fillColor=none;dashed=0;" edge="1" parent="1" source="projection-stage" target="output-value">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="square-stage" value="&lt;b&gt;Square&lt;/b&gt;&lt;br&gt;f(x) = x²" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=32;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="330" y="135" width="350" height="100" />
+        </mxCell>
+        <mxCell id="projection-stage" value="&lt;b&gt;Sine&lt;/b&gt;&lt;br&gt;g(z) = sin(z)" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=18;fontFamily=Helvetica;fontSize=32;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="930" y="135" width="350" height="100" />
+        </mxCell>
+        <mxCell id="other-caller-inputs" value="Forward / transpose&lt;br&gt;products" style="html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=21;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="440" y="345" width="350" height="65" />
+        </mxCell>
+        <mxCell id="square-tangent" value="dz = diag(2x) D" style="text;html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=21;fontColor=#CBD5E1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="330" y="250" width="350" height="42" />
+        </mxCell>
+        <mxCell id="sine-tangent" value="dy = diag(cos z) dz" style="text;html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=21;fontColor=#CBD5E1;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="930" y="250" width="350" height="42" />
+        </mxCell>
+        <mxCell id="input-value" value="x" style="text;html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=30;fontColor=#FFFFFF;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="150" y="162" width="80" height="46" />
+        </mxCell>
+        <mxCell id="output-value" value="y" style="text;html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=30;fontColor=#FFFFFF;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1390" y="162" width="80" height="46" />
+        </mxCell>
+        <mxCell id="evaluate-callback" value="Evaluate h&lt;br&gt;with seed blocks" style="text;html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=20;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="270" y="343" width="170" height="62" />
+        </mxCell>
+        <mxCell id="native-caller-inputs" value="Native include use" style="text;html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=21;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="810" y="345" width="350" height="65" />
+        </mxCell>
+        <mxCell id="execution-caller-inputs" value="Execution budgets" style="text;html=1;align=center;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=21;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1180" y="345" width="350" height="65" />
         </mxCell>
       </root>
     </mxGraphModel>

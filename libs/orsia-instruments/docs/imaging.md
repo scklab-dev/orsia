@@ -12,17 +12,7 @@ Run this standalone example with the distribution and its dependencies installed
 from functools import partial
 
 import numpy as np
-from orsia_instruments import (
-    GaussianPSF,
-    combine_image_source_paths,
-    exposure_sequence,
-    filter_imager,
-    gaussian_filter,
-    image_photoelectrons,
-    image_readout,
-    regular_detector,
-    uniform_radiance_field,
-)
+from orsia_instruments import GaussianPSF, combine_image_source_paths, exposure_sequence, filter_imager, gaussian_filter, image_photoelectrons, image_readout, regular_detector, uniform_radiance_field
 from orsia_radiative import ObservationGeometry, Radiance, wavenumber_grid
 
 
@@ -164,7 +154,7 @@ Start with `regular_detector`, an optical factory and `exposure_sequence`, then 
 - `DetectorProperties` requires active `pixel_bounds_m` and explicit `(x,y)` `pitch_m` or `None`. It accepts a scalar or an exact `(rows,columns)` map for QE, dark electrons/s, read-noise sigma in electrons, full well in electrons, electrons/DN, bias DN and dimensionless nonlinearity; ADC width is scalar. No implicit row/column broadcasting is introduced. A `quantum_efficiency(indices, wavelengths_m)` callback on the image integration functions supplies spectral QE and replaces the simple map, as specified in the [spectral QE contract](#spectral-qe-and-noise). The maps are fixed across exposures and indexed numerically for all reads. `image_photoelectrons`, `image_readout` and `simulate_images` require an explicit `detector` keyword argument. Supply geometry and all eight photoelectric/electronic fields when constructing `DetectorProperties`; every field is required, including for expectation-only calculations. Geometry and property maps are independent read-only copies, and maps must match the derived detector shape even when spectral QE replaces their values. Omitting a field raises `TypeError`. The [package example](../README.md#minimal-image-example) shows a complete constructor.
 - `exposure_sequence(start_s=..., duration_s=..., direction_bounds_uv=...)` accepts scalar or broadcastable 1-D starts/durations and optional `row_delay_s`. Constant `pointing_uv=(u,v)` defaults to `(0,0)`; a time callback is optional. The caller still declares the accepted sky patch and supplies scene coverage over the entire rolling exposure support. The image map remains the bounded paraxial `f*(direction-pointing)` approximation.
 - `simulate_images(scene, pixel_bounds_m=..., optics=..., exposures=..., detector=...)` returns `ImageMeasurements.photoelectrons` with axes `(exposure,row,column)`, before dark current. Without `rng`, DN and saturation flags are `None`; only expected photoelectrons are returned. With an explicit generator, `dn`, `full_well_saturated` and `adc_clipped` have axes `(realisation,exposure,row,column)`. Actual timing is retained in `schedule.reads.exposure_bounds_s` with axes `(reads,2)`, including row delay. Measurement value arrays are independent writable copies; the shared raster schedule is immutable. Input geometry/maps/settings are copied, while custom callbacks are borrowed and must remain pure and stable.
-- A scene may be a resident `RadianceField` or a caller-owned `field(acquisition)` callback. The callback receives the complete image acquisition once and supplies radiance over its full time and direction support. Source QE may instead be supplied as a callback over complete image indices and spectral grid wavelengths.
+- A scene may be a resident `AngularRadianceSamples` or a caller-owned `field(acquisition)` callback. The callback receives the complete image acquisition once and supplies radiance over its full time and direction support. Source QE may instead be supplied as a callback over complete image indices and spectral grid wavelengths.
 
 The high-level functions accept `row_noise_electrons`, `column_noise_electrons` and `exposure_noise_electrons` as Gaussian sigmas. Row/column groups are independent for each exposure and realisation; the frame component is shared by the exposure. The detector kernel groups full-image row, column and exposure identities before sampling, retaining the physical group covariance in the resulting DN. Do not count the same noise component again through low-level group options.
 
@@ -175,6 +165,13 @@ For a custom instrument, `ImagingOptics` accepts `response(exposure_index, local
 ## Read schedules without optical geometry
 
 `ReadSchedule` describes ordered sample/pixel/setting/port identities and positive exposure intervals `(reads,2)` in seconds. Pass it directly to `ExpectedElectrons` or `digitize` without optical nodes, directions or weights. `read_schedule(acquisition)` strips geometry explicitly; it returns a `ReadSchedule` input unchanged. `ExpectedElectrons.reads` and `DetectorReadings.reads` retain only this schedule. `electron_moments`, `electron_covariance`, `digitize`, `sample_readout` and the native tolerance functions use physical reads without retaining optical geometry. Optical integration and `LineOfSightSamples` retain `Acquisition` at the ray/optical boundary.
+
+## Replicated-boundary grid filtering
+
+[`apply_spatial_response`](../src/orsia_instruments/response/spatial.py) and `spatial_response_support` own the former Scene optical/pixel filters. They operate on supplied `(y,x,...)` values and Boolean `(y,x)` support. Apply the filter to evaluated radiance or its linear spectral contraction exactly once. Filtering reflectance before spatially varying atmospheric transfer selects a different diagnostic approximation.
+
+1. **Objective:** filter sampled values with explicit replicated boundaries. **Inputs:** finite values, Nyquist MTF `m` in `(0,1]`, Boolean pixel integration and optional `upper_bound`. **Outputs:** a fresh filtered array in the original units. **Processing:** set `sigma=sqrt(-2*log(m))/pi`, pad both spatial axes by `max(16,ceil(8*sqrt(sigma^2+pixel_integration/12)))` using edge replication, and form `H(f_y,f_x)=exp(-2*pi^2*sigma^2*(f_y^2+f_x^2))`. Pixel integration multiplies by `sinc(f_y)*sinc(f_x)`. For `upper_bound=True`, replace negative real impulse-response coefficients with zero, then transform back without renormalization. Multiply the padded spatial FFT by `H`, inverse-transform, take its real part and crop to the original extent. Signed input values remain signed; no output clipping occurs.
+2. **Objective:** mark complete finite-grid neighborhoods. **Inputs:** Boolean mask, the same MTF/pixel choice and tail tolerance `t` in `(0,1)`. **Outputs:** a fresh Boolean mask. **Processing:** set `radius=ceil(sigma*sqrt(-2*log(t))+0.5*pixel_integration)` and apply a square minimum filter of width `2*radius+1`, with outside-grid values treated as true. This support convention accompanies replicated boundaries. Zero-extended Fourier sampling retains its separate boundary law.
 
 ## Evidence and limits
 

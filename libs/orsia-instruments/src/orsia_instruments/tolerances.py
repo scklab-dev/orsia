@@ -17,14 +17,14 @@ from orsia_uncertainty import (
     validate_covariance,
 )
 
-from .charge import ExpectedElectrons
-from .detector import (
+from orsia_instruments.detector import (
     DetectorElectronics,
     DetectorOperatingPoints,
     DetectorReadings,
     electron_moments,
     sample_readout,
 )
+from orsia_instruments.photodetection.charge import ExpectedElectrons
 
 
 @dataclass(frozen=True, eq=False)

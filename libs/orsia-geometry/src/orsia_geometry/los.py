@@ -6,8 +6,8 @@ from datetime import datetime
 import numpy as np
 from numpy.typing import NDArray
 
-from .frames import Frame, frame_rotations, require_time_support, require_utc_epoch
-from .rays import compose_rays
+from orsia_geometry.frames import Frame, frame_rotations, require_time_support, require_utc_epoch
+from orsia_geometry.rays import compose_rays
 
 type Trajectory = Callable[[NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.float64]]]
 type AttitudeLaw = Callable[[NDArray[np.float64]], NDArray[np.float64]]

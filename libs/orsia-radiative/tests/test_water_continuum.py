@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from orsia_radiative import (
     Absorber,
-    Atmosphere,
+    LayerAtmosphere,
     Line,
     LineSet,
     WaterContinuumReference,
@@ -18,8 +18,8 @@ from orsia_radiative import (
 from scipy.constants import c, h, k
 
 
-def atmosphere() -> Atmosphere:
-    return Atmosphere(
+def atmosphere() -> LayerAtmosphere:
+    return LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),

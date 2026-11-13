@@ -49,7 +49,7 @@ def test_solar_optics_cells_match_replaced_formulas(band):
         "angstrom_optical_depth": angstrom_call,
         f"{band}_grid": grid,
     }
-    for species in ("h2o", "o3", "so2", "no2", "o2", "co2", "ch4"):
+    for species in ("h2o", "h2o_continuum", "o3", "so2", "no2", "o2", "co2", "ch4"):
         namespace[f"{band}_{species}"] = object()
     exec(source, namespace)
     rayleigh_call.assert_called_once_with(
@@ -121,7 +121,7 @@ def test_thermal_rayleigh_stays_zero(band):
     np.testing.assert_array_equal(namespace[f"{band}_rayleigh"].optical_depth, np.zeros((3, 2)))
 
 
-def test_notebook_imports_public_laws_and_retains_output_warning():
+def test_notebook_imports_public_laws_and_states_model_limits():
     notebook = json.loads(NOTEBOOK.read_text())
     imports = ast.parse(
         "".join(next(c["source"] for c in notebook["cells"] if c["id"] == "imports"))
@@ -137,6 +137,7 @@ def test_notebook_imports_public_laws_and_retains_output_warning():
         "".join(c["source"]) for c in notebook["cells"] if c["cell_type"] == "markdown"
     )
     assert (
-        "Saved outputs retain their original aerosol-free execution provenance until rerun."
-        in prose
+        "aerosol-case convergence and aerosol-impact validation have not been performed." in prose
     )
+    assert "UV lies outside this support" in prose
+    assert "without continuum or extrapolation" in prose

@@ -190,7 +190,7 @@ def test_native_derivative_conversion_and_propagation_roundtrip(sign, format):
 
     import numpy as np
     import satkit
-    from orsia_geometry.orbits import sgp4_propagator
+    from orsia_geometry.orbits import SGP4Propagator
 
     source = dict(
         OMM,
@@ -229,7 +229,7 @@ def test_native_derivative_conversion_and_propagation_roundtrip(sign, format):
         patch("satkit.sgp4", capture),
         patch("orsia_geometry.orbits.transform_states", side_effect=lambda t, p, v, **kw: (p, v)),
     ):
-        trajectory = sgp4_propagator(elements, epoch=EPOCH, validity_s=(0, 86400))
+        trajectory = SGP4Propagator(elements, epoch=EPOCH, validity_s=(0, 86400))
         times = np.array([0.0, 1234.0, 86400.0])
         positions, velocities = trajectory(times)
     native = captured[0]

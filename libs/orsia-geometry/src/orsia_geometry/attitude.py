@@ -3,7 +3,7 @@
 import numpy as np
 from numpy.typing import NDArray
 
-from .rays import validate_rotations
+from orsia_geometry.rays import validate_rotations
 
 
 def radial_nadir(
@@ -112,7 +112,7 @@ def axis_rotations(
     return cosine * np.eye(3) + (1 - cosine) * np.outer(axis, axis) + sine * skew
 
 
-def pointing_rates(
+def attitude_interval_speeds(
     times_s: NDArray[np.float64], rotations: NDArray[np.float64]
 ) -> NDArray[np.float64]:
     """Estimate interval-mean angular speed including roll from sampled attitudes.

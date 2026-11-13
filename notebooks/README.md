@@ -1,125 +1,159 @@
-# Radiance and instrument notebooks
+# Orsia notebooks
 
-## Instrument responses
+These notebooks demonstrate public Orsia APIs with visible scientific calls, figures and diagnostics. Choose the self-contained puff-to-plume tutorial for dispersion or the spatial-scene tutorial for the connection from a frozen plume to native camera reads. The five-band comparison covers radiative transfer; the instrument notebook covers acquisition, detector noise and reconstruction.
 
-[era5_hitran_instrument_responses.ipynb](era5_hitran_instrument_responses.ipynb) presents six complete SWIR chains: uniform filter, filter mosaic, LVF, slit dispersive, two-beam interferometer and Fabry-Perot. Each section constructs its detector and optical model, declares the true acquisition, simulates expected electrons and noisy digital numbers (DN), supplies estimated characterization and geometry, and reconstructs and plots its product. The final summary follows all six chains. Main scientific calls remain visible in the notebook.
+## Choose a notebook
 
-The shared heterogeneous source covers 5 km by 5 km at 50 m sampling, with a 100 m halo. Bilinear interpolation of the original three factor maps supplies every acquisition and the dense inverse. The default selects a 2 by 2 target patch on [-50, 50] m along and across track, including the shared (-25, -25) m target. All fixed spectral strips and nominal 100-cross-track detector arrays remain present. Selected reads preserve original native exposure/row/column/port identities. Output coverage includes neighboring cells illuminated by the retained footprints. The executed products cover this bounded region; the full 100 by 100 image is displayed as the source context.
+| Notebook | Question and products | Main limits |
+| --- | --- | --- |
+| [Gaussian puff dispersion](gaussian_puff_dispersion.ipynb) | Move and spread one puff, build a plume from continuous emissions, and compare concentration with height-integrated mass. | Synthetic uniform wind and diffusivity; finite-duration passive source in free space; no downloads. |
+| [Spatial scene and native camera reads](spatial_scene.ipynb) | Inspect a frozen puff, compare direct-solar paths, follow callback frame/sign/shape conversion, and read native expected electrons and two sensitivities. | Synthetic spectroscopy and motion; direct solar only; reduced teaching quadrature; no retrieval or reconstruction. |
+| [Five-band transport comparison](era5_hitran_sasktran2_five_bands.ipynb) | Compare Orsia and SASKTRAN2 radiance in UV, VNIR, SWIR, MWIR and LWIR windows; inspect spectra, residuals and complete-call timing tables. | Shared-input scene comparison with prescribed solar aerosol and supported-band water continuum; UV remains a lines-only water control. |
+| [Six instrument-response chains](era5_hitran_instrument_responses.ipynb) | Follow uniform filter, mosaic, LVF, slit, two-beam and Fabry-Perot designs from radiance to electrons, noisy digital numbers (DN) and reconstructed products. | Illustrative optical layouts and supplied calibration; bounded 2-by-2 target patch. The two-beam inverse is rank-deficient and has unresolved quadrature sensitivity. |
 
-The [local scenario](data/gesat-toulouse-2025.json) supplies the nominal GESAT GEN1 Toulouse passage on 2025-06-17 at 11:14:51.378 UTC, height 506.645 km and ground speed 7122.3633 m/s. A constant-height, constant-speed tangent-plane approximation supplies continuous nadir geometry. The optical layouts remain illustrative. Shared settings retain a 40 mm aperture, throughput 0.70, QE 0.65, 20 micrometre pitch, 202.658 mm focal length, Gaussian PSF sigma 4 micrometres, and 3.51007 ms exposures with 25 m motion. Linear detector electronics use 2 electrons/DN, 100 DN bias, 2 dark electrons/s, 3-electron RMS read noise, a 10^6-electron full well and a 20-bit ADC. All main products use seeded stochastic shot/dark/read noise with zero common-mode terms.
+Read the notebooks without executing them to inspect their sources and saved examples. All four notebooks contain saved outputs and execution counts. These records describe the retained runs and their inputs; fresh local results require explicit execution. Existing local exports and reference records retain their recorded inputs and scope. The detailed guides retain the scientific assumptions and provenance:
 
-The instrument atmosphere preserves the inherited ERA5 profile at 0 degrees latitude/longitude on 2024-01-15 at 12:00 UTC, nominal nadir and scenario solar elevation. `read_spectroscopy_collection` supplies explicit H2O, CO2 and CH4 `evaluate_line_absorption` calls. The instrument example retains its aerosol-free gas/Rayleigh model. Atmospheric transfer uses 201 samples; interpolation supplies 801 instrument nodes containing every atmospheric knot. Instrument integration refinement does not establish atmospheric spectral convergence.
+- [Five-band inputs, physics and reference evidence](five-band.md).
+- [Instrument model, products and numerical limits](instrument-responses.md).
 
-Uniform, mosaic, LVF, slit and cavity sections show `simulate_frames`, `frame_response`, `group_native_bands`, `calibrate_frames` and `reconstruct_radiance_cube`. Estimated models and grids are separately constructed; their values equal truth in this supplied-calibration case. Registered products retain achieved photon-weighted responses. Figures compare noisy products, separately labelled noiseless diagnostics and point spectra integrated under each achieved band. The differences retain spatial smoothing and heterogeneous spectral/spatial mixing. Coverage is accumulated normalized spatial weight; unsupported cells remain invalid NaN.
+## Prerequisites
 
-The two-beam section retains 32 fixed focal-plane OPDs from 0 to 1.8 mm, two physical ports and eight equal-wavelength inverse bins. Port order is plus then minus, with selected native C-order inside each schedule. `calibrate_frame_electrons` corrects each port before `spatial_spectral_response`, `stack_frame_electrons` and `solve_linear`. The dense model uses 4 by 4 spatial cells, including guard cells enclosing complete footprints, and eight spectral bins. Matrix and solve budgets are 256 MiB and 64 MiB. The notebook reports actual rank, signed resolution, covariance and identifiability. The residual against cell/bin means combines piecewise-constant representation error and numerical integration error. The noiseless fit residual also depends on the current discretized operator. The retained 801-node operator has rank 96 of 128 and zero individually identifiable state coordinates. Noise and model error are strongly amplified in the minimum-norm image. Selected joint-matrix rows change by up to 14.10 percent in relative L1 norm for angular/time refinement from 24/3 to 32/5. Spectral refinement from 801 to 1601 nodes gives up to 0.339 percent change. Inverse quadrature remains unresolved; rank, identifiability, signed resolution and residuals describe the current discretization. This educational inverse does not establish a resolved 50 m eight-bin radiance cube. Estimator noise covariance leaves unresolved physical directions unconstrained.
+Run all commands below from the Orsia repository root. The [development environment](../README.md#development-environment) supplies Devbox, Just and the pinned CPython 3.14 free-threaded workspace. The dispersion and spatial-scene notebooks need NumPy, SciPy, Matplotlib and Jupyter. The five-band and instrument notebooks also need atmospheric reader dependencies and the local inputs described below. SASKTRAN2 reference workers use the same workspace interpreter in separate processes.
 
-The cavity retains eight static gaps 65.825 through 66.175 micrometres, index 1, reflectivity 0.85 and ideal order blocking. The slit retains 50 m along-track width, sixteen simultaneous spectral columns and 32 micrometres/nm dispersion. Its bounded entrance integration model shortens the nominal 5 km slit to 300 m cross-track while retaining the central two detector rows. The 40 micrometre guard to the selected active edges is ten Gaussian sigmas. Zero smile/keystone and along-track-only motion preserve that guard at every wavelength and time. A longer-slit comparison and Gaussian tail bound quantify this approximation; no full-length-slit reconstruction is claimed.
-
-The default size follows a measured fixed-OPD cost of about 1.16 seconds/read at 801 spectral samples, pixel order 12 and angular order 16. Angular order 10 showed about 4 percent sensitivity and was rejected. The notebook uses pixel order 6, angular order 24, time order 3 and slit order 48, with representative finer comparisons and the inherited 0.3 percent local integration criterion. These checks include fixed-strip one-sided boundaries, scalar-law comparisons, a longer slit and nested instrument spectral nodes. The first complete 801-node refactored execution took 559 seconds, including local refinement checks. The largest tested total-radiance angular/time sensitivity was 1.10e-5 relative; fixed-strip versus scalar-law response differences were below 2.33e-9. The longer-slit sensitivity was 2.46e-6, with a 1.52e-23 two-tail Gaussian mass bound for the omitted cross-track support. These are representative-read total-radiance measurements. The separate joint-operator diagnostic retains its unresolved sensitivity without an acceptance assertion. Exact current costs and both diagnostic sets are in the execution receipt. The common patch has 4 uniform, 32 mosaic, 64 LVF, 64 slit, 256 two-port and 32 cavity reads. Nominal full-frame acquisition counts are reported separately as schedule arithmetic. Executing all nominal frames would require source coverage beyond the displayed scene halo for their additional exterior reads.
-
-Run `devbox run -- just --justfile notebooks/justfile execute-instrument-responses` from the Orsia root with the retained enriched inputs and spectroscopy collection provisioned. The recipe preserves the environment with `uv run --no-sync`, starts a fresh kernel, saves the canonical notebook in place and exports current PNGs under `outputs/instrument-responses/figures/chains/`. `spectral-scene.npz` retains the atmospheric/instrument grids and radiance. `chains.npz` stores selected electrons, noisy DN, native identities/timing, estimated coordinates, achieved responses, products, coverage, references and inverse arrays. `evidence.json` records current cell/source/input hashes, refinement results, budgets, timings and observed GIL/thread settings. `notebook-source.txt` contains all cell IDs, types and sources without image payloads. Earlier separable-reference archives remain historical artifacts.
-
-Run `devbox run -- just --justfile notebooks/justfile replay-instrument-response` after full execution. Replay verifies instrument cell hashes, reuses the retained spectral scene, executes the current literal instrument cells and compares seeded arrays with `chains.npz`. It writes separate arrays, evidence and `comparison.json` under `outputs/instrument-response-replay/`. Replay excludes atmospheric recomputation and leaves canonical displays unchanged. Missing inputs, changed source hashes, failed numerical checks or mismatched arrays stop the workflow explicitly.
-
-Run `MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile extra=atmosphere pytest tests/test_instrument_response_notebook.py tests/test_instrument_notebook_chains.py tests/test_notebook_companions.py` for bounded synthetic execution of all six chains, noisy-DN and gain/covariance correspondence, selected-read ordering, estimated-geometry registration, fixed-strip boundaries, invalid coverage and figure rendering. The synthetic pytest chains use 33 spectral points and reduced integration orders to bound coverage-tracing cost; they test composition and identities. Fresh notebook execution and its finer comparisons validate the declared 801-node default separately. The independent separable ground-pixel reference tests remain separate numerical evidence. [Presentation support](support/notebook_frame_display.py) only displays and extracts sources; [independent integration checks](support/instrument_notebook_checks.py) use public forward APIs and never reconstruct principal products. The principal notebook no longer uses `notebook_ground_pixel.reconstruction`.
-
-These demonstrations establish local software composition and bounded numerical behavior. Output sampling, physical resolution, inverse identifiability and geophysical retrieval accuracy remain distinct. Curved-Earth/attitude variation, absolute geolocation, measured optical response, atmospheric convergence, calibration estimation, retrieval performance, hardware feasibility and concurrent native-library safety require separate evidence. Limit numerical-library threads to one and build jobs to two when executing the recipes.
-
-## Five-band transport comparison
-
-The canonical notebook, [era5_hitran_sasktran2_five_bands.ipynb](era5_hitran_sasktran2_five_bands.ipynb), contains editable cells and saved results comparing Orsia with SASKTRAN2. Current reference workers run in separate processes using the notebook kernel's workspace interpreter; saved results retain their original execution provenance until rerun. Shared optical properties combine ERA5 meteorology, baseline HITRAN gases, MIPAS trace-gas profiles, UV O3/SO2/NO2 cross sections and LWIR O3/NH3 lines. The [enrichment methodology](#trace-gas-enrichment-methodology) below specifies sources, concentration conversion and temperature support.
-
-The notebook prepares the atmospheric column once, then presents complete UV, VNIR, SWIR, MWIR and LWIR sections. Each section uses named variables for its grid, species contributions, optical properties, surface, illumination and complete solar or thermal call. The SASKTRAN2 reference access and comparison figure follow that case's calculation. The [scenario helper](support/five_band_scenario.py) loads [five-band.json](data/five-band.json) into `FiveBandScenario`, a notebook-local Pydantic V2 model with named input paths, UTC datetime, band windows, physical assumptions and solver settings. Scenario manifest/cache paths resolve relative to the scenario file; atmospheric/spectral paths resolve relative to the acquisition manifest. The loader verifies the existing checksums and retains the original input provenance plus the scenario hash. Missing files, invalid fields or checksum mismatches stop execution with an error; the acquisition manifest remains unchanged. The reference worker fixes incoming-to-view relative azimuth at 0°; `scenario.physics.relative_azimuth_deg` accepts only `0.0` to keep both solvers' geometry consistent.
-
-The notebook calls `read_spectroscopy_collection(scenario.spectroscopy_collection)` once, then selects named isotope line references and native laboratory measurements in each band section. `evaluate_line_absorption` keeps profile, pressure support, wing cutoff and pedestal subtraction explicit. `measurement_absorption` keeps native-wavelength interpolation, laboratory-temperature interpolation, endpoint holds and the independent-pressure approximation explicit. The [five-band companion](support/notebook_five_band_support.py) verifies local inputs, adapts evaluated arrays for SASKTRAN2, measures complete calls and renders profiles, spectra, residuals and tables. `scenario.reference` supplies the existing [reference-cache helper](support/notebook_sasktran2_cache.py) with discretization and cache settings. That helper retains ownership of reference identity, invalidation and atomic persistence. The execution recipes regenerate each canonical notebook's displays, execution counts and timestamps from its current sources.
-
-Install Devbox and configure Nix. From the cloned repository root, copy `.env.example` to `.env` and supply your own `CDSAPI_URL` and `CDSAPI_KEY` before acquisition. Run:
+Keep numerical libraries single-threaded and builds bounded. Set these variables in the shell used for preparation, execution and tests:
 
 ```sh
-MAKEFLAGS=-j2 CARGO_BUILD_JOBS=2 CMAKE_BUILD_PARALLEL_LEVEL=2 UV_CONCURRENT_BUILDS=2 devbox run -- just setup
-MPLBACKEND=Agg devbox run -- just --justfile tests/justfile extra=atmosphere pytest tests/test_notebook_sasktran2_cache.py tests/test_five_band_notebook.py tests/test_notebook_companions.py
-devbox run -- just --justfile notebooks/justfile prepare-five-band
-devbox run -- just --justfile notebooks/justfile prepare-five-band-enriched --download
-devbox run -- just --justfile notebooks/justfile prepare-spectroscopy
-devbox run -- just --justfile notebooks/justfile execute-five-band
+export MPLBACKEND=Agg
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+export MAKEFLAGS=-j2 CARGO_BUILD_JOBS=2 CMAKE_BUILD_PARALLEL_LEVEL=2 UV_CONCURRENT_BUILDS=2
 ```
 
-All six notebook recipes live in `notebooks/justfile` and explicitly execute from the Orsia root. Devbox starts commands at the repository root, so use `devbox run -- just --justfile notebooks/justfile <recipe>` from either directory. Inside an existing Devbox shell, `cd notebooks` followed by `just <recipe>` selects the local interface; input and output paths remain root-relative. Preparation and replay run modules in [`notebooks/support/`](support/README.md). Execution registers the local kernel, updates the canonical notebook in place and, for instrument responses, exports figures.
+For a new environment, run `devbox run -- just setup`. For the five-band and instrument notebooks, prepare atmospheric inputs as described below. An already provisioned notebook environment can use `export UV_NO_SYNC=1` to preserve its installed optional dependencies during checks and preparation. All execution recipes use `uv run --no-sync`.
 
-Focused tests live in `tests/justfile`. Its `extra=atmosphere` override selects the notebook reader dependencies. For retained-input enrichment checks, run `MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile extra=atmosphere pytest tests/test_five_band_enrichment.py tests/test_five_band_notebook.py`. `UV_NO_SYNC=1` preserves the provisioned environment for enrichment and instrument-response tests. For notebook support and test formatting or lint, use root `fmt`, `fmt-check` or `lint` with explicit paths; prefix these commands with `UV_NO_SYNC=1` when preserving that environment. The full root `check` includes these source and test scopes.
+### Use retained atmospheric inputs
 
-Preparation reads CDS credentials from the ignored repository-root `.env`, resolved from the preparation module's location. It acquires a small ERA5 pressure-level selection at 0° latitude/longitude on 2024-01-15 at 12:00 UTC, HITRAN current lines through HAPI and LISIRD TSIS1 HSRS p025nm. Partition sums are evaluated from HAPI's bundled TIPS tables. Inputs, the manifest and project-local kernelspec remain under ignored `outputs/`; the canonical notebook retains the executed results under `notebooks/`. The separate `prepare-five-band-enriched --download` command acquires public trace-gas inputs into `outputs/five-band-enriched-inputs/`; the default mode verifies the completed receipt offline. Existing baseline acquisitions remain available. Provider editions labelled current are mutable; each notebook execution verifies the local input checksums against the enriched manifest.
+The five-band and instrument notebooks require the enriched acquisition manifest, offline spectroscopy collection and separately receipted MT_CKD 4.3 water coefficients. Their default locations are `outputs/five-band-enriched-inputs/manifest.json`, `outputs/spectroscopy/five-band/` and `outputs/spectroscopy/mt-ckd-4.3/manifest.json`. The manifest also references baseline files under `outputs/five-band-inputs/`. These ignored files are local prerequisites and are absent from a clean checkout.
 
-ERA5 preprocessing converts pressure from hPa to Pa, normalizes the humidity units spelling and serializes these modern UTC dates using the Gregorian calendar supported by the reader. The bottom pressure is prescribed at 1000 hPa rather than measured surface pressure. CO2 and CH4 concentrations, surface properties and viewing/illumination geometry are illustrative assumptions, not ERA5 observations.
+With those acquisition files provisioned, verify the enriched receipt and import the spectroscopy collection and retained native water coefficients offline on first use:
 
-`prepare-spectroscopy` imports the verified retained spectroscopy into the new `outputs/spectroscopy/five-band/` directory without downloads. It copies the original spectroscopy receipt, line/partition files and native laboratory files, then records hashes and normalized isotope references with exact disjoint support. Existing destinations are verified and preserved. Original acquisition timestamps remain distinct from import time. Legacy Q(T) implementation provenance remains unknown; O3's precise edition remains unknown, while Bogumil headers identify version 1.0. The numerical notebook only reads this collection. For new acquisitions, Data's grouped `acquire_hitran_references` accepts every requested gas/isotopologue and disjoint interval in one call; the historical download helpers remain available.
+```sh
+UV_NO_SYNC=1 devbox run -- just --justfile notebooks/justfile prepare-five-band-enriched
+UV_NO_SYNC=1 devbox run -- just --justfile notebooks/justfile prepare-spectroscopy --water-continuum /path/to/retained-MT_CKD-4.3.nc
+```
 
-The demonstration retains H2O in every window, CO2 in SWIR/MWIR/LWIR, CH4 in SWIR/LWIR and O2 in VNIR, and adds O3/SO2/NO2 in UV and O3/NH3 in LWIR. HITRAN acquisition includes 26 cm-1 margins for 25 cm-1 line wings and pressure shifts, with principal isotopologues retained. The measured UV spectra represent natural-abundance molecules. Each added gas uses the MIPAS equatorial daytime profile projected onto ERA5 layers with explicit wet/dry conversion. Thermal cases are dark absorption-only controls. Polarization, continuum, line mixing and instrument response require their own extensions and validation.
+Later calls omit `--water-continuum` to verify the existing references offline. The water import copies native bytes and records their SHA-256 and import time; acquisition date and source authentication remain caller-owned. Notebook cells verify both the separate receipt and native-file hash, then call `read_mt_ckd_water` with the actual layer-temperature envelope. Missing files and checksum mismatches stop these operations. Keep each receipt with its referenced files; execution verifies hashes again.
 
-The execution command uses the pinned free-threaded workspace interpreter and a project-local `orsia-314t` kernelspec. SASKTRAN2 2026.10.0 is a default `dev` dependency, synchronized into `.venv` by `just setup`. Reference workers use `Path(sys.executable)` from the notebook, with the same CPython 3.14.3 free-threaded build and installed packages. Separate processes contain reference imports without changing Python environments. Reference workers record GIL state after native imports without a forced-off override. Source builds use the upstream-pinned Rust nightly toolchain provisioned locally by setup. Each band compares the selected Orsia controls with SASKTRAN2 at 32 interior altitude nodes per physical layer and 32 streams. Thermal transport is absorption-only: the adapter independently integrates downward atmospheric LTE emission using 128-point Gauss-Legendre hemispheric quadrature, multiplies it by the Lambertian surface reflectivity, adds this boundary radiance to SASKTRAN2 surface emission, and lets SASKTRAN2 propagate it to the observer. An isothermal analytic exponential-integral test covers both black and reflecting surfaces. Agreement metrics describe this shared-input scene and sampling; physical accuracy and equal-accuracy performance require dedicated evidence.
+### Acquire missing atmospheric inputs explicitly
 
-`devbox run -- just --justfile notebooks/justfile execute-five-band` registers the project-local kernel and invokes standard `jupyter execute --inplace --timeout=3600 --kernel_name=orsia-314t notebooks/era5_hitran_sasktran2_five_bands.ipynb` through the existing workspace environment. The recipe selects the headless plotting backend, the notebook activates inline figures during kernel execution, and `uv run --no-sync` preserves the provisioned environment. Successful execution updates the canonical notebook with the atmospheric profile plot, five spectral/residual figures, a readable maximum absolute/relative difference table, and per-band timing tables and panels. A cell failure stops execution with an error status and leaves the previously saved notebook intact; the terminal traceback identifies the failing cell.
+Acquisition contacts external providers and writes local data under `outputs/`. Run it only when you intend to download data and have the required provider access. Copy [`.env.example`](../.env.example) to the ignored repository-root `.env` and supply your own `CDSAPI_URL` and `CDSAPI_KEY`. The [baseline helper](support/prepare_five_band.py) reads these two settings from that file with interpolation disabled; existing environment values take precedence. If settings are absent, the CDS client applies its own configuration defaults.
 
-The notebook exposes explicit spectral-point controls. Sampling and instrument-integrated sensitivity require dedicated evidence beyond successful execution. Standalone species-removal and nested-sampling diagnostics are retired. Pytest covers native-import GIL effects and deferred optional backends. Runtime records retain CPU-affinity availability and one-thread numerical settings for timing interpretation; disabled GIL observations leave concurrent native-library safety and scientific accuracy unqualified.
+```sh
+devbox run -- just --justfile notebooks/justfile prepare-five-band
+devbox run -- just --justfile notebooks/justfile prepare-five-band-enriched --download
+devbox run -- just --justfile notebooks/justfile prepare-spectroscopy --water-continuum /path/to/retained-MT_CKD-4.3.nc
+```
+
+Obtain missing water coefficients separately through the existing explicit [`download_mt_ckd_water(edition="4.3", destination=...)` interface](../libs/orsia-data/docs/readers-and-acquisition.md#scientific-acquisition), then pass the retained native file to offline preparation. Notebook execution never downloads coefficients.
+
+The baseline recipe requests the `hitran` and `atmosphere` extras. If `UV_NO_SYNC=1` is set, those dependencies must already be installed. Preparation acquires ERA5 meteorology, HITRAN lines, solar irradiance and the added trace-gas references. Provider editions labelled `current` can change; local receipts identify the retained bytes. See [input provenance](five-band.md#input-preparation-and-provenance) before changing the data or interpretation.
+
+## Run a notebook
+
+Choose one execution recipe:
+
+```sh
+devbox run -- just --justfile notebooks/justfile execute-dispersion
+devbox run -- just --justfile notebooks/justfile execute-spatial-scene
+devbox run -- just --justfile notebooks/justfile execute-five-band
+devbox run -- just --justfile notebooks/justfile execute-instrument-responses
+```
+
+Each recipe registers a project-local kernel, starts a fresh kernel, and executes its canonical notebook in place. Dispersion uses `orsia-dispersion-314t` under `outputs/dispersion-notebook/jupyter/` with a 120-second cell timeout. The atmospheric notebooks use `orsia-314t` under `outputs/jupyter/` with a 3600-second cell timeout. The recipes use a headless backend; the notebooks produce inline figures. Successful execution replaces the notebook's saved outputs, counts and timestamps. Preserve a copy first if you need the previous execution record. A cell failure returns an error and leaves the previously saved notebook intact; inspect the terminal traceback before retrying. Instrument figure export runs after notebook execution, so an export failure can leave an updated notebook with incomplete exported figures.
+
+### Gaussian puff dispersion
+
+[From one puff to a plume](gaussian_puff_dispersion.ipynb) defines every input in its cells and runs without atmospheric files or provider access. It saves three figures and checks constant-forcing transport, Gaussian peak concentration, release accounting and a finite-domain mass integral. The recipe caps native numerical threads at one and writes its kernel under `outputs/dispersion-notebook/`; it preserves the existing environment with `--no-sync`.
+
+Run its focused regression checks independently of the atmospheric notebooks:
+
+```sh
+MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile pytest tests/test_dispersion_notebook.py
+```
+
+### Spatial scene
+
+[From a frozen plume to native camera reads](spatial_scene.ipynb) explains [spatial_scene.py](support/spatial_scene.py) through seven figures and small executable examples. It uses synthetic inputs without downloads. The [spatial-scene guide](../docs/spatial-scenes.md) retains the physical contracts and continuous coverage argument. Saved figures distinguish chart samples from native detector arrays; the finite-difference check covers two fixed-geometry parameter directions.
+
+[`SyntheticRadianceModel`](support/spatial_scene.py) owns shared radiative composition and background preparation for its bound `radiance` and `radiance_tangent` methods. The separate curved-terrain illustration uses [`SplineTerrain`](support/terrain.py), which owns the terrain grid, cubic interpolant and closed domain. Its `height` and `gradient` methods query that interpolant. The camera example retains affine terrain and its continuous coverage proof.
+
+The recipe registers `orsia-spatial-scene-314t` under `outputs/spatial-scene-notebook/jupyter/`, uses a 120-second cell timeout, caps native numerical threads at one and preserves the installed environment with `--no-sync`. It executes the canonical notebook in place with saved inline figures. Run its isolated headless regression check with:
+
+```sh
+MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile pytest tests/test_spatial_scene_notebook.py
+```
+
+The test executes the actual cells, checks their assertions and PNG displays, and verifies retained execution counts. Numerical agreement checks the synthetic discrete calculation; physical qualification and quadrature convergence require separate evidence.
+
+### Five-band transport comparison
+
+Edit [five-band.json](data/five-band.json) for spectral sampling, physics, solver controls and cache policy. The scenario loader validates fields and input hashes. UV/VNIR/SWIR include gas absorption, Rayleigh scattering and a prescribed aerosol column; MWIR/LWIR are dark absorption-only controls. VNIR/SWIR/MWIR/LWIR pair pedestal-subtracted local H2O lines with one matching-grid MT_CKD self/foreign contribution. The retained water table ends at 20000 cm-1; UV is outside its complete-stencil support and retains plain truncated H2O lines without continuum. The current aerosol/continuum configuration still needs dedicated convergence and physical-model validation.
+
+Successful execution saves the atmospheric profile plot, five spectrum/residual figures, difference summaries and timing tables in the notebook. Reference records live under `outputs/sasktran2-reference-cache/`. Cache reuse retains original reference timings and computation dates; choose `refresh` or `off` when fresh timing comparisons are required. [Reference caching and timing scope](five-band.md#persistent-sasktran2-references) explain cache identity and invalidation.
+
+### Instrument responses
+
+The instrument notebook uses an aerosol-free gas/Rayleigh atmosphere with pedestal-subtracted H2O local lines and one matching-grid MT_CKD self/foreign water continuum, the [local passage scenario](data/gesat-toulouse-2025.json) and six explicit instrument chains. The displayed 5 km by 5 km scene supplies context; the default execution reconstructs a bounded target region and illuminated neighboring cells. The [instrument guide](instrument-responses.md) explains read selection, achieved responses, supplied calibration and inverse limitations.
+
+The execution recipe writes these products under `outputs/instrument-responses/`:
+
+| Product | Contents |
+| --- | --- |
+| `figures/chains/` | PNG figures extracted from the executed notebook. |
+| `spectral-scene.npz` | Atmospheric and instrument grids and retained spectral radiance. |
+| `chains.npz` | Selected electrons/DN, native identities and timing, estimated coordinates, responses, products, coverage, references and inverse arrays. |
+| `evidence.json` | Source/input hashes, refinement results, budgets, timings and observed GIL/thread settings. |
+| `notebook-source.txt` | Cell IDs, types and sources without image payloads. |
+
+After a successful full execution, replay the instrument cells against the retained spectral scene:
+
+```sh
+devbox run -- just --justfile notebooks/justfile replay-instrument-response
+```
+
+Replay verifies instrument source hashes and compares seeded arrays against `chains.npz`. It writes separate arrays, evidence and `comparison.json` under `outputs/instrument-response-replay/`, leaves canonical displays unchanged, and excludes atmospheric recomputation. Missing inputs, changed source hashes, failed numerical checks or mismatched arrays stop replay.
+
+## Checks and interpretation
+
+Run focused tests in the provisioned environment, keeping reader-dependent tests in their separate process:
+
+```sh
+MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile extra=atmosphere pytest tests/test_notebook_sasktran2_cache.py tests/test_five_band_notebook.py tests/test_notebook_companions.py
+MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile extra=atmosphere pytest tests/test_instrument_response_notebook.py tests/test_instrument_notebook_chains.py
+```
+
+These tests cover input integrity, array propagation, cache behavior and bounded synthetic numerical composition. The instrument chain tests use 33 spectral samples and reduced integration orders, and mock figure creation. PNG extraction tests inspect stored bytes; these checks do not render or visually validate notebook figures. Full notebook execution and inspection provide separate evidence for the default grids and displays.
+
+Software composition, numerical convergence, instrument-space agreement and geophysical retrieval accuracy have different validation scopes. These notebooks do not establish mission performance, hardware feasibility or concurrent native-library safety. Use the detailed guides for unresolved sensitivities and historical evidence; use each execution receipt for its actual inputs, settings and timings.
 
 ### Trace-gas enrichment methodology
 
-`support/five_band_gases.py` prepares reference profiles and retains adapters for earlier notebook helpers. Reusable laboratory decoding and interpolation belong to Data and Radiative, respectively. The vacuum wavelength windows and included molecular absorption are:
+The [enrichment methodology](five-band.md#trace-gas-enrichment-methodology) retains species selection, concentration conversion, laboratory temperature/pressure assumptions and source provenance. This link also serves the notebook's existing methodology reference.
 
-| Window | Vacuum wavelength | Molecular absorption |
-| --- | --- | --- |
-| UV | 320-325 nm | H2O lines; O3, SO2 and NO2 measured cross sections |
-| VNIR | 758-765 nm | H2O and O2 lines |
-| SWIR | 1645-1655 nm | H2O, CO2 and CH4 lines |
-| MWIR | 4250-4300 nm | H2O and CO2 lines |
-| LWIR | 9950-10050 nm | H2O, CO2, CH4, O3 and exploratory NH3 lines |
+## Read next
 
-The eleven bottom-to-top layers use pressure boundaries from 1000 to 1 hPa. Temperature and specific humidity are pressure-layer means from the retained equatorial-ocean ERA5 column on 2024-01-15 at 12:00 UTC. Bottom height is the prescribed 0 m pressure surface. Public hydrostatic materialisation supplies geometry and total/dry/water columns. The enrichment preserves the baseline geometry, surface, H2O profile, O2/CO2/CH4 assumptions and scalar Rayleigh law.
-
-The [MIPAS 2001 equatorial daytime reference](../libs/orsia-data/docs/atmosphere.md#mipas-2001-reference-atmospheres) supplies O3, SO2, NO2 and NH3 for the solar scene's latitude and daytime NO2 convention. Thermal cases apply dark illumination to the same frozen daytime composition. MIPAS supplies a historical reference mixture, while ERA5 supplies meteorology. The selected trace gases are an explicit subset of the native mixture, alongside the baseline O2/CO2/CH4 assumptions.
-
-At each native MIPAS pressure, convert total-air molar fractions to dry-air basis with `x_dry=x_total/(1-x_H2O_MIPAS)`. Integrate that piecewise-linear-in-pressure profile over each ERA5 pressure interval with `pressure_level_layer_means`. Convert dry-fraction layer means to molecular columns with `gas_columns_from_fraction(..., convention='dry_air_mole')` using ERA5 dry-air columns. Replacing MIPAS humidity with ERA5 humidity preserves the reference dry mixing ratio. Report reconstructed total-air fractions as `x_dry_mean*N_dry_ERA5/N_total_ERA5`. Full pressure coverage and every requested species are required; failed support or missing molecules stop execution. Retained ERA5 water fractions are positive and native MIPAS water fractions remain below unity.
-
-O3 UV uses the [Serdyuchenko-Gorshelev version 1.0 dataset](https://doi.org/10.5281/zenodo.5793207), linked from [Bremen UVSAT](https://www.iup.uni-bremen.de/UVSAT/data/xsection/). Native units are vacuum nm and cm2/molecule, at eleven temperatures from 193 to 293 K. Its header specifies 0.01 nm sampling and 1 cm-1 HWHM resolution at 290-350 nm. Acquisition verifies the provider's MD5 and records local SHA-256. References are Gorshelev et al., AMT 7, 609-624 (2014), [DOI 10.5194/amt-7-609-2014](https://doi.org/10.5194/amt-7-609-2014), and Serdyuchenko et al., AMT 7, 625-636 (2014), [DOI 10.5194/amt-7-625-2014](https://doi.org/10.5194/amt-7-625-2014).
-
-SO2 and NO2 use [Bremen SCIAMACHY PFM reference data](https://www.iup.uni-bremen.de/gruppen/molspec/databases/sciamachydata/index.html), version 1.0, at 203, 223, 243, 273 and 293 K. Native `SO2_*K.dat` and `NO2_*K.dat` headers declare vacuum nm, cm2/molecule and 0.21 nm FWHM in the UV window. SO2 uses an N2 mixture at 100 mbar; NO2 uses 150 mbar at 203 K and 100 mbar at the other temperatures. SO2 and NO2 scales reference Vandaele et al. (1994), [DOI 10.1029/94JD02187](https://doi.org/10.1029/94JD02187), and Vandaele et al. (1998), [DOI 10.1016/S0022-4073(97)00168-4](https://doi.org/10.1016/S0022-4073(97)00168-4). Bogumil et al. (2003), [DOI 10.1016/S1010-6030(03)00062-5](https://doi.org/10.1016/S1010-6030(03)00062-5), describes the dataset. The five selected temperatures provide declared vacuum coordinates and cold-temperature support for this demonstration.
-
-UV preparation retains native samples over 319-326 nm plus bracketing points, checks increasing wavelength and finite values, and requires finite nonnegative cross sections. Amplitudes are multiplied by 1e-4 to obtain m2/molecule. Linear interpolation first uses native wavelength at `lambda_nm=1e7/nu_cm1`, then temperature. Point cross-section amplitudes remain unchanged through coordinate conversion. Measured natural-abundance UV fields use isotopologue label `all`.
-
-The explicit `temperature_outside="hold_nearest"` policy holds the nearest laboratory spectrum outside its measured range. The original receipt's `clip` spelling is retained as historical input metadata. On the retained ERA5 column, O3 holds 293 K at layer 0 (actual 294.290527 K). SO2 and NO2 hold 293 K at layer 0 and 203 K at layer 6 (actual 199.054611 K). Other layers interpolate. Indices are zero-based and bottom to top. This bounded approximation requires temperature-supported data or a separately validated extrapolation model for refinement. `pressure_model="independent"` explicitly approximates pressure dependence while retaining known Bogumil pressures and unknown O3 pressure in the references. Numerical-grid refinement preserves the SO2/NO2 0.21 nm measurement resolution.
-
-LWIR O3 (HITRAN molecule 3) and NH3 (molecule 11) use public HAPI acquisition, local isotopologue 1, HAPI molecular masses and bundled partition sums at 70-400 K. Acquisition adds 26 cm-1 to the window; evaluation uses the existing 25 cm-1 wing cutoff. Mode `current` follows the [HITRAN adapter contract](../libs/orsia-data/docs/readers-and-acquisition.md#scientific-acquisition). The receipt and retained native header identify replay bytes. NH3 remains exploratory in this window and climatological profile.
-
-Each band section constructs its own named values through public Orsia calls, such as `uv_grid`, `uv_absorption`, `uv_optics`, `uv_scene` and `uv_source`. Species selection and contribution order are explicit beside each composition call. The notebook collects `uv_result`, `vnir_result`, `swir_result`, `mwir_result` and `lwir_result` into `results` after all five comparisons for the agreement and timing summaries. Orsia and the SASKTRAN2 adapter share the composed total absorption. Solar cases share approximate scalar Rayleigh depth; thermal cases use zero scattering. UV measured O3/SO2/NO2 and H2O line absorption coexist as distinct species; UV and IR O3 implementations occupy separate windows. A physical abundance perturbation requires reevaluating affected self/foreign broadening and thermodynamics as applicable. The retired optical-removal diagnostic and historical sampling developments are outside the maintained notebook workflow.
-
-## Solver timing scope
-
-### Per-band solar controls
-
-The selected baselines in `scenario.bands[name].solar` use UV `max_order=16`, `angular_order=4`, `layer_subdivisions=2`; VNIR `max_order=2`, `angular_order=2`, `layer_subdivisions=1`; and SWIR `max_order=1`, `angular_order=2`, `layer_subdivisions=1`. Delta-M remains disabled through the solver's `delta_m_moments=None` default. The October 17, 2026 order/angular sweep on the preceding gas mixture measured maximum pointwise differences of 0.03722253%, 0.07341527% and 0.004735780%, respectively, relative to the joint fine Orsia reference (order 48 / angular order 48 / 128 subdivisions). The earlier fixed-order/angular sweep selected subdivisions 2/1/1 against 32 subdivisions with the same provisional 0.1% pointwise criterion. This historical rationale does not qualify the current enriched scene; neither criterion is an instrument or mission requirement. The standalone sweep tooling and detailed validation notes are retired.
-
-The notebook settings table identifies the selected controls. The scenario JSON supplies the comparison settings; each solar call reads the named `max_order`, `angular_order` and `layer_subdivisions` fields.
-
-For UV/VNIR/SWIR, the notebook compares the complete `solar.reflected_radiance(...).values` call with SASKTRAN2 `calculate_radiance` on a reused engine and prepared atmosphere. The first call and every `scenario.timing_runs` repetition include Orsia's physical validation, angular geometry, scratch allocation, transport and independently owned returned `Radiance` values. Baseline settings follow the per-band selection above. MWIR/LWIR retain their complete `thermal.thermal_radiance(..., hemispheric_method='expn').values` timing, with the reflected-boundary adapter performed separately on the SASKTRAN2 side.
-
-Timing records retain the first call separately; tables report median seconds and panels show min-max ranges of the repetitions. Plot labels identify complete solar calls versus thermal Schwarzschild transport. Shared input materialization, SASKTRAN2 engine construction and plotting occur outside the timed calls. The readable table separates current Orsia medians, SASKTRAN2 medians with historical/fresh labels, and current reference access times. Original SASKTRAN2 computation dates accompany the table.
-
-The canonical notebook keeps code-cell outputs, execution counts and execution timestamps alongside their sources. Earlier executed notebooks and optional archives retain their original timings and scope as historical records. A fresh execution with `devbox run -- just --justfile notebooks/justfile execute-five-band` updates the canonical notebook with complete-call measurements and explicit `scope` fields. Matching SASKTRAN2 references remain reusable when shared arrays and backend identity are unchanged; the enriched UV/LWIR arrays create distinct cache entries.
-
-## Persistent SASKTRAN2 references
-
-The notebook defaults to `scenario.reference.cache_mode = 'reuse'` and stores complete reference records under `outputs/sasktran2-reference-cache/`. Each band is saved immediately after a successful solve and LOS optical-depth check. Subsequent runs reuse radiance, LOS depth, thermal reflected-boundary vectors, runtime metadata and original timings.
-
-Set `scenario.reference.cache_mode = 'refresh'` to recompute and atomically replace matching entries, or `'off'` to run fresh computations with cache reads and writes disabled. `scenario.reference.cache_directory` selects the directory; removing that directory reclaims its disk space. These settings govern the process-isolated reference only; Orsia calculations and input materialization run normally.
-
-Schema 1 uses a SHA-256 filename and a JSON envelope containing the complete key signature, record and record checksum. The signature covers every supplied array/scalar (name, dtype, shape and bytes), cells, streams, `scenario.timing_runs`, worker and cache-helper source hashes, worker Python executable/version/platform, thread environment and installed distribution versions/content hashes. Each access launches an identity-only probe after native imports; installed package files and bundled native libraries are hashed afresh, with generated bytecode excluded. A cache hit skips the expensive solve worker. The shared environment fingerprint includes installed Orsia distributions, so rebuilding or reinstalling them can also invalidate references. JSON parsing, checksums, required fields, finite vector shapes, timing consistency, backend identity and the shared LOS-depth invariant validate entries; invalid entries trigger recomputation. Atomic replacement makes complete entries visible together; simultaneous requests for one missing key may each compute it.
-
-`computed_at_utc` dates the original computation. `timing` and `worker_wall_seconds` retain that computation's measurements; `cache.timing_provenance` identifies `historical` hits and `fresh` solves. The notebook reports current total access wall time separately, and timing plots label historical SASKTRAN2 bars explicitly. The underlying cache record retains identity-probe and load times for standalone investigations. Use `refresh` or `off` when comparing freshly measured solver timings. Identity verification adds local startup and file-hashing overhead to each access. Cache fingerprints cover installed files in the shared workspace environment; external system-library changes and concurrent environment mutation require an explicit refresh in a stable environment.
+- [Dispersion library](../libs/orsia-dispersion/README.md): passive transport and mass-field evaluation.
+- [Scene library](../libs/orsia-scene/README.md): spatial radiance, sensitivities and observation callbacks.
+- [Radiative library](../libs/orsia-radiative/README.md): physical conventions, spectroscopy and transfer APIs.
+- [Instruments library](../libs/orsia-instruments/README.md): detector, optical response, acquisition and reconstruction contracts.
+- [Inverse library](../libs/orsia-inverse/README.md): rank-aware estimation and diagnostic interpretation.
+- [Data library](../libs/orsia-data/README.md): readers, acquisition and spectroscopy collections.
+- [Notebook support](support/README.md): preparation, display, replay and reference-worker responsibilities.
+- [Notebook recipes](justfile) and [test recipes](../tests/justfile): maintained command definitions.
 
 ## Saved execution scope
 
-The tracked notebooks retain saved figures, execution counts and timing metadata from earlier local runs. Current-source results require an explicit fresh execution with locally acquired inputs. The publication copy shortens one saved instrument archive path to a repository-relative path; scientific arrays, figures and code cells remain unchanged. Run `MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile extra=atmosphere pytest tests/test_notebook_portability.py` for offline credential-path, missing-baseline and saved-metadata checks.
+All four notebooks retain outputs and execution counts from their saved runs. Fresh local results require explicit execution with the documented inputs. The delivery shortens one saved instrument archive path to a repository-relative path. Code cells, arrays, image payloads, counts and execution metadata retain the selected source values. Run `MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile pytest tests/test_notebook_portability.py` for offline saved-output and missing-baseline checks. Credential configuration is covered by `tests/test_five_band_notebook.py` in the separate reader-dependent phase.
 
 ## Provenance and attribution
 

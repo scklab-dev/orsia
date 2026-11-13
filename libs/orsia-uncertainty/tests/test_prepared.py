@@ -105,6 +105,36 @@ def test_diagonal_extreme_dynamic_range_preserves_small_draws(method) -> None:
             operation(factor, np.ones(2))
 
 
+@pytest.mark.parametrize("method", ["eigh", "cholesky"])
+@pytest.mark.parametrize("singular", [False, True])
+def test_dense_diagonal_extreme_dynamic_range_preserves_root_and_basis(method, singular):
+    variances = np.array([1e200, 1e-200, 0.0] if singular else [1e200, 1e-200])
+    covariance = np.diag(variances)
+    if singular and method == "cholesky":
+        with pytest.raises(ValueError, match="positive definite"):
+            factor_covariance(covariance, method=method)
+        return
+    factor = factor_covariance(covariance, method=method)
+    assert factor.method == method
+    assert factor.scale == 1e200
+    order = np.argsort(variances) if method == "eigh" else np.arange(variances.size)
+    expected_root = np.diag(np.sqrt(variances))[:, order]
+    np.testing.assert_allclose(
+        factor.root * np.sqrt(factor.scale), expected_root, rtol=2e-15, atol=0
+    )
+    np.testing.assert_array_equal(factor.eigenvalues, np.sort(variances / factor.scale))
+    normal = np.random.default_rng(81).standard_normal((4, variances.size))
+    expected_draws = normal @ expected_root.T
+    np.testing.assert_allclose(
+        sample_gaussian(factor, np.random.default_rng(81), 4), expected_draws, rtol=2e-15, atol=0
+    )
+    np.testing.assert_array_equal(covariance, np.diag(variances))
+    assert not factor.root.flags.writeable and not factor.eigenvalues.flags.writeable
+    for operation in (whiten, solve_covariance):
+        with pytest.raises(ValueError, match="ill-conditioned"):
+            operation(factor, np.ones(variances.size))
+
+
 @pytest.mark.parametrize("operation", ["validate", "eigh", "cholesky"])
 def test_diagonal_rejects_negative_variance_before_normalization(operation) -> None:
     variances = np.array([1e200, -1e-200])

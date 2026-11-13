@@ -35,14 +35,16 @@ The [root justfile](justfile) owns lifecycle commands:
 | `typecheck [args...]` | Run Pyrefly with geospatial/HAPI import extras; default to the configured project. |
 | `test` | Run the split-process suite and aggregate/per-library coverage gates. |
 | `check` | Run formatting, lint, typing and the full test gate. |
-| `build` | Build all seven library distributions. |
+| `build` | Build all nine library distributions. |
+| `python <args...>` | Run an example or validation script in the locked workspace. |
+| `lock` | Resolve an intended dependency change with UV. |
 | `rebuild-native` | Reinstall the editable radiative extension after C++ changes. |
 
 With no paths, formatting and lint recipes select `notebooks/support`, `tests`, `libs/*/src` and `libs/*/tests`. Arguments preserve shell quoting. Run parameterized recipes separately because trailing arguments belong to that recipe. For an existing environment:
 
 ```bash
 UV_NO_SYNC=1 devbox run -- just fmt libs/orsia-inverse
-UV_NO_SYNC=1 devbox run -- just typecheck libs/orsia-inverse/src/orsia_inverse/estimation.py
+UV_NO_SYNC=1 devbox run -- just typecheck libs/orsia-inverse/src/orsia_inverse/nonlinear/map.py
 UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile pytest tests/test_core_imports.py -k 'native or pinned'
 ```
 
@@ -64,7 +66,7 @@ Devbox starts `run` commands at the repository root. Retain the explicit `--just
 
 Devbox defaults OpenMP, OpenBLAS, MKL and macOS Accelerate to one numerical-library thread. Leave capacity for other work when selecting worker counts. Bound native builds with `MAKEFLAGS=-j2`, `CARGO_BUILD_JOBS=2`, `CMAKE_BUILD_PARALLEL_LEVEL=2` and `UV_CONCURRENT_BUILDS=2`. Use `MPLBACKEND=Agg` for headless tests, including `check`, to avoid GUI backends in synthetic notebook checks.
 
-The [Numerics executor](libs/orsia-numerics/docs/execution.md#explicit-cpu-execution) requires Linux affinity and supported native thread controls. On macOS its constructor raises `NotImplementedError`; sequential scientific functions remain usable. Common executor tests simulate the unavailable controls. Real pinning/OpenMP integration tests require Linux and are skipped on macOS. Notebook runtime records use `affinity: null` when the operating system lacks an affinity API.
+The [Numerics executor](libs/orsia-numerics/docs/execution.md#explicit-cpu-execution) requires supported native thread controls: pthreads OpenBLAS or Apple Accelerate BLAS/LAPACK with the public macOS 15+ APIs, plus one optional OpenMP runtime. It uses Linux affinity when both affinity APIs are available; otherwise construction emits `RuntimeWarning` and workers run without pinning, including on macOS. Common executor tests simulate affinity and native controls where needed. Numerical integration tests also exercise unpinned execution with real NumPy/SciPy. On macOS with Accelerate loaded, a dedicated test checks worker-local BLAS/LAPACK modes and unchanged caller settings. Real pinning/OpenMP integration tests require Linux and are skipped on macOS. Notebook runtime records use `affinity: null` when the operating system lacks an affinity API.
 
 GIL checks run in fresh processes after relevant native imports. Leave `PYTHON_GIL` unset: forced-off overrides invalidate those checks. Import success and a disabled GIL leave concurrent native-library safety unqualified. Applications own pool lifetimes, task decomposition, stable shared inputs and disjoint writable outputs.
 
@@ -96,7 +98,7 @@ Run the existing guide suite after changes to introductory examples or links:
 MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just --justfile tests/justfile pytest tests/test_library_guides.py
 ```
 
-The suite checks local links and anchors in the root README, this development reference, library READMEs and package-local thematic guides. It executes selected Python examples with sockets blocked. Geometry's README requires native auxiliaries and is checked separately with `devbox run -- just --justfile tests/justfile test-orbital -k readme -s`. Numerics' example reports the platform restriction when Linux affinity is unavailable. These checks cover documentation/software contracts; live providers, scientific accuracy and native thread safety have separate qualification requirements.
+The suite checks local links and anchors in the root README, this development reference, library READMEs and package-local thematic guides. It executes selected Python examples with sockets blocked. Geometry's README requires native auxiliaries and is checked separately with `devbox run -- just --justfile tests/justfile test-orbital -k readme -s`. Numerics' example executes without pinning and emits a warning when an affinity API is unavailable. These checks cover documentation/software contracts; live providers, scientific accuracy and native thread safety have separate qualification requirements.
 
 Library-source Ruff rules check module/class/function documentation, selected layout, existing Google-style `Args` completeness and explicitly selected preview return/yield/exception rules. [pyproject.toml](pyproject.toml) lists the exact rule codes. Human review covers missing argument sections, field/parameter meanings, units, ownership, semantic accuracy and exceptions raised by callees. Tests and notebook companions retain code lint without library docstring requirements.
 
@@ -110,7 +112,7 @@ MPLBACKEND=Agg UV_NO_SYNC=1 devbox run -- just check
 
 `test` runs two pytest processes in the same `.venv` to isolate optional native-import effects. The first excludes `libs/orsia-data/tests` and `tests/test_five_band_notebook.py`; the second runs those scopes and appends coverage. Some synthetic fixtures import xarray/cftime and enable the GIL during collection, so this separation preserves meaningful numerical and concurrency checks. Atmospheric readers defer their direct SciPy/h5netcdf/ecCodes imports. xarray remains a workspace dependency for preparation, fixtures and SASKTRAN2.
 
-The first pytest process resets prior coverage. The second enforces the aggregate threshold, then separate reports enforce each library's threshold. [pyproject.toml](pyproject.toml) requires at least 90% combined statement-and-branch coverage overall and independently in each of the seven libraries. The percentage combines executed statements and branch destinations in a single threshold. Every module under the library `src/` trees contributes, including unimported modules. Tests and development scripts are outside that denominator; no project-specific coverage omissions or exclusion pragmas are configured.
+The first pytest process resets prior coverage. The second enforces the aggregate threshold, then separate reports enforce each library's threshold. [pyproject.toml](pyproject.toml) requires at least 90% combined statement-and-branch coverage overall and independently in each of the nine libraries. The percentage combines executed statements and branch destinations in a single threshold. Every module under the library `src/` trees contributes, including unimported modules. Tests and development scripts are outside that denominator; no project-specific coverage omissions or exclusion pragmas are configured.
 
 Reuse existing checks, add cases for uncovered risks or explicit requirements, and report the exact scope run. Software coverage measures execution; instrument agreement, retrieval performance and engineering feasibility need their own evidence.
 
@@ -118,6 +120,6 @@ Reuse existing checks, add cases for uncovered risks or explicit requirements, a
 
 Maintained notebooks keep preparation, display, reference-cache and replay helpers in [notebooks/support](notebooks/support/README.md). Tests and fixtures live in `tests/` and `libs/*/tests/`. Package-local `docs/` directories own detailed scientific contracts and editable diagrams. The workspace design SVG lives in [assets/architecture.svg](assets/architecture.svg).
 
-A fresh clone requires explicit input acquisition before notebook execution. Ignored `outputs/` holds local inputs, original provider bytes, notebook/reference caches, execution receipts and replay baselines. Preserve inputs and receipt lineage needed for replay. Regenerable plots and caches can be removed when their documented workflow can recreate them. Treat other retained local work as owned by its author; credentials and copyrighted raw products stay outside version control.
+Ignored `outputs/` holds local inputs, original provider bytes, notebook/reference caches, execution receipts and replay baselines. Preserve inputs and receipt lineage needed for replay. Regenerable plots and caches can be removed when their documented workflow can recreate them. Treat other retained local work as owned by its author; credentials and copyrighted raw products stay outside version control.
 
-Keep contributions scoped to the intended change and preserve unrelated work. The [source manifest](CANDIDATE-MANIFEST.md) records publication selection and exclusions. The [notebook guide](notebooks/README.md#saved-execution-scope) distinguishes saved historical displays from fresh local execution and records provider attribution.
+Keep contributions scoped to the intended change and preserve unrelated work. Use the library guides, public contracts and maintained tests to assess behavior. Keep credentials, acquired provider data, caches, generated outputs and macOS `.DS_Store` files outside version control.

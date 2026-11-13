@@ -156,6 +156,34 @@ def test_empirical_covariance_centres_rows_and_uses_n_minus_one() -> None:
     np.testing.assert_allclose(empirical_covariance(np.array([[1.0], [3.0]])), [[2.0]])
 
 
+@pytest.mark.parametrize("constant", [False, True])
+def test_empirical_covariance_extreme_finite_samples(constant):
+    if constant:
+        samples = np.full((4, 2), 1e308)
+        expected = np.zeros((2, 2))
+    else:
+        samples = np.array([[1e154, -1e-154], [-1e154, 1e-154]] * 2)
+        expected = np.array([[4 / 3 * 1e308, -4 / 3], [-4 / 3, 4 / 3 * 1e-308]])
+    saved = samples.copy()
+    with np.errstate(over="raise", invalid="raise"):
+        actual = empirical_covariance(samples)
+    np.testing.assert_allclose(actual, expected, rtol=3e-15, atol=0)
+    np.testing.assert_array_equal(samples, saved)
+    assert actual.flags.writeable and not np.shares_memory(actual, samples)
+
+
+def test_empirical_covariance_rejects_unrepresentable_variance():
+    with pytest.raises(ValueError, match="finite"):
+        empirical_covariance(np.array([[-1e308], [1e308]]))
+
+
+@pytest.mark.parametrize("count,offset", [(2, 1e308), (3, 1.3e308), (10, 1.1e308)])
+def test_empirical_covariance_constant_huge_offsets_have_exact_zero_variance(count, offset):
+    samples = np.column_stack((np.full(count, offset), np.zeros(count)))
+    with np.errstate(over="raise", invalid="raise"):
+        np.testing.assert_array_equal(empirical_covariance(samples), np.zeros((2, 2)))
+
+
 @pytest.mark.parametrize(
     "samples",
     [

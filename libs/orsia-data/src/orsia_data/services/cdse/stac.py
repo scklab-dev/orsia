@@ -1,7 +1,7 @@
 """Construct a STAC catalogue client for the CDSE public endpoint."""
 
-from ...http import JsonSession
-from ...stac import StacClient
+from orsia_data.http import JsonSession
+from orsia_data.stac import StacClient
 
 STAC_URL = "https://stac.dataspace.copernicus.eu/v1/"
 

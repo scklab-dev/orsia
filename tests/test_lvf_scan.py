@@ -4,10 +4,10 @@ import numpy as np
 from numpy.typing import NDArray
 from orsia_instruments import (
     Acquisition,
+    AngularRadianceSamples,
     DetectorProperties,
     GaussianPSF,
     ImagingOptics,
-    RadianceField,
     exposure_sequence,
     gaussian_filter,
     lvf_centre,
@@ -52,7 +52,7 @@ def _scan(*, rows: int = 3, cols: int = 4) -> dict:
         # Supplied scan and jitter; not an inferred trajectory.
         return np.column_stack((0.002 * t + 1e-4 * np.sin(90 * t), -0.001 * t))
 
-    def field_for_acquisition(acquisition: Acquisition) -> RadianceField:
+    def field_for_acquisition(acquisition: Acquisition) -> AngularRadianceSamples:
         # Caller-owned scene covers the complete acquisition's exposure support.
         t = np.array([acquisition.exposure_bounds_s.min(), acquisition.exposure_bounds_s.max()])
         u = v = np.array([-0.003, 0.0, 0.003])
@@ -63,7 +63,7 @@ def _scan(*, rows: int = 3, cols: int = 4) -> dict:
             + 35 * u[None, :, None, None]
             - 20 * v[None, None, :, None]
         ) * spectrum
-        return RadianceField(grid, t, u, v, values)
+        return AngularRadianceSamples(grid, t, u, v, values)
 
     def response(
         i: int, wave: NDArray[np.float64], acquisition: Acquisition

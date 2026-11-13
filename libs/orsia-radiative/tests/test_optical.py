@@ -9,12 +9,12 @@ from numpy.typing import NDArray
 from orsia_radiative import (
     Absorber,
     AbsorptionComponent,
-    Atmosphere,
-    CrossSectionField,
+    ColumnScene,
+    LayerAtmosphere,
+    LayerCrossSections,
     Line,
     LineSet,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     ScatteringProperties,
     SolarSource,
@@ -35,7 +35,7 @@ from scipy import constants
 from scipy.integrate import quad
 
 
-def atmosphere(**changes: Any) -> Atmosphere:
+def atmosphere(**changes: Any) -> LayerAtmosphere:
     values: dict[str, Any] = dict(
         height_boundaries_m=np.array([0, 1000, 2000], dtype=np.float64),
         pressure_boundaries_pa=np.array([101325, 90000, 80000], dtype=np.float64),
@@ -49,7 +49,7 @@ def atmosphere(**changes: Any) -> Atmosphere:
     values.update(changes)
     if "wavenumbers_cm1" in values:
         values["grid"] = wavenumber_grid(values.pop("wavenumbers_cm1"))
-    return Atmosphere(**values)
+    return LayerAtmosphere(**values)
 
 
 def axis() -> NDArray[np.float64]:
@@ -71,7 +71,7 @@ def lines(**changes: Any) -> LineSet:
     return LineSet(**values)
 
 
-def table(**changes: Any) -> CrossSectionField:
+def table(**changes: Any) -> LayerCrossSections:
     values: dict[str, Any] = dict(
         species="X",
         isotopologue="1",
@@ -80,14 +80,15 @@ def table(**changes: Any) -> CrossSectionField:
         temperature_k=np.array([296, 310], dtype=np.float64),
         pressure_pa=np.array([95000, 85000], dtype=np.float64),
         cross_sections_m2_per_molecule=np.array([[1e-25, 2e-25, 3e-25], [2e-25, 4e-25, 6e-25]]),
+        height_edges_m=atmosphere().height_boundaries_m,
     )
     values.update(changes)
     if "wavenumbers_cm1" in values:
         values["grid"] = wavenumber_grid(values.pop("wavenumbers_cm1"))
-    return CrossSectionField(**values)
+    return LayerCrossSections(**values)
 
 
-def scene(**changes: Any) -> RadiativeScene:
+def scene(**changes: Any) -> ColumnScene:
     values: dict[str, Any] = dict(
         atmosphere=atmosphere(),
         surface=SurfaceState(wavenumber_grid(axis()), reflectance=np.array([0.2, 0.2, 0.2])),
@@ -96,7 +97,7 @@ def scene(**changes: Any) -> RadiativeScene:
     values.update(changes)
     if "wavenumbers_cm1" in values:
         values["grid"] = wavenumber_grid(values.pop("wavenumbers_cm1"))
-    return RadiativeScene(**values)
+    return ColumnScene(**values)
 
 
 def source() -> SolarSource:
@@ -153,14 +154,16 @@ def test_wavelength_nu_mapping_preserves_input_order_without_density_conversion(
 
 def test_cross_section_interpolation_is_per_layer_and_no_extrapolation() -> None:
     target = np.array([999.5, 1000.5], dtype=np.float64)
-    result = table_absorption(atmosphere(), target, table())
+    result = table_absorption(atmosphere(), wavenumber_grid(target), table())
     assert result.optical_depth[0] == pytest.approx((0.15, 0.25))
     assert result.optical_depth[1] == pytest.approx((0.6, 1.0))
     with pytest.raises(ValueError, match="extrapolation"):
-        table_absorption(atmosphere(), np.array([998.0]), table())
+        table_absorption(atmosphere(), wavenumber_grid(np.array([998.0])), table())
     with pytest.raises(ValueError, match="conditions"):
         table_absorption(
-            atmosphere(), target, table(temperature_k=np.array([295, 310], dtype=np.float64))
+            atmosphere(),
+            wavenumber_grid(target),
+            table(temperature_k=np.array([295, 310], dtype=np.float64)),
         )
 
 
@@ -225,15 +228,15 @@ def test_line_profile_has_no_wing_cutoff_across_spectral_blocks() -> None:
 
 def test_interpolation_grid_plan_preserves_boundaries_and_canonical_order() -> None:
     target = wavelength_to_wavenumber(np.array([1e7 / 1001, 10000, 1e7 / 999]))
-    values = table_absorption(atmosphere(), target, table())
+    values = table_absorption(atmosphere(), wavenumber_grid(target), table())
     assert values.optical_depth[0] == pytest.approx((0.1, 0.2, 0.3))
     assert values.optical_depth[1] == pytest.approx((0.4, 0.8, 1.2))
-    at_boundaries = table_absorption(atmosphere(), axis(), table())
+    at_boundaries = table_absorption(atmosphere(), wavenumber_grid(axis()), table())
     assert at_boundaries.optical_depth[0] == pytest.approx((0.1, 0.2, 0.3))
     with pytest.raises(ValueError, match="extrapolation"):
         table_absorption(
             atmosphere(),
-            np.array([999.0, 1001.0001]),
+            wavenumber_grid(np.array([999.0, 1001.0001])),
             table(),
         )
 
@@ -242,7 +245,9 @@ def test_optical_inputs_remain_separate_and_validate() -> None:
     material = scene()
     gas = line_absorption(material.atmosphere, axis(), lines())
     continuum = table_absorption(
-        material.atmosphere, axis(), table(kind="continuum_excluding_lines", isotopologue=None)
+        material.atmosphere,
+        wavenumber_grid(axis()),
+        table(kind="continuum_excluding_lines", isotopologue=None),
     )
     moments = (((1.0, 0.0, 0.1),) * 3,) * 2
     scatter = ScatteringProperties(
@@ -317,7 +322,7 @@ def test_invalid_inputs_and_duplicate_or_misaligned_components_fail() -> None:
             absorption=compose_absorption(
                 material.atmosphere,
                 source(),
-                (gas, table_absorption(atmosphere(), axis(), table())),
+                (gas, table_absorption(atmosphere(), wavenumber_grid(axis()), table())),
             ),
         )
     with pytest.raises(ValueError, match="axis and layer"):
@@ -433,7 +438,7 @@ def test_voigt_overlap_freshness_and_numerical_width_guard() -> None:
     air = atmosphere()
     voigt = line_absorption(air, axis(), lines(molecular_mass_kg=44 * constants.atomic_mass))
     lorentz = line_absorption(air, axis(), lines())
-    cross = table_absorption(air, axis(), table())
+    cross = table_absorption(air, wavenumber_grid(axis()), table())
     for extra in (lorentz, cross):
         with pytest.raises(ValueError, match="duplicate|overlap"):
             compose_absorption_on_grid(air, wavenumber_grid(axis()), (voigt, extra))

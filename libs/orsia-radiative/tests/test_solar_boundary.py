@@ -11,7 +11,7 @@ import pytest
 from numpy.typing import NDArray
 from orsia_radiative import (
     Absorption,
-    RadiativeScene,
+    ColumnScene,
     SurfaceState,
     compose_atmospheric_optics,
     solar_source,
@@ -103,7 +103,7 @@ def test_orders_match_repeated_boundary_sweeps(
 
 
 def _sweep_reference(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     source: SolarSource,
     extinction: NDArray[np.float64],
     scattering,

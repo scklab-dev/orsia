@@ -3,8 +3,10 @@
 Arrays use float64. Ground axes are (along, cross), spectra are per cm^-1,
 physical kernels have axes (read, along_offset, cross_offset, wavenumber),
 and signed reconstruction weights have axes (channel, read). Inputs are
-borrowed; returned arrays own storage. The separable Gaussian spatial calculation
-uses public Orsia optical responses and explicit paraxial dOmega=dx dy / h^2.
+borrowed; returned arrays own storage. Full-acquisition optical integration uses
+public Orsia optical responses and explicit paraxial dOmega=dx dy / h^2.
+Library (y,x) grid responses are transposed explicitly at this boundary;
+experiment arrays and native scan ordering retain their declared (along,cross) axes.
 """
 
 from dataclasses import dataclass
@@ -12,13 +14,14 @@ from functools import partial
 
 import numpy as np
 from numpy.typing import NDArray
+from orsia_geometry import LocalCartesianFrame, PointLattice
 from orsia_instruments import (
+    AngularRadianceSamples,
     DetectorElectronics,
-    DetectorResponse,
     ExpectedElectrons,
     GaussianPSF,
+    GridElectronResponse,
     LinearTrajectory,
-    RadianceField,
     ReadSchedule,
     along_track_acquisition,
     along_track_read_schedule,
@@ -31,7 +34,6 @@ from orsia_instruments import (
     electron_moments,
     expected_electrons,
     filter_imager,
-    gaussian_cross_track_response,
     gaussian_filter,
     interferometric_imager,
     lvf_imager,
@@ -53,6 +55,7 @@ FAMILIES = (
     "Fabry–Pérot",
 )
 OFFSETS = np.arange(-2, 3, dtype=np.float64)
+FRAME = LocalCartesianFrame("ground-pixel synthetic scan", "local reference surface")
 
 
 @dataclass(frozen=True)
@@ -274,31 +277,25 @@ def physical_kernel(
     grid = _supported_grid(radiance)
     for read in range(layout.read_count):
         acquisition, ground_x, ground_y, _ = _nodes(
-            layout, read, settings, order, time_order or settings.time_order, full=True
-        )
-        # These example optics are Gaussian and separable cross-track. Evaluate
-        # their expensive spectral law only at y=0, then lift the exact Gaussian
-        # acceptance to the full public quadrature. General optics can supply
-        # their response directly to detector_response.
-        line, _, _, _ = _nodes(
-            layout, read, settings, order, time_order or settings.time_order, full=False
+            layout, read, settings, order, time_order or settings.time_order
         )
         optics = _optics(layout, read, settings, pixel_order or settings.pixel_order)
-        factory = gaussian_cross_track_response(line, optics, sigma_m=settings.psf_sigma_m)
-        accepted = factory(acquisition)
 
-        result[read] = detector_response(
-            grid,
-            acquisition,
-            accepted,
-            ground_xy_m=np.stack((ground_x, ground_y), axis=-1)[None],
-            along_m=OFFSETS * 50.0,
-            cross_m=OFFSETS * 50.0,
-            support_bounds_m=np.array([[-100.0, 100.0, -100.0, 100.0]]),
-            collecting_area_m2=optics.collecting_area_m2,
-            throughput=optics.throughput,
-            quantum_efficiency=settings.qe,
-        ).coefficients[0]
+        result[read] = (
+            detector_response(
+                grid,
+                acquisition,
+                partial(optics.response, 0),
+                ground_xy_m=np.stack((ground_x, ground_y), axis=-1)[None],
+                lattice=PointLattice(OFFSETS * 50.0, OFFSETS * 50.0, FRAME),
+                support_bounds_m=np.array([[-100.0, 100.0, -100.0, 100.0]]),
+                collecting_area_m2=optics.collecting_area_m2,
+                throughput=optics.throughput,
+                quantum_efficiency=settings.qe,
+            )
+            .coefficients[0]
+            .swapaxes(0, 1)
+        )
     return result
 
 
@@ -390,24 +387,26 @@ def image_channels(
     """
     shape = (len(kernel), maps.shape[1] - 4, maps.shape[2] - 4)
     templates, _ = native_reads(layout, settings, (len(kernel), 1, 1))
-    response = DetectorResponse(
+    response = GridElectronResponse(
         templates,
         _supported_grid(radiance),
-        OFFSETS * 50.0,
-        OFFSETS * 50.0,
+        PointLattice(OFFSETS * 50.0, OFFSETS * 50.0, FRAME),
         np.tile([-100.0, 100.0, -100.0, 100.0], (len(kernel), 1)),
-        kernel,
+        kernel.swapaxes(1, 2),
     )
     reads, _ = native_reads(layout, settings, shape)
     native = response_electrons(
         response,
-        maps,
+        maps.swapaxes(1, 2),
         spectra=spectra,
-        scene_along_m=(np.arange(maps.shape[1]) - (maps.shape[1] - 1) / 2) * 50,
-        scene_cross_m=(np.arange(maps.shape[2]) - (maps.shape[2] - 1) / 2) * 50,
+        scene_lattice=PointLattice(
+            (np.arange(maps.shape[1]) - (maps.shape[1] - 1) / 2) * 50,
+            (np.arange(maps.shape[2]) - (maps.shape[2] - 1) / 2) * 50,
+            FRAME,
+        ),
         target_indices=(
-            np.arange(2, maps.shape[1] - 2, dtype=np.int64),
             np.arange(2, maps.shape[2] - 2, dtype=np.int64),
+            np.arange(2, maps.shape[1] - 2, dtype=np.int64),
         ),
         reads=reads,
         method="correlation",
@@ -567,7 +566,7 @@ def direct_scene_read(
     *,
     angular_order: int | None = None,
 ) -> NDArray[np.float64]:
-    """Independent public expected_electrons on a time-dependent RadianceField.
+    """Independent public expected_electrons on a time-dependent AngularRadianceSamples.
 
     scene_values is (5,5,wavenumber), bilinear at +/-100m scene knots.
     Field time knots include all acquisition times; direction knots include every
@@ -575,9 +574,7 @@ def direct_scene_read(
     the same scene exactly, including motion and edge-halo support.
     """
     order = angular_order or settings.angular_order
-    acquisition, _, _, time_nodes = _nodes(
-        layout, read, settings, order, settings.time_order, full=True
-    )
+    acquisition, _, _, time_nodes = _nodes(layout, read, settings, order, settings.time_order)
     height, speed = settings.height_m, settings.speed_m_s
     time_grid = np.unique(np.r_[acquisition.exposure_bounds_s[0], time_nodes])
     u = np.unique(((OFFSETS[:, None] * 50 - speed * time_grid[None, :]) / height).ravel())
@@ -598,7 +595,7 @@ def direct_scene_read(
         radiance.grid.points,
         SpectralDomain("wavenumber_cm1", ((radiance.grid.points[0], radiance.grid.points[-1]),)),
     )
-    field = RadianceField(grid, time_grid, u, v, values)
+    field = AngularRadianceSamples(grid, time_grid, u, v, values)
     optics = _optics(layout, read, settings, settings.pixel_order)
     result = expected_electrons(
         field,
@@ -623,7 +620,7 @@ def _pixel_fraction(centroid, settings):
     return ndtr((half - centroid) / sigma) - ndtr((-half - centroid) / sigma)
 
 
-def _nodes(layout, read, settings, angular, time_order, *, full):
+def _nodes(layout, read, settings, angular, time_order):
     height, speed, focal = settings.height_m, settings.speed_m_s, settings.focal_length_m
     dispersive = layout.family == "Dispersive imager"
     reads, pixels = scan_geometry(layout, read, settings)
@@ -633,11 +630,11 @@ def _nodes(layout, read, settings, angular, time_order, *, full):
         target_xy_m=np.zeros((1, 2)),
         pixel_bounds_m=pixels,
         along_edges_m=np.array([-25.0, 0.0, 25.0]) if dispersive else OFFSETS * 50.0,
-        cross_edges_m=OFFSETS * 50.0 if full else np.array([-0.5, 0.5]),
+        cross_edges_m=OFFSETS * 50.0,
         support_frame="platform" if dispersive else "ground",
         time_order=time_order,
         angular_order=angular,
-        cross_order=angular if full else 1,
+        cross_order=angular,
         focal_length_m=focal,
         pointing_law=lambda read_index, times_s: np.zeros((len(times_s), 2)),
     )

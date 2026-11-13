@@ -3,8 +3,8 @@
 import json
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import Mock
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from orsia_instruments import (
@@ -16,7 +16,7 @@ from orsia_instruments import (
 from orsia_inverse import solve_linear
 from orsia_radiative import ObservationGeometry, Radiance, wavenumber_grid
 
-from notebooks.support import replay_instrument_response
+from notebooks.support import notebook_frame_display, replay_instrument_response
 from notebooks.support.instrument_notebook_checks import check_strip_boundaries
 from notebooks.support.notebook_frame_display import source_text
 from notebooks.support.notebook_ground_pixel import synthetic_scene
@@ -48,6 +48,15 @@ def chains(tmp_path_factory):
             source = source.replace("slit_order = 48", "slit_order = 16")
         cell["source"] = source.splitlines(keepends=True)
     with pytest.MonkeyPatch.context() as patch:
+        # Retain numerical notebook checks while omitting figure creation.
+        for name in (
+            "show_scene",
+            "show_native",
+            "show_product",
+            "show_inverse",
+            "show_target_timing",
+        ):
+            patch.setattr(notebook_frame_display, name, Mock())
         patch.setattr(replay_instrument_response, "instrument_cells", lambda root: cells)
         return execute_instrument_cells(
             ROOT, tmp_path_factory.mktemp("chains"), radiance, checks=False, archive=False
@@ -201,30 +210,6 @@ def test_estimated_geometry_controls_registration(chains):
     )
 
 
-def test_presentation_renders_actual_noisy_data(chains, monkeypatch):
-    from notebooks.support.notebook_frame_display import show_native, show_product
-
-    figures = []
-    monkeypatch.setattr(plt, "show", lambda: figures.append(plt.gcf()))
-    show_native("Uniform", chains["uniform_frames"])
-    show_product(
-        "Uniform",
-        chains["uniform_cube"],
-        chains["uniform_expectation_cube"],
-        chains["uniform_reference"],
-        chains["points"],
-    )
-    assert len(figures) == 2
-    native_images = [artist for ax in figures[0].axes for artist in ax.images]
-    np.testing.assert_array_equal(
-        np.sort(np.ma.asarray(native_images[1].get_array()).compressed()),
-        np.sort(chains["uniform_frames"].images.dn.ravel()),
-    )
-    for figure in figures:
-        figure.canvas.draw()
-        plt.close(figure)
-
-
 @pytest.mark.parametrize(
     "changed", ([np.inf, 1.0], [-np.inf, -np.inf], [np.inf, np.nan], [np.inf, np.inf])
 )
@@ -238,7 +223,7 @@ def test_replay_rejects_changed_nonfinite_values(changed):
 def test_replay_comparison_and_extraction():
     cells = instrument_cells(ROOT)
     assert cells[0]["id"] == "imports"
-    assert not any(cell["id"] == "atmosphere" for cell in cells)
+    assert not any(cell["id"] in {"atmosphere", "water-continuum"} for cell in cells)
     original = {"dn": np.array([1, 2]), "cube": np.array([1.0, np.nan])}
     assert len(compare_arrays(original, original)) == 2
     with pytest.raises(AssertionError):

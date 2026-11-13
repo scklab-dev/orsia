@@ -7,8 +7,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ..services.nomads import gfs_valid_time
-from .sampling import linear_axis_weights
+from orsia_data.atmosphere.sampling import linear_axis_weights
+from orsia_data.services.nomads import gfs_valid_time
 
 
 def read_gfs_profiles(

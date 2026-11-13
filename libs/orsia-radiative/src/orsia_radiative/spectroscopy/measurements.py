@@ -7,7 +7,8 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from orsia_radiative.atmosphere import Atmosphere
+from orsia_radiative.atmosphere import LayerAtmosphere
+from orsia_radiative.optics.cross_sections import cross_section_optical_depth
 from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid
 from orsia_radiative.spectroscopy.components import AbsorptionComponent, _gas
 
@@ -141,7 +142,7 @@ class CrossSectionTemperatures:
 
 
 def measurement_absorption(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     grid: SpectralGrid,
     reference: CrossSectionMeasurements,
     *,
@@ -172,7 +173,8 @@ def measurement_absorption(
         requested/effective temperature diagnostics, including held-layer mask.
 
     Raises:
-        ValueError: A policy, requested temperature, species or spectral support is invalid.
+        ValueError: A policy, requested temperature, species or spectral support is invalid,
+            columns are invalid, or optical depth overflows.
     """
     require_wavenumber_grid(grid)
     values, diagnostics = interpolate_cross_section_measurements(
@@ -186,7 +188,11 @@ def measurement_absorption(
     )
     columns, _ = _gas(atmosphere, reference.species)
     return AbsorptionComponent(
-        grid, reference.species, reference.isotopologue, "cross_section", columns[:, None] * values
+        grid,
+        reference.species,
+        reference.isotopologue,
+        "cross_section",
+        cross_section_optical_depth(values, np.asarray(columns, dtype=np.float64)),
     ), diagnostics
 
 

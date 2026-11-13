@@ -1,0 +1,24 @@
+[project]
+name = "orsia-dispersion"
+version = "0.1.0"
+description = "Passive Gaussian puff transport and mass integrals for Orsia"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+dependencies = ["numpy>=2.3,<3", "scipy>=1.16,<2", "orsia-geometry==0.1.0"]
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+orsia-geometry = { workspace = true }
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "README.md" },
+  { file = "src/**/*.py" },
+  { file = "src/**/py.typed" },
+]

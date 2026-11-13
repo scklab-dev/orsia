@@ -11,13 +11,17 @@ from numpy.typing import NDArray
 from scipy import constants
 from scipy.special import roots_legendre
 
+from orsia_radiative.columns import ColumnScene
 from orsia_radiative.optics.atmosphere import AtmosphericOptics, validate_scene_optics
 from orsia_radiative.radiance import Radiance
-from orsia_radiative.scene import RadiativeScene
-
-from .native import transfer_native as _native
+from orsia_radiative.transfer.native import transfer_native as _native
 
 _native_terms, _native_intervals = _native.bind_thermal_expn(
+    import_module("scipy.special.cython_special"),
+    100.0 * constants.h * constants.c / constants.k,
+    2.0 * constants.k * constants.c * 1e6,
+)
+_native_tangents = _native.bind_thermal_tangents(
     import_module("scipy.special.cython_special"),
     100.0 * constants.h * constants.c / constants.k,
     2.0 * constants.k * constants.c * 1e6,
@@ -25,7 +29,7 @@ _native_terms, _native_intervals = _native.bind_thermal_expn(
 
 
 def thermal_radiance(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     *,
     optics: AtmosphericOptics,
     angular_order: int = 32,
@@ -67,7 +71,7 @@ def thermal_radiance(
 
 
 def schwarzschild_terms(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     *,
     optics: AtmosphericOptics,
     angular_order: int = 32,
@@ -113,6 +117,188 @@ def schwarzschild_terms(
         ValueError: Incompatible scene support, invalid controls or temperature,
             absent surface emission, or atmospheric scattering.
     """
+    return _thermal_terms(scene, optics, angular_order, hemispheric_method, None)[0]
+
+
+def schwarzschild_terms_tangent(
+    scene: ColumnScene,
+    *,
+    optics: AtmosphericOptics,
+    optical_depth_tangent: NDArray[np.float64],
+    layer_temperature_tangent: NDArray[np.float64],
+    surface_temperature_tangent: NDArray[np.float64],
+    emissivity_tangent: NDArray[np.float64],
+    angular_order: int = 32,
+    hemispheric_method: Literal["quadrature", "expn"] = "quadrature",
+) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+    """Compute LTE emission components and explicit directional derivatives.
+
+    The three component names match :func:`schwarzschild_terms`. Values have
+    shape ``(points,)``; tangents have shape ``(points, directions)``. All outputs
+    are fresh writable C-contiguous float64 arrays. Stable input arrays are
+    borrowed read-only during the call; other layouts receive temporary copies.
+    Inputs must remain unchanged during concurrent evaluations.
+
+    Temperature seeds differentiate Planck emission at fixed optical depth.
+    Supplied optical-depth seeds independently describe total absorption changes,
+    including any externally computed temperature dependence of optics. Layers
+    are bottom-to-top. Grids, geometry and integration controls remain fixed.
+    Zero directions are supported. At zero depth and emissivity endpoints the
+    derivative is the limit of the physical inward direction; arbitrary signed
+    seeds still describe the local algebraic derivative.
+
+    Args:
+        scene: Temperature-bearing atmosphere, opaque emitting surface and view.
+        optics: Absorption-only gas and optional absorbing aerosol optics.
+        optical_depth_tangent: Total gas plus aerosol absorption-depth seeds,
+            shape ``(layers, points, directions)``, per direction-coordinate unit.
+        layer_temperature_tangent: Planck temperature seeds of shape
+            ``(layers, directions)``, K per direction-coordinate unit.
+        surface_temperature_tangent: Surface Planck temperature seeds of shape
+            ``(directions,)``, K per direction-coordinate unit.
+        emissivity_tangent: Spectral emissivity seeds of shape
+            ``(points, directions)``, per direction-coordinate unit.
+        angular_order: Quadrature order >= 2, validated for both methods.
+        hemispheric_method: ``quadrature`` or analytic exponential integrals.
+
+    Returns:
+        Dictionaries of component values and tangents. Values use W m-2 sr-1
+        per cm-1; tangents have these units per direction-coordinate unit.
+
+    Raises:
+        ValueError: Scene, optics, controls, tangent dtype, shape or finite
+            support is invalid; atmospheric scattering is present; arithmetic
+            exceeds finite float64 support.
+        OverflowError: Output dimensions exceed addressable storage.
+    """
+    tangents = (
+        optical_depth_tangent,
+        layer_temperature_tangent,
+        surface_temperature_tangent,
+        emissivity_tangent,
+    )
+    if any(array.dtype != np.float64 for array in tangents):
+        raise ValueError("thermal tangents must have native float64 dtype")
+    return _thermal_terms(scene, optics, angular_order, hemispheric_method, tangents)
+
+
+def thermal_radiance_tangent(
+    scene: ColumnScene,
+    *,
+    optics: AtmosphericOptics,
+    optical_depth_tangent: NDArray[np.float64],
+    layer_temperature_tangent: NDArray[np.float64],
+    surface_temperature_tangent: NDArray[np.float64],
+    emissivity_tangent: NDArray[np.float64],
+    angular_order: int = 32,
+    hemispheric_method: Literal["quadrature", "expn"] = "quadrature",
+) -> tuple[Radiance, NDArray[np.float64]]:
+    """Compute total LTE radiance and its last-axis explicit tangent directions.
+
+    Args:
+        scene: LayerAtmosphere, emitting surface and fixed viewing geometry.
+        optics: Absorption-only gas and optional absorbing aerosol optics.
+        optical_depth_tangent: Total absorption seeds ``(layers, points, k)``.
+        layer_temperature_tangent: Fixed-optics Planck seeds ``(layers, k)`` in K.
+        surface_temperature_tangent: Surface Planck seeds ``(k,)`` in K.
+        emissivity_tangent: Spectral emissivity seeds ``(points, k)``.
+        angular_order: Quadrature order >= 2, validated for both methods.
+        hemispheric_method: ``quadrature`` or ``expn`` for reflected emission.
+
+    Returns:
+        Radiance and owned writable float64 tangent ``(points, k)``. Units are
+        W m-2 sr-1 per cm-1 for radiance, and per direction-coordinate unit for
+        tangents. Seed units are per direction-coordinate unit. The component
+        API documents fixed inputs, concurrency, ownership and endpoint limits.
+
+    Raises:
+        ValueError: Invalid physical support, controls, tangent dtype or shape,
+            atmospheric scattering, or nonfinite arithmetic.
+        OverflowError: Output dimensions exceed addressable storage.
+    """
+    values, tangents = schwarzschild_terms_tangent(
+        scene,
+        optics=optics,
+        optical_depth_tangent=optical_depth_tangent,
+        layer_temperature_tangent=layer_temperature_tangent,
+        surface_temperature_tangent=surface_temperature_tangent,
+        emissivity_tangent=emissivity_tangent,
+        angular_order=angular_order,
+        hemispheric_method=hemispheric_method,
+    )
+    with np.errstate(over="ignore", invalid="ignore"):
+        tangent = (
+            tangents["surface_emission"]
+            + tangents["atmospheric_emission"]
+            + tangents["reflected_atmospheric_emission"]
+        )
+    if not np.all(np.isfinite(tangent)):
+        raise ValueError("summed thermal radiance tangent overflow")
+    return (
+        Radiance(
+            optics.grid,
+            values["surface_emission"]
+            + values["atmospheric_emission"]
+            + values["reflected_atmospheric_emission"],
+            scene.geometry,
+        ),
+        tangent,
+    )
+
+
+def _thermal_terms(
+    scene: ColumnScene,
+    optics: AtmosphericOptics,
+    angular_order: int,
+    hemispheric_method: Literal["quadrature", "expn"],
+    tangents: tuple[NDArray[np.float64], ...] | None,
+) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+    """Validate a common thermal boundary and evaluate optional tangents.
+
+    Returns:
+        Component dictionaries; the tangent dictionary is empty for value calls.
+
+    Raises:
+        ValueError: Physical support or integration controls are invalid.
+    """
+    arguments = _thermal_arguments(
+        scene, optics, angular_order, hemispheric_method, tangents is not None
+    )
+    result = (
+        _native_terms(*arguments)
+        if tangents is None
+        else _native_tangents(*arguments, tuple(_thermal_buffer(t) for t in tangents))
+    )
+    names = ("surface_emission", "atmospheric_emission", "reflected_atmospheric_emission")
+    return dict(zip(names, result[:3], strict=True)), dict(zip(names, result[3:], strict=False))
+
+
+def _thermal_arguments(
+    scene: ColumnScene,
+    optics: AtmosphericOptics,
+    angular_order: int,
+    hemispheric_method: Literal["quadrature", "expn"],
+    derivatives: bool,
+) -> tuple[
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64],
+    NDArray[np.float64] | None,
+    NDArray[np.float64] | None,
+    NDArray[np.float64],
+    NDArray[np.float64],
+    float,
+    float,
+    bool,
+]:
+    """Validate physical support and prepare shared primal and derivative arguments.
+
+    Returns:
+        Stable borrowed or normalized arrays and fixed physical scalars.
+
+    Raises:
+        ValueError: Physical support or hemispheric controls are invalid.
+    """
     validate_scene_optics(scene, optics)
     if isinstance(angular_order, bool) or not isinstance(angular_order, int) or angular_order < 2:
         raise ValueError("thermal angular_order must be an integer >= 2")
@@ -130,18 +316,20 @@ def schwarzschild_terms(
     if not np.all(np.isfinite(temperatures)) or np.any(temperatures <= 0):
         raise ValueError("temperature must be positive finite scalar or layer values")
     mu = weights = np.empty(0, dtype=np.float64)
-    if (
-        hemispheric_method == "quadrature"
-        and np.any(emissivity < 1)
-        and any(
-            component is not None and np.any(component.optical_depth > 0)
-            for component in (optics.absorption, optics.aerosol)
+    if hemispheric_method == "quadrature" and (
+        derivatives
+        or (
+            np.any(emissivity < 1)
+            and any(
+                component is not None and np.any(component.optical_depth > 0)
+                for component in (optics.absorption, optics.aerosol)
+            )
         )
     ):
         nodes, weights = roots_legendre(angular_order)
         mu = (nodes + 1) / 2
     view_mu = cos(radians(scene.geometry.view_zenith_deg))
-    surface_emission, atmospheric, reflected = _native_terms(
+    return (
         _thermal_buffer(optics.wavenumbers_cm1),
         _thermal_buffer(temperatures),
         _thermal_buffer(emissivity),
@@ -153,11 +341,6 @@ def schwarzschild_terms(
         view_mu,
         hemispheric_method == "expn",
     )
-    return {
-        "surface_emission": surface_emission,
-        "atmospheric_emission": atmospheric,
-        "reflected_atmospheric_emission": reflected,
-    }
 
 
 def _thermal_buffer(values: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -183,4 +366,9 @@ def _e3_difference(below: NDArray[np.float64], depth: NDArray[np.float64]) -> ND
     )
 
 
-__all__ = ["thermal_radiance", "schwarzschild_terms"]
+__all__ = [
+    "thermal_radiance",
+    "schwarzschild_terms",
+    "thermal_radiance_tangent",
+    "schwarzschild_terms_tangent",
+]

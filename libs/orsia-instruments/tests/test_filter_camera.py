@@ -9,10 +9,12 @@ from typing import Any
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
+from orsia_geometry import WGS84SurfaceProjection
 from orsia_geometry.constants import WGS84_SEMIAXES_M
 from orsia_instruments import (
     CalibratedFrames,
     DetectorProperties,
+    FocalPlaneImager,
     GaussianPSF,
     ImagerSizing,
     ImagingOptics,
@@ -79,15 +81,103 @@ def trajectory(times):
 def surface(origins, directions, times):
     distance = -origins[..., 2] / directions[..., 2]
     points = origins + distance[..., None] * directions
-    return points[..., :2], distance > 0
+    return points[..., :2], -directions, distance > 0
 
 
 def coverage(grid, spectral):
     return np.ones(len(grid.read_bands), dtype=bool)
 
 
-def uniform(xy, directions, times, points):
+def uniform(xy, directions, times, query_spectral):
+    points = query_spectral.points
     return np.full((*times.shape, len(points)), 2e-5)
+
+
+@pytest.mark.parametrize("batch_size", [1, 5, 100])
+def test_flat_local_query_order_and_response_contraction(batch_size):
+    from orsia_instruments.photodetection.frames import frame_response_coefficients
+
+    cam = camera(shape=(2, 2))
+    grid = acquisition(cam, angular_order=2, frames=2)
+    spectral = connected_grid(np.linspace(4000, 5000, 5))
+    observed = []
+
+    def radiance(xy, view, times, query_spectral):
+        points = query_spectral.points
+        assert xy.shape == (len(times), 2) and view.shape == (len(times), 3)
+        assert times.ndim == points.ndim == 1
+        observed.append((xy.copy(), view.copy(), times.copy()))
+        return (2 + xy[:, 0, None] + times[:, None] + view[:, 2, None]) * points * 1e-9
+
+    expected_values = (
+        (
+            2
+            + grid.xy_m[..., 0, None]
+            + grid.rays.acquisition.times_s[..., None]
+            + grid.view_local[..., 2, None]
+        )
+        * spectral.points
+        * 1e-9
+    )
+    expected = np.zeros(len(grid.read_bands))
+    for selected, spectral_slice, coefficients in frame_response_coefficients(
+        cam, grid, spectral, batch_size=3
+    ):
+        expected[selected] += np.einsum(
+            "nqk,nqk->n", coefficients, expected_values[selected, :, spectral_slice]
+        )
+    result = simulate_frames(cam, grid, spectral, radiance, coverage, read_batch_size=batch_size)
+    assert_allclose(result.images.photoelectrons.ravel(), expected, rtol=2e-15)
+    for index, source in enumerate((grid.xy_m, grid.view_local, grid.rays.acquisition.times_s)):
+        actual = np.concatenate([call[index] for call in observed])
+        np.testing.assert_array_equal(actual, source.reshape(actual.shape))
+    np.testing.assert_array_equal(grid.view_local, -grid.rays.directions_gcrs)
+
+
+@pytest.mark.parametrize("kind", ["shape", "nan", "norm"])
+def test_surface_and_grid_reject_invalid_local_views(kind):
+    cam = camera(shape=(1, 1))
+
+    def malformed(origins, directions, times):
+        xy, view, hits = surface(origins, directions, times)
+        if kind == "shape":
+            view = view[..., :2]
+        elif kind == "nan":
+            view[:] = np.nan
+        else:
+            view *= 2
+        return xy, view, hits
+
+    with pytest.raises(ValueError):
+        acquisition(cam, surface_callback=malformed)
+    grid = acquisition(cam, angular_order=2, frames=1)
+    bad = grid.view_local.copy()
+    if kind == "shape":
+        bad = bad[..., :2]
+    elif kind == "nan":
+        bad[:] = np.nan
+    else:
+        bad *= 2
+    with pytest.raises(ValueError):
+        replace(grid, view_local=bad)
+    with pytest.raises(ValueError, match="coordinates"):
+        replace(grid, xy_m=np.full_like(grid.xy_m, np.nan))
+
+
+@pytest.mark.parametrize("kind", ["old_axes", "nan", "negative"])
+def test_flat_radiance_output_validation(kind):
+    cam = camera(shape=(1, 1))
+    grid = acquisition(cam, frames=1, angular_order=2)
+    spectral = connected_grid(np.linspace(4000, 5000, 5))
+
+    def invalid(xy, view, times, query_spectral):
+        points = query_spectral.points
+        if kind == "old_axes":
+            return np.ones((1, len(times), len(points)))
+        return np.full((len(times), len(points)), np.nan if kind == "nan" else -1.0)
+
+    with pytest.raises(ValueError, match="radiance"):
+        simulate_frames(cam, grid, spectral, invalid, coverage)
 
 
 def camera(shape=(4, 2), *, sigma=4e-6, f_number=4, **kwargs):
@@ -363,6 +453,8 @@ def test_camera_chart_reference_geometry_and_snapshot(monkeypatch, reference_pix
         mount_offset_p_m=offset,
         reference_pixel=reference_pixel,
     )
+    assert type(projection) is WGS84SurfaceProjection
+    assert_allclose(projection.chart_origin_itrf_m, intercept, atol=5e-9, rtol=0)
     assert len(calls) == 3
     for times in calls:
         np.testing.assert_array_equal(times, [reference_time])
@@ -377,7 +469,7 @@ def test_camera_chart_reference_geometry_and_snapshot(monkeypatch, reference_pix
         directions.copy(),
         times.copy(),
     )
-    xy, hits = projection(origins, directions, times)
+    xy, view, hits = projection(origins, directions, times)
     np.testing.assert_array_equal(hits, [[True, False], [True, False]])
     assert np.isnan(xy[:, 1]).all()
     assert_allclose(xy[0, 0], 0, atol=5e-9, rtol=0)
@@ -388,8 +480,12 @@ def test_camera_chart_reference_geometry_and_snapshot(monkeypatch, reference_pix
     direction /= np.linalg.norm(direction)
     directions[1, 0] = dated_rotation(np.array(0.8)).T @ direction
     expected = chart_axes @ (second - intercept)
-    xy, hits = projection(origins, directions, times)
+    xy, view, hits = projection(origins, directions, times)
     assert_allclose(xy[1, 0], expected, atol=5e-9, rtol=0)
+    expected_view = -np.einsum(
+        "...ij,...j->...i", dated_rotation(times), directions
+    ) @ np.column_stack((chart_axes.T, up))
+    assert_allclose(view, expected_view, atol=2e-15, rtol=0)
     assert xy.dtype == np.float64 and xy.flags.owndata and xy.flags.writeable
     assert hits.dtype == np.bool_ and hits.flags.owndata and hits.flags.writeable
     np.testing.assert_array_equal(origins, snapshot_origins)
@@ -402,9 +498,10 @@ def test_camera_chart_reference_geometry_and_snapshot(monkeypatch, reference_pix
     offset[:] = 0
     base_position[:] = 0
     platform_rotation[:] = instrument_rotation[:] = 0
-    after_xy, after_hits = projection(origins, directions, times)
+    after_xy, after_view, after_hits = projection(origins, directions, times)
     assert len(calls) == 3
     assert_allclose(after_xy, xy, atol=0, rtol=0)
+    assert_allclose(after_view, view, atol=0, rtol=0)
     np.testing.assert_array_equal(after_hits, hits)
     # Restore the real time-validation boundary before checking support errors.
     monkeypatch.setattr(frames, "frame_rotations", real_frame_rotations)
@@ -430,7 +527,7 @@ def test_camera_chart_default_centre_time_and_mount(monkeypatch):
         epoch=EPOCH,
         validity_s=(0, 0),
     )
-    xy, hit = projection(position, np.array([-1.0, 0, 0]), np.array(0.0))
+    xy, view, hit = projection(position, np.array([-1.0, 0, 0]), np.array(0.0))
     assert hit and xy.shape == (2,)
     assert_allclose(xy, [0, 0], atol=1e-10, rtol=0)
 
@@ -610,7 +707,7 @@ def test_surface_projection_native_mapping_and_continuous_bounds():
             sensor = np.column_stack((uv, np.sqrt(1 - (uv**2).sum(axis=1))))
             direction = sensor @ platform(np.array([t]))[0].T
             origin = np.broadcast_to(trajectory(np.array([t]))[0][0], direction.shape)
-            xy, _ = surface(origin, direction, np.full(len(uv), t))
+            xy, _, _ = surface(origin, direction, np.full(len(uv), t))
             assert np.all(xy >= grid.bounds_m[i, [0, 2]])
             assert np.all(xy <= grid.bounds_m[i, [1, 3]])
     with pytest.raises(ValueError):
@@ -618,6 +715,7 @@ def test_surface_projection_native_mapping_and_continuous_bounds():
             cam,
             surface_callback=lambda o, d, t: (
                 np.zeros((*t.shape, 2)),
+                -d,
                 np.zeros(t.shape, dtype=bool),
             ),
         )
@@ -626,6 +724,7 @@ def test_surface_projection_native_mapping_and_continuous_bounds():
             cam,
             surface_callback=lambda o, d, t: (
                 np.full((*t.shape, 2), np.nan),
+                -d,
                 np.ones(t.shape, dtype=bool),
             ),
         )
@@ -637,7 +736,8 @@ def test_independent_photon_counting_and_qe_area_time_scaling():
     points = np.array([4000.0, 4090, 4300, 4750, 5000])
     spectral = connected_grid(points)
 
-    def linear_spectrum(xy, direction, times, wavenumbers):
+    def linear_spectrum(xy, direction, times, query_spectral):
+        wavenumbers = query_spectral.points
         return np.broadcast_to(wavenumbers * 1e-8, (*times.shape, len(wavenumbers)))
 
     detector = DetectorProperties(
@@ -881,7 +981,8 @@ def test_estimated_geometry_changes_registration_without_changing_truth():
     grid = acquisition(cam, frames=1, angular_order=14)
     spectral = connected_grid(np.linspace(4000, 5000, 9))
 
-    def pattern(xy, direction, times, points):
+    def pattern(xy, direction, times, query_spectral):
+        points = query_spectral.points
         return np.broadcast_to(
             (2e-5 * (1 + xy[..., 0] * 5))[..., None], (*times.shape, len(points))
         )
@@ -953,9 +1054,10 @@ def test_direction_dependent_scene_support_and_validation():
     spectral = connected_grid(np.linspace(4000, 5000, 5))
     calls = []
 
-    def scene(xy, direction, times, points):
+    def scene(xy, direction, times, query_spectral):
+        points = query_spectral.points
         calls.append(xy.copy())
-        return np.broadcast_to((2e-5 * -direction[..., 2])[..., None], (*times.shape, len(points)))
+        return np.broadcast_to((2e-5 * direction[..., 2])[..., None], (*times.shape, len(points)))
 
     with pytest.raises(ValueError, match="certify"):
         simulate_frames(
@@ -1001,7 +1103,7 @@ def test_direction_dependent_scene_support_and_validation():
         scene,
         coverage,
     )
-    assert_allclose(calls[0], grid.xy_m)
+    assert_allclose(calls[0], grid.xy_m.reshape(-1, 2))
     plain = simulate_frames(
         replace(
             cam,
@@ -1024,7 +1126,10 @@ def test_direction_dependent_scene_support_and_validation():
         coverage,
     )
     assert result.images.photoelectrons.item() < plain.images.photoelectrons.item()
-    for bad in (lambda x, d, t, p: np.zeros(1), lambda x, d, t, p: -np.ones((*t.shape, len(p)))):
+    for bad in (
+        lambda x, d, t, p: np.zeros(1),
+        lambda x, d, t, p: -np.ones((*t.shape, len(p.points))),
+    ):
         with pytest.raises(ValueError, match="radiance"):
             simulate_frames(
                 replace(
@@ -1289,11 +1394,12 @@ def test_detector_flags_nonlinearity_and_quality_masks():
 def test_time_angular_and_spectral_convergence():
     cam = camera(shape=(1, 1))
 
-    def scene(xy, direction, times, points):
+    def scene(xy, direction, times, query_spectral):
+        points = query_spectral.points
         return (
             (1 + 2e7 * times[..., None] ** 4)
             * (1 + xy[..., 0, None] ** 2 * 100)
-            * np.exp((points[None, None, :] - 4000) / 1000)
+            * np.exp((points[None, :] - 4000) / 1000)
             * 1e-5
         )
 
@@ -1504,7 +1610,8 @@ def test_spectral_strip_frame_sequence_preserves_band_means_offline(monkeypatch)
     )
     spectral = connected_grid(np.linspace(3900, 5100, 65))
 
-    def linear_spectrum(xy, directions, times, points):
+    def linear_spectrum(xy, directions, times, query_spectral):
+        points = query_spectral.points
         return np.broadcast_to(points * 1e-8, (*times.shape, len(points)))
 
     detector = DetectorProperties(
@@ -1581,7 +1688,7 @@ def test_read_batches_preserve_map_common_noise_and_subsequent_rng():
         original.throughput,
         original.port,
     )
-    cam = replace(cam, detector=detector, optics=optics)
+    cam = FocalPlaneImager(detector, optics, cam.support_radius_m)
     schedule = raster_read_schedule(
         np.array([[0.0, 0.01], [0.05, 0.06]]), (2, 2), row_offsets_s=np.array([0.0, 0.002])
     )
@@ -1652,3 +1759,38 @@ def test_camera_selection_retains_original_native_indices_through_calibration():
     calibrated = calibrate_frames(result.images, result.response, detector=cam.detector)
     assert_allclose(calibrated.values, 2e-5, rtol=1e-14)
     np.testing.assert_array_equal(selected.native_indices, full.native_indices[[1, 4, 7]])
+
+
+def test_camera_optical_description_cannot_drift_from_response():
+    cam = camera(shape=(1, 1))
+    opaque = filter_strip(0, 1, band=cam.strips[0].band, transmission=np.zeros_like)
+    invalid_changes: tuple[dict[str, Any], ...] = (
+        {"strips": (opaque,)},
+        {"optics": cam.optics},
+        {"support_radius_m": cam.support_radius_m * 2},
+        {"omitted_psf_mass": 0.1},
+        {"row_bands": ("opaque",)},
+    )
+    for changes in invalid_changes:
+        with pytest.raises(TypeError):
+            replace(cam, **changes)
+    grid = acquisition(cam, frames=1, angular_order=2, time_order=1)
+    spectral = connected_grid(np.linspace(4500, 5000, 3))
+    signal = simulate_frames(cam, grid, spectral, uniform, coverage).images.photoelectrons
+    rebuilt = filter_camera(
+        cam.detector,
+        [opaque],
+        focal_length_m=cam.optics.focal_length_m,
+        f_number=4,
+        spatial=GaussianPSF(4e-6),
+    )
+    assert rebuilt.row_bands == cam.row_bands
+    dark = simulate_frames(rebuilt, grid, spectral, uniform, coverage).images.photoelectrons
+    assert np.any(signal > 0)
+    assert np.count_nonzero(dark) == 0
+    lower_qe = replace(cam, detector=replace(cam.detector, quantum_efficiency=0.5))
+    actual = simulate_frames(lower_qe, grid, spectral, uniform, coverage).images.photoelectrons
+    assert_allclose(actual, signal * 0.5, rtol=2e-15)
+    changed_geometry = replace(cam.detector, pixel_bounds_m=cam.pixel_bounds_m + 1e-6)
+    with pytest.raises(ValueError, match="pixel geometry"):
+        replace(cam, detector=changed_geometry)

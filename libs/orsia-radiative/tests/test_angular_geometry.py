@@ -17,9 +17,9 @@ import radiance_terms_support as terms_support
 from numpy.typing import NDArray
 from orsia_radiative import (
     AerosolComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SolarSource,
     SpectralIrradiance,
@@ -299,9 +299,9 @@ def _vectors(
 
 def _inputs(
     sun: NDArray[np.float64], view: NDArray[np.float64], *, reflectance: float = 0.0
-) -> tuple[RadiativeScene, SolarSource, RayleighComponent, AerosolComponent]:
+) -> tuple[ColumnScene, SolarSource, RayleighComponent, AerosolComponent]:
     grid = np.array([12000.0], dtype=np.float64)
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0]),
         np.array([100000.0, 90000.0]),
         np.array([95000.0]),
@@ -311,7 +311,7 @@ def _inputs(
         np.array([1e28]),
         (),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(wavenumber_grid(grid), reflectance=np.array([reflectance])),
         ObservationGeometry(degrees(acos(float(view[2])))),

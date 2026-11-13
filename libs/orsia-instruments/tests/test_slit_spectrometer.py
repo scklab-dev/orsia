@@ -23,7 +23,7 @@ from orsia_instruments import (
     simulate_frames,
     spectrometer_acquisition_grid,
 )
-from orsia_instruments.los import focal_plane_direction_bounds, sample_lines_of_sight
+from orsia_instruments.acquisition.los import focal_plane_direction_bounds, sample_lines_of_sight
 from orsia_radiative import SpectralBand, SpectralDomain, spectral_band, wavenumber_grid
 from scipy.constants import c, h
 from scipy.integrate import quad
@@ -70,14 +70,15 @@ def trajectory(times):
 
 def surface(origins, directions, times):
     distance = -origins[..., 2] / directions[..., 2]
-    return (origins + distance[..., None] * directions)[..., :2], distance > 0
+    return (origins + distance[..., None] * directions)[..., :2], -directions, distance > 0
 
 
 def coverage(grid, spectral):
     return np.ones(len(grid.read_bands), dtype=bool)
 
 
-def uniform(xy, directions, times, points):
+def uniform(xy, directions, times, query_spectral):
+    points = query_spectral.points
     return np.full((*times.shape, len(points)), 2e-5)
 
 
@@ -173,7 +174,8 @@ def test_monochromatic_line_placement_and_finite_slit_width():
     for wavenumber in (5000.0, 0.01 / 2.1e-6):
         index = int(np.argmin(abs(spectral.points - wavenumber)))
 
-        def line(xy, directions, times, points, index=index):
+        def line(xy, directions, times, query_spectral, index=index):
+            points = query_spectral.points
             values = np.zeros(len(points))
             values[index] = points[index] * 1e-8
             return np.broadcast_to(values, (*times.shape, len(points)))
@@ -287,7 +289,8 @@ def test_independent_photon_accounting_with_spatial_spectral_coupling():
     spectral = spectral_grid(17)
     qe = 0.6
 
-    def scene(xy, directions, times, points):
+    def scene(xy, directions, times, query_spectral):
+        points = query_spectral.points
         return (1 + 5 * xy[..., 0, None] + 2 * xy[..., 1, None]) * points * 1e-8
 
     result = simulate_frames(
@@ -355,7 +358,8 @@ def test_independent_photon_accounting_with_spatial_spectral_coupling():
     centroids = []
     for index in (4, 12):
 
-        def line(xy, directions, times, points, index=index):
+        def line(xy, directions, times, query_spectral, index=index):
+            points = query_spectral.points
             values = np.zeros(len(points))
             values[index] = 1e-4
             return (1 + 5 * xy[..., 0, None]) * values
@@ -400,7 +404,7 @@ def test_independent_photon_accounting_with_spatial_spectral_coupling():
             grid,
             spectral,
             lambda x, d, t, p, index=index: np.broadcast_to(
-                np.eye(1, len(p), index)[0] * 1e-4, (*t.shape, len(p))
+                np.eye(1, len(p.points), index)[0] * 1e-4, (*t.shape, len(p.points))
             ),
             coverage,
         )
@@ -416,7 +420,8 @@ def test_complete_supplied_calibration_scan_cube_noise_and_missing_support():
     grid = acquisition(spec)
     spectral = spectral_grid()
 
-    def spectrum(xy, directions, times, points):
+    def spectrum(xy, directions, times, query_spectral):
+        points = query_spectral.points
         return np.broadcast_to(points * 1e-8, (*times.shape, len(points)))
 
     detector = DetectorProperties(
@@ -518,7 +523,8 @@ def test_moving_pattern_and_independent_estimated_geometry_shift():
     grid = acquisition(spec)
     spectral = spectral_grid(33)
 
-    def pattern(xy, directions, times, points):
+    def pattern(xy, directions, times, query_spectral):
+        points = query_spectral.points
         return np.broadcast_to(
             (2e-5 * (1 + 5 * xy[..., 0]))[..., None], (*times.shape, len(points))
         )
@@ -682,7 +688,8 @@ def test_rejected_support_and_grid_mismatches():
         acquisition(spec, angular_bound_m=0)
     with pytest.raises(ValueError, match="surface"):
         acquisition(
-            spec, surface=lambda o, d, t: (np.zeros((*t.shape, 2)), np.zeros(t.shape, dtype=bool))
+            spec,
+            surface=lambda o, d, t: (np.zeros((*t.shape, 2)), -d, np.zeros(t.shape, dtype=bool)),
         )
     with pytest.raises(ValueError, match="entrance"):
         sample_lines_of_sight(
@@ -719,7 +726,8 @@ def test_rejected_support_and_grid_mismatches():
 def test_slit_time_and_spectral_refinement():
     spec = instrument(smile=0.4, keystone=25)
 
-    def scene(xy, directions, times, points):
+    def scene(xy, directions, times, query_spectral):
+        points = query_spectral.points
         return (
             2e-5
             * (1 + 1e9 * times[..., None] ** 4)

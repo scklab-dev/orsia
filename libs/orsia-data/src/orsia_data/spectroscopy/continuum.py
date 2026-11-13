@@ -8,7 +8,7 @@ import numpy as np
 from orsia_radiative import WaterContinuumReference
 from scipy.io import netcdf_file
 
-from ..acquisition import download_file
+from orsia_data.acquisition import download_file
 
 
 def download_mt_ckd_water(

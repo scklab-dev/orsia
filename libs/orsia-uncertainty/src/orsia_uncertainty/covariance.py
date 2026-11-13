@@ -49,6 +49,9 @@ def factor_covariance(
     clip only tolerated negative eigenvalues to zero when drawing; the retained
     spectrum keeps their sign. Cholesky requires positive definite covariance.
     Diagonal variances remain nonnegative and use linear storage for either method.
+    Exactly diagonal dense inputs retain their requested dense backend; their roots
+    use unscaled variances to preserve extreme positive variance ratios. Normalized
+    eigenvalues can underflow to zero, and inverse operations retain their cutoff.
     No preparation consumes RNG or introduces regularization or a pseudoinverse.
 
     Args:
@@ -67,8 +70,16 @@ def factor_covariance(
     if matrix.ndim == 1:
         root = np.sqrt(snapshot) / np.sqrt(scale)
         return CovarianceFactor("diagonal", scale, _immutable(matrix), _immutable(root))
+    diagonal = np.diag(snapshot)
+    is_diagonal = np.count_nonzero(snapshot) == np.count_nonzero(diagonal)
     try:
-        if method == "eigh":
+        if is_diagonal:
+            # Preserve small positive entries lost by variance normalization.
+            # Dense factors retain their backend and sorted spectral basis.
+            order = np.argsort(diagonal, kind="stable")
+            eigenvalues = diagonal[order] / scale
+            basis = np.eye(diagonal.size)[:, order] if method == "eigh" else None
+        elif method == "eigh":
             eigenvalues, basis = np.linalg.eigh(matrix)
         else:
             eigenvalues = np.linalg.eigvalsh(matrix)
@@ -76,9 +87,15 @@ def factor_covariance(
         if eigenvalues[0] < -1e-12:
             raise ValueError("covariance matrix must be positive semidefinite")
         if basis is None:
-            if eigenvalues[0] <= 0:
+            if (np.min(diagonal) if is_diagonal else eigenvalues[0]) <= 0:
                 raise ValueError("Cholesky requires positive definite covariance; use eigh for PSD")
-            root = cholesky(matrix, lower=True, check_finite=False)
+            root = (
+                cholesky(snapshot, lower=True, check_finite=False) / np.sqrt(scale)
+                if is_diagonal
+                else cholesky(matrix, lower=True, check_finite=False)
+            )
+        elif is_diagonal:
+            root = basis * (np.sqrt(np.maximum(diagonal[order], 0)) / np.sqrt(scale))
         else:
             root = basis * np.sqrt(np.maximum(eigenvalues, 0))
     except np.linalg.LinAlgError as exc:

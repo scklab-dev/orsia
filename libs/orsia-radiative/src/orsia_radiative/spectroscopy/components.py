@@ -8,7 +8,7 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from orsia_radiative.atmosphere import Atmosphere
+from orsia_radiative.atmosphere import LayerAtmosphere
 from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid
 
 
@@ -37,10 +37,10 @@ def values_equal(left: object, right: object) -> bool:
 
 
 def validate_absorption_freshness(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     component: AbsorptionComponent,
     *,
-    reference_atmosphere: Atmosphere,
+    reference_atmosphere: LayerAtmosphere,
 ) -> None:
     """Compare dependencies with a separately retained evaluation atmosphere.
 
@@ -51,14 +51,21 @@ def validate_absorption_freshness(
     Args:
         atmosphere: Current gas columns, layer conditions and broadener amounts.
         component: Contribution whose species and model select dependencies.
-        reference_atmosphere: Atmosphere used at evaluation, retained by the caller.
+        reference_atmosphere: LayerAtmosphere used at evaluation, retained by the caller.
 
     Raises:
         ValueError: Required species is absent or relevant dependencies changed.
     """
     if not values_equal(
-        _absorption_dependencies(atmosphere, component.species, component.kind),
-        _absorption_dependencies(reference_atmosphere, component.species, component.kind),
+        _absorption_dependencies(
+            atmosphere, component.species, component.kind, component.includes_water_continuum
+        ),
+        _absorption_dependencies(
+            reference_atmosphere,
+            component.species,
+            component.kind,
+            component.includes_water_continuum,
+        ),
     ):
         raise ValueError(
             f"stale absorption for species {component.species}; recompute its dependencies"
@@ -83,6 +90,8 @@ class AbsorptionComponent:
         kind: Line, cross-section or continuum absorption model identity.
         optical_depth: (layers,points) vertical dimensionless absorption depths.
         line_wing_convention: Optional local line cutoff and pedestal convention.
+        includes_water_continuum: Explicit inclusion for a supplied H2O cross section;
+            None means unknown. Separate continuum requires a declared exclusion.
     """
 
     grid: SpectralGrid
@@ -91,6 +100,7 @@ class AbsorptionComponent:
     kind: Literal["lorentz_lines", "voigt_lines", "cross_section", "continuum_excluding_lines"]
     optical_depth: NDArray[np.float64]
     line_wing_convention: Literal["unbounded", "truncated", "mt_ckd_local_25"] | None = None
+    includes_water_continuum: bool | None = None
     __hash__ = None
 
     def __post_init__(self) -> None:
@@ -126,14 +136,37 @@ class AbsorptionComponent:
         return self.grid.points
 
 
-def _gas(atmosphere: Atmosphere, species: str) -> tuple[NDArray[np.float64], str]:
+def validate_water_continuum_pairing(
+    includes_water_continuum: bool | None,
+    table_line_convention: str | None,
+    continuum_line_convention: str | None,
+) -> None:
+    """Require explicit nonoverlap when combining a water table with continuum.
+
+    Args:
+        includes_water_continuum: Declared inclusion in the fixed H2O table, or unknown.
+        table_line_convention: Supplied table's local-line cutoff/pedestal convention.
+        continuum_line_convention: Convention required by the supplied continuum.
+
+    Raises:
+        ValueError: Continuum inclusion is true/unknown or the required line convention differs.
+    """
+    if includes_water_continuum is not False:
+        raise ValueError("water cross-section tables must explicitly exclude separate continuum")
+    if continuum_line_convention is not None and table_line_convention != continuum_line_convention:
+        raise ValueError("water table and continuum require matching local line conventions")
+
+
+def _gas(atmosphere: LayerAtmosphere, species: str) -> tuple[NDArray[np.float64], str]:
     for gas in atmosphere.absorbers:
         if gas.species == species:
             return gas.columns_molecules_m2, gas.air_broadener
     raise ValueError(f"no declared absorber for species {species}")
 
 
-def _absorption_dependencies(atmosphere: Atmosphere, species: str, kind: str) -> tuple[object, ...]:
+def _absorption_dependencies(
+    atmosphere: LayerAtmosphere, species: str, kind: str, includes_water_continuum: bool | None
+) -> tuple[object, ...]:
     amounts, broadener = _gas(atmosphere, species)
     common = (
         atmosphere.height_boundaries_m,
@@ -142,7 +175,7 @@ def _absorption_dependencies(atmosphere: Atmosphere, species: str, kind: str) ->
         atmosphere.temperature_k,
         amounts,
     )
-    if kind == "continuum_excluding_lines":
+    if kind == "continuum_excluding_lines" or includes_water_continuum:
         return (
             *common,
             atmosphere.total_air_columns_molecules_m2,

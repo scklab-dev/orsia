@@ -13,82 +13,87 @@ import pytest
 # Explicit inventory of the root contract, including additive capabilities.
 ROOT_EXPORTS = {
     "optics.camera": (
-        "ImagerSizing FilterStrip FilterCamera sized_focal_length filter_strip filter_camera "
-        "FocalPlaneImager focal_plane_imager"
+        "ImagerSizing FilterStrip FilterCamera sized_focal_length filter_strip "
+        "filter_camera FocalPlaneImager focal_plane_imager"
     ),
-    "imaging.geolocation": (
-        "SurfaceProjection SurfaceAcquisitionGrid "
-        "frame_exposure_bounds camera_acquisition_grid ground_integration_bounds "
+    "acquisition.surface": (
+        "SurfaceProjection SurfaceAcquisitionGrid frame_exposure_bounds "
+        "camera_acquisition_grid ground_integration_bounds "
         "wgs84_surface_projection_from_camera spectrometer_acquisition_grid"
     ),
-    "imaging.response.band": "NativeBandResponse group_native_bands",
-    "imaging.response.joint": (
-        "SpatialSpectralResponse spatial_spectral_response stack_frame_electrons"
+    "response.bands": ("NativeBandResponse group_native_bands"),
+    "response.joint": ("SpatialSpectralResponse spatial_spectral_response stack_frame_electrons"),
+    "photodetection.frames": (
+        "SurfaceRadiance SurfaceRadianceCoverage frame_response frame_electron_tangents"
     ),
-    "imaging.radiometry": (
-        "SurfaceRadiance SurfaceRadianceCoverage FrameMeasurements frame_response simulate_frames"
-    ),
-    "imaging.calibration": (
+    "observation.measurements": ("FrameMeasurements ImageMeasurements BandRadianceCube"),
+    "simulation": ("simulate_frames image_readout simulate_images"),
+    "calibration.frames": (
         "CalibratedFrames calibrate_frames CalibratedElectrons calibrate_frame_electrons"
     ),
-    "imaging.reconstruction": "reconstruct_radiance_cube",
-    "acquisition": (
-        "Acquisition ReadSchedule LinearTrajectory RasterReadSchedule "
-        "raster_read_schedule select_read_schedule select_raster_reads "
-        "ground_fixed_pointing ground_scroll_pointing "
-        "read_schedule rectangular_acquisition along_track_acquisition "
-        "along_track_exposure_bounds along_track_read_schedule "
-        "raster_exposure_bounds along_track_raster_reads "
+    "observation.native": (
+        "CalibratedObservations ObservationCube calibrate_observations form_observation_cube"
+    ),
+    "calibration.radiometry": (
+        "RadiometricParameterMaps RadiometricObservations calibrate_readings "
+        "accumulate_observations normalized_accumulation_weights"
+    ),
+    "registration.reconstruction": ("reconstruct_radiance_cube"),
+    "acquisition.quadrature": (
+        "Acquisition GroundScrollPointing read_schedule rectangular_acquisition "
+        "along_track_acquisition"
+    ),
+    "acquisition.schedule": (
+        "ReadSchedule LinearTrajectory RasterReadSchedule raster_read_schedule "
+        "select_read_schedule select_raster_reads along_track_exposure_bounds "
+        "along_track_read_schedule raster_exposure_bounds along_track_raster_reads "
         "along_track_strip_templates"
     ),
-    "charge": "ExpectedElectrons combine_source_paths",
-    "los": (
-        "LineOfSightSamples sample_lines_of_sight "
-        "RadianceCoverage LineOfSightRadiance sample_line_of_sight_radiance"
+    "photodetection.charge": ("ExpectedElectrons combine_source_paths"),
+    "acquisition.los": (
+        "LineOfSightSamples sample_lines_of_sight RadianceCoverage LineOfSightRadiance "
+        "sample_line_of_sight_radiance"
     ),
     "detector": (
-        "DetectorElectronics DetectorProperties DetectorOperatingPoints DetectorReadings "
-        "detector_operating_points "
-        "correct_digital_readings digitize electron_covariance electron_moments "
-        "pixel_quantum_efficiency sample_readout regular_pixel_bounds regular_detector"
+        "DetectorElectronics DetectorProperties DetectorOperatingPoints "
+        "DetectorReadings detector_operating_points correct_digital_readings digitize "
+        "electron_covariance electron_moments pixel_quantum_efficiency sample_readout "
+        "regular_pixel_bounds regular_detector"
     ),
-    "imaging.acquisition": ("ExposureSequence exposure_sequence image_acquisition"),
-    "imaging.photodetection": (
+    "acquisition.images": ("ExposureSequence exposure_sequence image_acquisition"),
+    "photodetection.images": (
         "ImageIndices ImagePhotoelectrons ImageQuantumEfficiency "
         "combine_image_source_paths image_photoelectrons image_charge"
     ),
-    "imaging.measurements": "ImageMeasurements",
-    "imaging.response.instrument": (
-        "GroundGrid SceneRadiance DetectorResponse InstrumentResponse "
-        "detector_response instrument_response "
-        "gaussian_cross_track_response gaussian_along_track_response "
-        "response_electrons"
+    "response.grid": (
+        "GridElectronResponse detector_response instrument_response "
+        "along_track_response response_electrons"
     ),
-    "imaging.readout": "image_readout",
-    "imaging.simulation": "simulate_images",
-    "photoelectrons": (
+    "response.spectral": ("FilterElectronResponse SpectralElectronResponse spectral_electrons"),
+    "sampling.surface": ("SurfaceRadianceSamples"),
+    "photodetection.coefficients": (
         "OpticalAcceptance QuantumEfficiency expected_electrons photoelectron_response "
-        "sample_optical_acceptance "
-        "line_of_sight_expected_electrons"
+        "sample_optical_acceptance line_of_sight_expected_electrons"
     ),
-    "optics.response": "ImageResponse ImagingOptics OpticalResponse",
+    "optics.response": ("ImageResponse ImagingOptics OpticalResponse"),
     "optics.psfs": (
         "PointSpreadFunction GaussianPSF TabulatedPSF SpatialDensity gaussian_psf airy_psf"
     ),
-    "optics.pixels": ("gaussian_pixel_fraction pixel_acceptance"),
+    "optics.pixels": ("gaussian_pixel_fraction pixel_acceptance square_pixel_etendue"),
     "optics.filters": (
-        "gaussian_filter lorentzian_filter super_gaussian_filter rectangular_filter "
-        "longpass_filter shortpass_filter notch_filter lvf_centre tabulated_transmission "
-        "filter_imager spatial_filter_imager lvf_imager"
+        "FilterPassband gaussian_filter lorentzian_filter super_gaussian_filter "
+        "rectangular_filter longpass_filter shortpass_filter notch_filter lvf_centre "
+        "tabulated_transmission filter_imager spatial_filter_imager lvf_imager"
     ),
-    "optics.dispersion": "polynomial_image_map dispersive_response dispersive_imager",
-    "optics.spectrometer": "DispersiveSpectrometer dispersive_spectrometer",
-    "optics.two_beam": "two_beam_ports interferometric_imager",
-    "optics.cavities": "cavity_transmission cavity_imager",
-    "scene": "RadianceField sample_radiance uniform_radiance_field",
+    "optics.dispersion": ("polynomial_image_map dispersive_response dispersive_imager"),
+    "optics.spectrometer": ("DispersiveSpectrometer dispersive_spectrometer"),
+    "optics.two_beam": ("two_beam_ports interferometric_imager"),
+    "optics.cavities": ("cavity_transmission cavity_imager"),
+    "sampling.angular": ("AngularRadianceSamples sample_radiance uniform_radiance_field"),
     "tolerances": (
         "NativeSignalBudget analogue_dn_budget central_difference monte_carlo_dn "
-        "monte_carlo_native native_difference native_sensitivities native_tolerance_budget"
+        "monte_carlo_native native_difference native_sensitivities "
+        "native_tolerance_budget"
     ),
 }
 
@@ -99,6 +104,11 @@ def test_root_export_inventory_matches_canonical_owners():
     assert set(instruments.__all__) == set(names)
 
 
+def test_calibration_maps_preserve_legacy_import_identity():
+    legacy = importlib.import_module("orsia_instruments.observation.native")
+    assert legacy.RadiometricParameterMaps is instruments.RadiometricParameterMaps
+
+
 @pytest.mark.parametrize("module,names", ROOT_EXPORTS.items())
 def test_root_exports_are_the_canonical_objects(module, names):
     canonical = importlib.import_module(f"orsia_instruments.{module}")
@@ -106,6 +116,24 @@ def test_root_exports_are_the_canonical_objects(module, names):
         value = getattr(canonical, name)
         assert getattr(instruments, name) is value
         assert value.__module__ == canonical.__name__
+
+
+def test_along_track_response_name_and_removed_export():
+    canonical = importlib.import_module("orsia_instruments.response.grid")
+    assert instruments.along_track_response is canonical.along_track_response
+    assert instruments.along_track_response.__name__ == "along_track_response"
+    assert "along_track_response" in instruments.__all__
+    assert not hasattr(instruments, "gaussian_along_track_response")
+    assert not hasattr(canonical, "gaussian_along_track_response")
+    assert "gaussian_along_track_response" not in instruments.__all__
+
+
+def test_ground_pointing_factories_are_removed():
+    canonical = importlib.import_module("orsia_instruments.acquisition")
+    for name in ("ground_fixed_pointing", "ground_scroll_pointing"):
+        assert not hasattr(instruments, name)
+        assert not hasattr(canonical, name)
+        assert name not in instruments.__all__
 
 
 def test_detector_properties_name_and_removed_export():
@@ -185,6 +213,7 @@ def test_detector_properties_requires_each_field(omitted):
         "image_readout",
         "simulate_images",
         "calibrate_frames",
+        "calibrate_observations",
     ],
 )
 def test_detector_is_a_required_keyword_argument(name):
@@ -206,21 +235,33 @@ def test_detector_is_a_required_keyword_argument(name):
 
 
 @pytest.mark.parametrize(
-    "module", ["line_of_sight", "line_of_sight_radiance", "imaging.band_response"]
+    "module",
+    [
+        "line_of_sight",
+        "line_of_sight_radiance",
+        "imaging.band_response",
+        "imaging.response.instrument",
+        "imaging.fourier",
+        "scene",
+        "spectral_response",
+    ],
 )
 def test_obsolete_module_paths_are_unavailable(module):
     name = f"orsia_instruments.{module}"
     with pytest.raises(ModuleNotFoundError) as error:
         importlib.import_module(name)
-    assert error.value.name == name
+    # A removed parent can fail first; cached namespace directories change that detail.
+    missing = error.value.name
+    assert missing is not None and missing.startswith("orsia_instruments.")
+    assert missing == name or name.startswith(missing + ".")
 
 
 def test_response_package_keeps_exports_in_concrete_modules():
-    package = importlib.import_module("orsia_instruments.imaging.response")
+    package = importlib.import_module("orsia_instruments.response")
     assert package.__file__ is not None
     assert Path(package.__file__).name == "__init__.py"
     assert not (Path(instruments.__file__).parent / "imaging/response.py").exists()
-    for module in ("imaging.response.instrument", "imaging.response.band"):
+    for module in ("response.grid", "response.bands"):
         for name in ROOT_EXPORTS[module].split():
             assert not hasattr(package, name)
 
@@ -236,17 +277,31 @@ def test_internal_imports_follow_domain_boundaries_without_cycles():
         package = "orsia_instruments" + ("." + name.rsplit(".", 1)[0] if "." in name else "")
         dependencies = set()
         for node in ast.walk(ast.parse(path.read_text())):
-            if not isinstance(node, ast.ImportFrom) or not node.level:
+            if not isinstance(node, ast.ImportFrom):
                 continue
-            target = importlib.util.resolve_name("." * node.level + (node.module or ""), package)
+            target = (
+                importlib.util.resolve_name("." * node.level + (node.module or ""), package)
+                if node.level
+                else (node.module or "")
+            )
+            if not target.startswith("orsia_instruments"):
+                continue
             target = target.removeprefix("orsia_instruments.")
-            assert target not in {"orsia_instruments", "imaging", "imaging.response", "optics"}
+            assert target not in {
+                "orsia_instruments",
+                "imaging",
+                "optics",
+                "photodetection",
+                "calibration",
+                "observation",
+                "acquisition",
+            }
             if name.startswith("optics."):
-                assert not target.startswith("imaging.")
-            if name in {"charge", "detector"}:
-                assert target != "photoelectrons" and not target.startswith(("imaging.", "optics."))
-            if name == "imaging.readout":
-                assert target != "photoelectrons" and not target.startswith("optics.")
+                assert not target.startswith(("simulation", "registration.", "observation.native"))
+            if name in {"photodetection.charge", "detector"}:
+                assert not target.startswith(
+                    ("photodetection.frames", "photodetection.images", "simulation", "optics.")
+                )
             dependencies.add(target)
         graph[name] = dependencies
 

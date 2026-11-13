@@ -25,8 +25,8 @@ from urllib.request import (
     build_opener,
 )
 
-from ..acquisition import retrieve_file
-from ..orbits import parse_orbital_elements
+from orsia_data.acquisition import retrieve_file
+from orsia_data.orbits import parse_orbital_elements
 
 _ORIGIN = "https://www.space-track.org"
 

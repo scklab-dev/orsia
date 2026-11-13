@@ -1,18 +1,9 @@
 """Positive physical band means and ground-cube ownership/validity contracts."""
 
-from dataclasses import replace
-from typing import Any
-
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
-from orsia_radiative import (
-    RadianceCube,
-    SpectralBand,
-    SpectralDomain,
-    spectral_band,
-    wavenumber_grid,
-)
+from orsia_radiative import SpectralBand, SpectralDomain, spectral_band, wavenumber_grid
 
 
 @pytest.mark.parametrize("domain", [None, SpectralDomain("wavenumber_cm1", ((2.0, 7.0),))])
@@ -76,24 +67,3 @@ def test_bad_band_weights(name, points, weights):
         SpectralBand(
             name, wavenumber_grid(np.array(points, dtype=float)), np.array(weights, dtype=float)
         )
-
-
-def test_cube_axes_nan_validity_and_copies():
-    band = spectral_band("a", wavenumber_grid(np.array([1.0, 2])), np.ones(2))
-    values = np.array([[[3.0], [np.nan]]])
-    coverage = np.array([[[1.0], [0.0]]])
-    valid = np.array([[[True], [False]]])
-    cube = RadianceCube(np.array([0.0, 1]), np.array([2.0]), (band,), values, coverage, valid)
-    values[0, 0, 0] = 4
-    assert cube.values[0, 0, 0] == 3
-    changes: tuple[dict[str, Any], ...] = (
-        dict(x_m=np.array([1.0, 0])),
-        dict(y_m=np.array([])),
-        dict(values=np.zeros((1, 2, 1))),
-        dict(coverage=-np.ones((1, 2, 1))),
-        dict(valid=np.ones((1, 2, 1), dtype=bool)),
-        dict(bands=()),
-    )
-    for change in changes:
-        with pytest.raises(ValueError):
-            replace(cube, **change)

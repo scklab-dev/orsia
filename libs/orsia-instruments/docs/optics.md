@@ -8,13 +8,7 @@ This reference specifies response fractions, spectral laws, PSFs and explicit op
 
 ```python
 import numpy as np
-from orsia_instruments import (
-    RadianceField,
-    ReadSchedule,
-    expected_electrons,
-    rectangular_acquisition,
-    sample_optical_acceptance,
-)
+from orsia_instruments import AngularRadianceSamples, ReadSchedule, expected_electrons, rectangular_acquisition, sample_optical_acceptance
 from orsia_radiative import SpectralDomain, SpectralGrid
 
 grid = SpectralGrid(
@@ -22,14 +16,14 @@ grid = SpectralGrid(
     np.array([4000.0, 5000.0]),
     SpectralDomain("wavenumber_cm1", ((4000.0, 5000.0),)),
 )
-scene = RadianceField(
+scene = AngularRadianceSamples(
     grid,
     np.array([0.0, 1.0]),
     np.array([-0.01, 0.01]),
     np.array([-0.01, 0.01]),
     np.ones((2, 2, 2, 2)),
 )
-other_scene = RadianceField(grid, scene.times_s, scene.u, scene.v, 2 * scene.values)
+other_scene = AngularRadianceSamples(grid, scene.times_s, scene.u, scene.v, 2 * scene.values)
 acquisition = rectangular_acquisition(
     reads=ReadSchedule(("r",), ("p",), ("s",), ("direct",), np.array([[0.0, 1.0]])),
     pixel_bounds_m=np.array([[-1.0, 1.0, -1.0, 1.0]]),
@@ -81,16 +75,7 @@ Each factory below binds a distinct physical selection to the same idealized foc
 from functools import partial
 
 import numpy as np
-from orsia_instruments import (
-    GaussianPSF,
-    cavity_imager,
-    dispersive_imager,
-    filter_imager,
-    gaussian_filter,
-    interferometric_imager,
-    lvf_imager,
-    spatial_filter_imager,
-)
+from orsia_instruments import GaussianPSF, cavity_imager, dispersive_imager, filter_imager, gaussian_filter, interferometric_imager, lvf_imager, spatial_filter_imager
 
 geometry = dict(focal_length_m=0.02, collecting_area_m2=1e-8, spatial=GaussianPSF(3e-5))
 optics_by_name = {

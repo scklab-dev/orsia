@@ -2,24 +2,37 @@
 
 import importlib
 
+import orsia_dispersion
 import orsia_instruments
 import orsia_radiative
 import orsia_uncertainty
 import pytest
 
 FUNCTIONS = (
+    (orsia_dispersion, "sampling", "sample_fields", True),
+    (orsia_dispersion, "evaluation", "concentration", True),
+    (orsia_dispersion, "evaluation", "layer_columns", True),
+    (orsia_dispersion, "evaluation", "pixel_layer_moments", True),
+    (orsia_dispersion, "puffs.population", "discretize_puff_emissions", True),
+    (orsia_dispersion, "puffs.population", "split_puffs", True),
+    (orsia_dispersion, "puffs.transport", "advance_puffs", True),
+    (orsia_dispersion, "puffs.simulation", "simulate_puffs", True),
+    (orsia_dispersion, "puffs.evaluation", "puff_concentration", True),
+    (orsia_dispersion, "puffs.evaluation", "puff_layer_columns", True),
+    (orsia_dispersion, "puffs.evaluation", "puff_path_columns", True),
+    (orsia_dispersion, "particles", "simulate_particles", True),
+    (orsia_dispersion, "particles", "discretize_particle_emissions", True),
     (orsia_radiative, "solar.source", "solar_irradiance", True),
     (orsia_radiative, "spectroscopy.line_tables", "line_set", True),
-    (orsia_instruments, "photoelectrons", "sample_optical_acceptance", True),
-    (orsia_radiative, "spectroscopy.cross_sections", "cross_sections", True),
+    (orsia_instruments, "photodetection.coefficients", "sample_optical_acceptance", True),
+    (orsia_radiative, "spectroscopy.cross_sections", "resample_layer_cross_sections", True),
     (orsia_radiative, "transfer.formal", "propagation_coefficients", False),
     (orsia_uncertainty, "covariance", "whiten", True),
     (orsia_uncertainty, "covariance", "factor_covariance", True),
     (orsia_uncertainty, "covariance", "sample_gaussian", True),
     (orsia_uncertainty, "covariance", "covariance_product", True),
     (orsia_instruments, "optics.response", "imaging_optics", False),
-    (orsia_instruments, "acquisition", "raster_exposure_bounds", True),
-    (orsia_instruments, "imaging.response.instrument", "gaussian_cross_track_response", True),
+    (orsia_instruments, "acquisition.schedule", "raster_exposure_bounds", True),
     (orsia_radiative, "optics.atmosphere", "atmospheric_optics", True),
     (orsia_radiative, "atmosphere.hydrostatic", "specific_humidity", True),
     (orsia_radiative, "atmosphere.layers", "geometric_height", True),

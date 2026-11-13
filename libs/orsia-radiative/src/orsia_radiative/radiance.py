@@ -19,7 +19,8 @@ from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid
 class Radiance:
     """Directional spectral radiance at one evaluated local observation geometry.
 
-    ``values`` are W m-2 sr-1 per (cm-1) point samples. The public contract
+    ``values`` are W m-2 sr-1 per declared spectral coordinate (nm or cm-1).
+    The public contract
     supports directional, unpolarised radiance with an explicit local geometry;
     it does not represent an angular field, a detector realisation or covariance.
     It deliberately contains no transfer-method identity, source provenance,
@@ -31,8 +32,8 @@ class Radiance:
     are independent writable float64 copies with shape (n_points,).
 
     Attributes:
-        grid: Evaluated wavenumber grid in cm-1.
-        values: Owned (points,) directional radiance in W m-2 sr-1 per cm-1.
+        grid: Evaluated point grid in nm or cm-1, defining the density measure.
+        values: Owned (points,) directional radiance in W m-2 sr-1 per grid coordinate.
         geometry: Local outgoing observation direction of this radiance.
     """
 
@@ -42,8 +43,7 @@ class Radiance:
     __hash__ = None
 
     def __post_init__(self) -> None:
-        require_wavenumber_grid(self.grid)
-        if self.values.shape != (self.wavenumbers_cm1.size,):
+        if self.values.shape != (self.grid.points.size,):
             raise ValueError("radiance values must match the spectral axis")
         if not np.all(np.isfinite(self.values)) or np.any(self.values < 0):
             raise ValueError("radiance values must be finite and nonnegative")
@@ -51,11 +51,15 @@ class Radiance:
 
     @property
     def wavenumbers_cm1(self) -> NDArray[np.float64]:
-        """Expose the radiance grid's canonical sampling coordinates.
+        """Expose cm-1 samples when the radiance already uses that coordinate.
 
         Returns:
             Borrowed read-only (points,) wavenumbers in cm-1.
+
+        Raises:
+            ValueError: The record uses nm; convert grid and density explicitly.
         """
+        require_wavenumber_grid(self.grid)
         return self.grid.points
 
 

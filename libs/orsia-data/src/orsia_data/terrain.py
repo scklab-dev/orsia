@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from .geospatial import RasterBand, Window, read_raster_band
+from orsia_data.geospatial import RasterBand, Window, read_raster_band
 
 
 def read_copernicus_dem(path: Path, *, window: Window | None = None) -> RasterBand:

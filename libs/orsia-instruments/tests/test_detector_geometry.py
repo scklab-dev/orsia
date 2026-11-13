@@ -17,7 +17,7 @@ from orsia_instruments import (
     regular_pixel_bounds,
     simulate_frames,
 )
-from orsia_instruments.imaging.acquisition import regular_pixel_bounds as legacy_bounds
+from orsia_instruments.detector import regular_pixel_bounds as detector_bounds
 
 
 @pytest.fixture
@@ -171,7 +171,7 @@ def test_regular_factory_requires_every_argument(properties):
             regular_detector(**{key: value for key, value in arguments.items() if key != name})
 
 
-def test_instrument_factories_share_attached_detector_and_legacy_bounds_path(properties):
+def test_instrument_factories_share_attached_detector_and_detector_bounds_path(properties):
     detector = regular_detector(
         (2, 3), pitch_m=20e-6, active_size_m=16e-6, centre_xy_m=(0.0, 0.0), **properties
     )
@@ -197,7 +197,7 @@ def test_instrument_factories_share_attached_detector_and_legacy_bounds_path(pro
         calibrated = replace(instrument, detector=replace(detector, quantum_efficiency=0.5))
         assert calibrated.detector is not detector
         assert float(np.asarray(detector.quantum_efficiency)) == 0.7
-    assert legacy_bounds is regular_pixel_bounds
+    assert detector_bounds is regular_pixel_bounds
     for function in (filter_camera, dispersive_spectrometer):
         parameter = inspect.signature(function).parameters["detector"]
         assert parameter.default is inspect.Parameter.empty

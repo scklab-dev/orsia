@@ -14,3 +14,11 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 orsia-uncertainty = { workspace = true }
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "README.md" },
+  { file = "src/**/*.py" },
+  { file = "src/**/py.typed" },
+]

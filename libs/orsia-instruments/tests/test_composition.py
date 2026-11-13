@@ -6,12 +6,12 @@ from functools import partial
 import numpy as np
 import pytest
 from orsia_instruments import (
+    AngularRadianceSamples,
     DetectorElectronics,
     DetectorProperties,
     ExpectedElectrons,
     GaussianPSF,
     ImagingOptics,
-    RadianceField,
     ReadSchedule,
     combine_image_source_paths,
     combine_source_paths,
@@ -38,10 +38,29 @@ from orsia_instruments import (
 from orsia_radiative import SpectralDomain, SpectralGrid
 
 
+def test_angular_extension_rejects_wavelength_radiance_without_relabelling():
+    from orsia_instruments import uniform_radiance_field
+    from orsia_radiative import ObservationGeometry, Radiance
+
+    radiance = Radiance(
+        SpectralGrid("wavelength_nm", np.array([500.0, 600.0])),
+        np.ones(2),
+        ObservationGeometry(0.0),
+    )
+    with pytest.raises(ValueError, match="convert explicitly"):
+        uniform_radiance_field(
+            radiance,
+            time_bounds_s=(0.0, 1.0),
+            u_bounds=(-0.01, 0.01),
+            v_bounds=(-0.01, 0.01),
+            spectral_bounds_cm1=(500.0, 600.0),
+        )
+
+
 @pytest.fixture
 def optical_case():
     points = np.linspace(4900.0, 5100.0, 17)
-    scene = RadianceField(
+    scene = AngularRadianceSamples(
         SpectralGrid(
             "wavenumber_cm1", points, SpectralDomain("wavenumber_cm1", ((4900.0, 5100.0),))
         ),

@@ -1,15 +1,19 @@
-"""Run caller-supplied CPU tasks with explicit affinity and native thread limits.
+"""Run caller-supplied CPU tasks with native thread limits and available affinity.
 
-Linux affinity is mandatory. Pthreads OpenBLAS is limited process-wide; OpenMP
+Missing affinity APIs produce a warning and leave worker placement to the OS.
+Pthreads OpenBLAS is limited process-wide; Apple Accelerate BLAS/LAPACK and OpenMP
 parallel regions are serialized in each worker. Load native dependencies before
 construction; do not change native limits or affinity from tasks. See the package
-README for the supported runtimes and the limits of this cooperative contract.
+README for supported runtimes and limits of this cooperative contract.
 """
 
 import os
+import sys
+import warnings
 from collections.abc import Callable, Iterable
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
-from ctypes import c_int
+from ctypes import CDLL, c_int, c_uint
+from ctypes.util import dllist
 from threading import Lock, Thread
 from typing import Any
 from weakref import finalize
@@ -20,13 +24,20 @@ __all__ = ["CpuThreadPoolExecutor"]
 
 
 class CpuThreadPoolExecutor(Executor):
-    """Schedule futures on distinct pinned CPUs with bounded native parallelism.
+    """Schedule futures with bounded native parallelism and available CPU pinning.
 
-    ``cpus=None`` selects the constructing thread's allowed CPUs in ascending
-    order. Explicit CPU order is preserved. ``max_workers=None`` uses all selected
-    CPUs; otherwise the first ``max_workers`` CPUs are used. CPUs must be distinct,
-    available and nonempty. Affinity is set and verified before the user initializer;
-    initialization failure breaks the pool as in ``ThreadPoolExecutor``.
+    With both affinity APIs, ``cpus=None`` selects the constructing thread's allowed
+    CPUs in ascending order. Explicit CPU order is preserved. Affinity is set and
+    verified before the user initializer; initialization failure breaks the pool
+    as in ``ThreadPoolExecutor``.
+
+    If either affinity API is absent, construction emits ``RuntimeWarning`` and
+    workers run without pinning. With ``cpus=None``, the CPU count is
+    ``os.process_cpu_count() or os.cpu_count() or 1``. Explicit CPU IDs supply only
+    the count; their availability and placement cannot be verified or enforced.
+    IDs must still be distinct, nonnegative and nonempty. ``max_workers=None``
+    uses the selected count; an explicit positive count may not exceed it.
+    With affinity, the first ``max_workers`` selected CPUs are used.
 
     Construction acquires a shared process-wide native-limit lease. Workers start
     lazily. Shutdown releases the lease only after workers (including their future
@@ -36,14 +47,15 @@ class CpuThreadPoolExecutor(Executor):
     ``map`` and context management are inherited from the public standard-library
     ``Executor`` contract, including Python 3.14 ``buffersize=None`` semantics.
     Task arguments are shared, not copied: callers own mutation, RNGs and partitioning.
-    Distinct CPUs are guaranteed within a pool, not reserved across independent pools.
+    With affinity, workers use distinct CPUs within a pool. Separate pools can overlap.
 
     Args:
-        max_workers: Number of selected CPUs to use; None selects all of them.
+        max_workers: Worker count; None uses the selected CPU count.
         thread_name_prefix: Optional name prefix for pool worker threads.
-        initializer: Optional callable run in each pinned worker before tasks.
+        initializer: Optional callable run in each worker before tasks.
         initargs: Positional arguments passed to the worker initializer.
-        cpus: Distinct available logical CPU IDs in preferred worker order; None uses affinity.
+        cpus: Distinct nonnegative logical CPU IDs in preferred worker order;
+            only their count is used without affinity. None uses affinity or the CPU count.
     """
 
     def __init__(
@@ -55,22 +67,38 @@ class CpuThreadPoolExecutor(Executor):
         *,
         cpus: Iterable[int] | None = None,
     ) -> None:
-        """Prepare a pool of pinned workers and acquire the process-wide native lease.
+        """Prepare workers and acquire the process-wide native lease.
 
         Args:
-            max_workers: Number of selected CPUs to use; None selects all of them.
+            max_workers: Worker count; None uses the selected CPU count.
             thread_name_prefix: Optional name prefix for pool worker threads.
-            initializer: Optional callable run in each pinned worker before tasks.
+            initializer: Optional callable run in each worker before tasks.
             initargs: Positional arguments passed to the worker initializer.
-            cpus: Distinct available logical CPU IDs in preferred worker order; None uses affinity.
+            cpus: Distinct nonnegative logical CPU IDs in preferred worker order;
+                only their count is used without affinity. None uses affinity or the CPU count.
+
+        Warns:
+            RuntimeWarning: An affinity API is absent; CPU pinning is disabled.
 
         Raises:
-            NotImplementedError: Linux CPU affinity is unavailable.
+            OSError: Reading available affinity or loading a detected native library fails.
             ValueError: CPU selection or worker count is invalid.
             TypeError: The supplied initializer is not callable.
             RuntimeError: A supported native runtime or thread limit cannot be enforced.
         """
-        selected = _select_cpus(cpus, max_workers)
+        get_affinity = getattr(os, "sched_getaffinity", None)
+        set_affinity = getattr(os, "sched_setaffinity", None)
+        if get_affinity is None or set_affinity is None:
+            warnings.warn(
+                "CPU affinity APIs are unavailable; running without CPU pinning. "
+                "Explicit CPU IDs cannot be applied or verified; only their count is used.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            allowed = None
+        else:
+            allowed = get_affinity(0)
+        selected = _select_cpus(cpus, max_workers, allowed)
         if initializer is not None and not callable(initializer):
             raise TypeError("initializer must be a callable")
         lease = _NativeLease()
@@ -79,11 +107,12 @@ class CpuThreadPoolExecutor(Executor):
             placement_lock = Lock()
 
             def initialize() -> None:
-                with placement_lock:
-                    cpu = next(remaining)
-                os.sched_setaffinity(0, {cpu})
-                if os.sched_getaffinity(0) != {cpu}:
-                    raise RuntimeError(f"Could not enforce worker affinity on CPU {cpu}")
+                if get_affinity is not None and set_affinity is not None:
+                    with placement_lock:
+                        cpu = next(remaining)
+                    set_affinity(0, {cpu})
+                    if get_affinity(0) != {cpu}:
+                        raise RuntimeError(f"Could not enforce worker affinity on CPU {cpu}")
                 lease.limit_worker()
                 if initializer is not None:
                     initializer(*initargs)
@@ -99,7 +128,7 @@ class CpuThreadPoolExecutor(Executor):
         """Schedule work under the native limit and return a standard future.
 
         Args:
-            fn: Callable to run on a pinned worker.
+            fn: Callable to run on a pool worker.
             *args: Positional arguments passed to the callable, shared by reference.
             **kwargs: Keyword arguments passed to the callable, shared by reference.
 
@@ -126,14 +155,20 @@ def _run_limited[**P, T](
     return fn(*args, **kwargs)
 
 
-def _select_cpus(cpus: Iterable[int] | None, max_workers: int | None) -> tuple[int, ...]:
-    if not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"):
-        raise NotImplementedError("CpuThreadPoolExecutor requires Linux CPU affinity")
-    allowed = os.sched_getaffinity(0)
-    selected = tuple(sorted(allowed) if cpus is None else cpus)
-    if not selected or len(set(selected)) != len(selected):
-        raise ValueError("cpus must be nonempty and contain no duplicates")
-    if not set(selected) <= allowed:
+def _select_cpus(
+    cpus: Iterable[int] | None, max_workers: int | None, allowed: set[int] | None
+) -> tuple[int, ...]:
+    if cpus is None:
+        selected = tuple(
+            sorted(allowed)
+            if allowed is not None
+            else range(os.process_cpu_count() or os.cpu_count() or 1)
+        )
+    else:
+        selected = tuple(cpus)
+    if not selected or len(set(selected)) != len(selected) or any(cpu < 0 for cpu in selected):
+        raise ValueError("cpus must be nonempty, nonnegative and contain no duplicates")
+    if allowed is not None and not set(selected) <= allowed:
         raise ValueError("cpus must belong to the constructing thread's allowed CPU set")
     workers = len(selected) if max_workers is None else max_workers
     if workers <= 0 or workers > len(selected):
@@ -212,6 +247,38 @@ class _OpenMPControl:
             raise RuntimeError("Could not enforce serial OpenMP execution in worker")
 
 
+class _AccelerateControl:
+    """Bind Accelerate's public per-thread BLAS/LAPACK controls (macOS 15+)."""
+
+    def __init__(self, filepath: str) -> None:
+        self.filepath = filepath
+        library = CDLL(filepath)
+        try:
+            self.set_threading = library.BLASSetThreading
+            self.get_threading = library.BLASGetThreading
+        except AttributeError as error:
+            raise RuntimeError(
+                "Missing Apple Accelerate threading controls; macOS 15 or later is required"
+            ) from error
+        self.set_threading.argtypes = [c_uint]
+        self.set_threading.restype = c_int
+        self.get_threading.argtypes = []
+        self.get_threading.restype = c_uint
+
+    def limit(self) -> None:
+        # Public BLAS_THREADING_SINGLE_THREADED enum value from thread_api.h.
+        if self.set_threading(1) != 0 or self.get_threading() != 1:
+            raise RuntimeError("Could not enforce single-threaded Apple Accelerate execution")
+
+
+def _loaded_accelerate() -> _AccelerateControl | None:
+    if sys.platform == "darwin":
+        for path in dllist():
+            if "/Accelerate.framework/" in path and path.endswith("/libBLAS.dylib"):
+                return _AccelerateControl(path)
+    return None
+
+
 class _NativeLease:
     """Reference-count process-wide settings; never nest restoring limit scopes."""
 
@@ -225,6 +292,7 @@ class _NativeLease:
 
         with _native_lock:
             controllers = ThreadpoolController().lib_controllers
+            self.accelerate = _loaded_accelerate()
             openmp = [c for c in controllers if c.internal_api == "openmp"]
             if len(openmp) > 1:
                 raise RuntimeError("Multiple OpenMP runtimes are not supported")
@@ -238,11 +306,14 @@ class _NativeLease:
                     raise RuntimeError(
                         "Unsupported native runtime: "
                         f"{controller.internal_api} ({controller.filepath}); "
-                        "only pthreads OpenBLAS plus one OpenMP runtime are supported"
+                        "only pthreads OpenBLAS, Apple Accelerate and one OpenMP runtime "
+                        "are supported"
                     )
-            if not blas:
+            if not blas and self.accelerate is None:
                 raise RuntimeError("No supported native BLAS runtime was detected")
             inventory = {c.filepath for c in controllers}
+            if self.accelerate is not None:
+                inventory.add(self.accelerate.filepath)
             if _native_users:
                 if inventory != _native_inventory:
                     raise RuntimeError("Native libraries changed while CPU executors are alive")
@@ -264,8 +335,10 @@ class _NativeLease:
             _native_users += 1
 
     def limit_worker(self) -> None:
-        # OpenMP ICVs belong to the calling task/thread, not the pool constructor.
+        # Accelerate settings and OpenMP ICVs belong to the calling thread/task.
         # Keep them for this worker's entire lifetime, including future callbacks.
+        if self.accelerate is not None:
+            self.accelerate.limit()
         for control in self.openmp:
             control.limit()
         if any(c.get_num_threads() != 1 for c in self.blas):

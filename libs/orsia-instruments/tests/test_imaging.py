@@ -6,11 +6,11 @@ from functools import partial
 import numpy as np
 import pytest
 from orsia_instruments import (
+    AngularRadianceSamples,
     DetectorOperatingPoints,
     DetectorProperties,
     GaussianPSF,
     ImagingOptics,
-    RadianceField,
     cavity_imager,
     cavity_transmission,
     dispersive_imager,
@@ -39,7 +39,7 @@ def case():
     grid = SpectralGrid(
         "wavenumber_cm1", points, SpectralDomain("wavenumber_cm1", ((4900.0, 5100.0),))
     )
-    scene = RadianceField(
+    scene = AngularRadianceSamples(
         grid,
         np.array([0.0, 0.2]),
         np.array([-0.003, 0.003]),

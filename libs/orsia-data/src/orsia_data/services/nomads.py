@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
 
-from ..acquisition import download_file
+from orsia_data.acquisition import download_file
 
 
 def gfs_valid_time(cycle: datetime, lead_hours: int) -> datetime:

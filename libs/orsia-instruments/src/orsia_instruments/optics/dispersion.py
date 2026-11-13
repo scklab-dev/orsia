@@ -6,11 +6,10 @@ from functools import partial
 import numpy as np
 from numpy.typing import NDArray
 
-from ..acquisition import Acquisition
-from ..quadrature import validate_quadrature_order
-from .pixels import pixel_acceptance
-from .psfs import GaussianPSF, SpatialDensity
-from .response import (
+from orsia_instruments.acquisition.quadrature import Acquisition, validate_quadrature_order
+from orsia_instruments.optics.pixels import pixel_acceptance
+from orsia_instruments.optics.psfs import GaussianPSF, SpatialDensity
+from orsia_instruments.optics.response import (
     ImagingOptics,
     SpectralParameter,
     constant_or_default,

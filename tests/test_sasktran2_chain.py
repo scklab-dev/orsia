@@ -16,10 +16,10 @@ from orsia_instruments import (
 from orsia_inverse import solve_map
 from orsia_radiative import (
     Absorption,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
     Radiance,
-    RadiativeScene,
     SpectralIrradiance,
     SurfaceState,
     compose_atmospheric_optics,
@@ -45,7 +45,7 @@ def test_analytic_radiance_instrument_inverse_closure():
     depth = 0.2 + 0.15 * x
     irradiance = 1.0 + 0.1 * np.sin(2 * np.pi * x)
     mu0, muv, albedo = 0.8, 0.7, 0.3
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0]),
         np.array([100000.0, 90000.0]),
         np.array([95000.0]),
@@ -57,7 +57,7 @@ def test_analytic_radiance_instrument_inverse_closure():
     source = solar_source(
         SpectralIrradiance(grid, irradiance), direction=(float(np.rad2deg(np.arccos(mu0))), 60.0)
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(grid, reflectance=np.full(65, albedo)),
         ObservationGeometry(float(np.rad2deg(np.arccos(muv)))),
@@ -88,7 +88,7 @@ def test_analytic_radiance_instrument_inverse_closure():
             np.array([initial]),
             observation_factor=factor_covariance(np.ones(observation.size), method="cholesky"),
         )
-        assert estimate.success
+        assert estimate.termination.success
         np.testing.assert_allclose(estimate.state, [1.0], rtol=0, atol=1e-7)
     assert not sys._is_gil_enabled()
 

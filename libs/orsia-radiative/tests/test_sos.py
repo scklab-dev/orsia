@@ -16,9 +16,9 @@ from orsia_radiative import (
     AbsorptionComponent,
     AerosolComponent,
     AerosolOptics,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     ScatteringProperties,
     SpectralIrradiance,
@@ -36,11 +36,9 @@ from orsia_radiative.transfer.formal import propagate
 from orsia_radiative.transfer.orders import angular_grid, phase_function
 
 
-def scene_inputs() -> tuple[
-    RadiativeScene, SpectralIrradiance, RayleighComponent, AerosolComponent
-]:
+def scene_inputs() -> tuple[ColumnScene, SpectralIrradiance, RayleighComponent, AerosolComponent]:
     axis = np.array([12000.0, 12001.0], dtype=np.float64)
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -50,7 +48,7 @@ def scene_inputs() -> tuple[
         np.array([1e28, 1e28]),
         (Absorber("X", np.array([1e25, 1e25]), "dry_air"),),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(wavenumber_grid(axis), reflectance=np.array([0.2, 0.0])),
         ObservationGeometry(20.0),

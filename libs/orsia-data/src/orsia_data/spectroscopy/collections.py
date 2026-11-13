@@ -9,7 +9,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 import numpy as np
-from orsia_radiative.spectroscopy.line_tables import LineDatabase, PartitionFunctionTable
+from orsia_radiative.spectroscopy.line_tables import PartitionFunctionTable, SpectralLineTable
 from orsia_radiative.spectroscopy.lines import Line
 from orsia_radiative.spectroscopy.measurements import CrossSectionMeasurements, CrossSectionSpectrum
 from orsia_radiative.spectroscopy.references import LineSpectroscopy
@@ -231,7 +231,7 @@ def read_spectroscopy_collection(directory: Path) -> SpectroscopyCollection:
                     raise ValueError(f"line reference identity mismatch: {key}")
             molecule, isotope = entry["molecule_id"], entry["isotopologue_id"]
             databases = tuple(
-                LineDatabase(
+                SpectralLineTable(
                     tuple(Line(*row) for row in arrays[f"transitions_{index}"]),
                     molecule,
                     isotope,

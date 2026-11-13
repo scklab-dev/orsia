@@ -10,9 +10,9 @@ from orsia_radiative import (
     Absorber,
     AbsorptionComponent,
     AerosolComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     SpectralIrradiance,
     SurfaceState,
     compose_absorption,
@@ -23,9 +23,9 @@ from orsia_radiative import (
 from scipy.integrate import quad
 
 
-def _scene() -> tuple[RadiativeScene, SpectralIrradiance]:
+def _scene() -> tuple[ColumnScene, SpectralIrradiance]:
     axis = np.array([900.0, 901.0])
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0]),
         np.array([100000.0, 90000.0]),
         np.array([95000.0]),
@@ -34,7 +34,7 @@ def _scene() -> tuple[RadiativeScene, SpectralIrradiance]:
         np.array([1.9e29]),
         np.array([1.0e28]),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(wavenumber_grid(axis), reflectance=np.array([0.4, 0.0])),
         ObservationGeometry(21.0),

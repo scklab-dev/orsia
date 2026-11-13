@@ -8,11 +8,25 @@ requires-python = ">=3.14,<3.15"
 dependencies = ["numpy>=2.3,<3", "scipy>=1.16,<2", "orsia-numerics==0.1.0"]
 
 [build-system]
-requires = ["setuptools>=80,<83", "pybind11==3.0.2"]
+requires = ["setuptools>=80,<83", "pybind11==3.0.2", "orsia-numerics==0.1.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
+"orsia_radiative.optics" = ["*.cpp", "*.h", "*.pyi"]
 "orsia_radiative.transfer.native" = ["*.cpp", "*.h", "*.pyi"]
+
+[tool.uv]
+# Track maintained build inputs, excluding generated extensions and bytecode.
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "setup.py" },
+  { file = "README.md" },
+  { file = "src/**/*.py" },
+  { file = "src/**/*.pyi" },
+  { file = "src/**/*.cpp" },
+  { file = "src/**/*.h" },
+  { file = "src/**/py.typed" },
+]

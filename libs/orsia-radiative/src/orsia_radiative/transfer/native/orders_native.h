@@ -6,10 +6,11 @@
 #include <stdexcept>
 
 static double strided_value(const py::buffer_info &b, py::ssize_t row,
-                            py::ssize_t column = 0) {
+                            py::ssize_t column = 0, py::ssize_t direction = 0) {
     if (!b.ptr) return 0.0;
     const auto *p = static_cast<const char *>(b.ptr) + row * b.strides[0];
-    if (b.ndim == 2) p += column * b.strides[1];
+    if (b.ndim >= 2) p += column * b.strides[1];
+    if (b.ndim == 3) p += direction * b.strides[2];
     double value;
     std::memcpy(&value, p, sizeof(value));
     return value;
@@ -61,6 +62,10 @@ static void dense_redistribute(Dgemm gemm, const double *field, const double *ph
                 source[std::ptrdiff_t{c} * directions + d] = sum;
             }
     }
+}
+
+static double direct_reflected_value(double amplitude, double total, double airmass) {
+    return amplitude * std::exp(-total * airmass);
 }
 
 static py::array_t<double> spectral_orders(
@@ -257,7 +262,7 @@ static py::array_t<double> spectral_orders(
             }
             if (!std::isfinite(physical_total)) throw std::invalid_argument("summed optical depth overflow");
             const double amplitude = irradiance[point] * reflectance[point] * mu0 / pi;
-            const double direct = amplitude * std::exp(-total * (1.0 / mu0 + 1.0 / muv));
+            const double direct = direct_reflected_value(amplitude, total, 1.0 / mu0 + 1.0 / muv);
             if (!std::isfinite(direct) || direct < 0) throw std::invalid_argument("radiance values must be finite and nonnegative");
             output[point] = direct;
             if (!max_order || !active) continue;

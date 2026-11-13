@@ -12,13 +12,18 @@
           <mxGeometry as="geometry" x="40" y="300" width="1520" height="400" />
         </mxCell>
         <mxCell id="operations" value="&lt;b&gt;operations.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Signed bias and source terms&lt;br&gt;Declared cross-covariances&lt;br&gt;Empirical covariance&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="package">
-          <mxGeometry as="geometry" x="100" y="80" width="560" height="230" />
+          <mxGeometry as="geometry" x="40" y="80" width="400" height="230" />
         </mxCell>
         <mxCell id="covariance" value="&lt;b&gt;covariance.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;CovarianceFactor snapshots&lt;br&gt;Transport, solve, whiten, draw&lt;br&gt;Numerical validation and roots&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="package">
-          <mxGeometry as="geometry" x="860" y="80" width="560" height="230" />
+          <mxGeometry as="geometry" x="1040" y="80" width="440" height="230" />
         </mxCell>
-        <mxCell id="operations-covariance" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="package" source="operations" target="covariance">
-          <mxGeometry as="geometry" relative="1" />
+        <mxCell id="operations-covariance" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.7;exitY=1;entryX=0.3;entryY=1;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="package" source="operations" target="covariance">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="320" y="350" />
+              <mxPoint x="1172" y="350" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="choice" value="" style="ellipse;html=0;fillColor=#52647A;strokeColor=#52647A;fontColor=#52647A;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="796" y="256" width="8" height="8" />
@@ -29,28 +34,41 @@
         <mxCell id="choose-operations" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="operations">
           <mxGeometry as="geometry" relative="1">
             <Array as="points">
-              <mxPoint x="420" y="260" />
+              <mxPoint x="280" y="260" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="choose-covariance" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="covariance">
           <mxGeometry as="geometry" relative="1">
             <Array as="points">
-              <mxPoint x="1180" y="260" />
+              <mxPoint x="1300" y="260" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="storage" value="&lt;b&gt;NumPy / SciPy&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Arrays and numerical decompositions&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
+        <mxCell id="storage" value="&lt;b&gt;NumPy / SciPy&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Dense arrays, CSR maps and numerical decompositions&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="350" y="765" width="900" height="75" />
         </mxCell>
-        <mxCell id="covariance-storage" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.9222222222222222;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="covariance" target="storage">
+        <mxCell id="covariance-storage" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.8;exitY=1;entryX=1;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="covariance" target="storage">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="operations-storage" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.07777777777777778;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="operations" target="storage">
+        <mxCell id="operations-storage" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.2;exitY=1;entryX=0;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="operations" target="storage">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
         <mxCell id="key" value="Arrows: selected calls or dependencies. The application supplies physical error laws." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="65" y="860" width="1460" height="30" />
+        </mxCell>
+        <mxCell id="projection" value="&lt;b&gt;projection.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Dense / CSR source maps&lt;br&gt;Products, transport, marginals&lt;br&gt;Budgeted dense output&lt;br&gt;Diagonal + low-rank solve&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#203D62;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="540" y="80" width="400" height="230" />
+        </mxCell>
+        <mxCell id="projection-covariance" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="package" source="projection" target="covariance">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="choose-projection" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="projection">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="780" y="260" />
+            </Array>
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>

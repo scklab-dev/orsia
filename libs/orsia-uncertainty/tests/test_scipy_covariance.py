@@ -4,10 +4,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
-from orsia_uncertainty import (
-    combine_contributions,
-    validate_covariance,
-)
+from orsia_uncertainty import combine_contributions, validate_covariance
 from orsia_uncertainty import covariance as covariance_module
 
 

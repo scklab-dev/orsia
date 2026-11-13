@@ -5,40 +5,34 @@
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="Inside orsia_radiative" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=32;fontStyle=1;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="20" width="1500" height="45" />
-        </mxCell>
-        <mxCell id="subtitle" value="Caller-composed values: physical state → spectroscopy → optics → selected transfer" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="75" width="1500" height="35" />
-        </mxCell>
-        <mxCell id="caller" value="&lt;b&gt;Explicit in-memory inputs&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;No reader, provider, instrument or retrieval is selected&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="330" y="140" width="940" height="80" />
+        <mxCell id="caller" value="&lt;b&gt;Caller-owned values and explicit tangent seeds&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Materialised state, spectral support, illumination and fixed geometry / numerical controls&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="40" width="1480" height="110" />
         </mxCell>
         <mxCell id="state" value="&lt;b&gt;State and support&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;atmosphere / columns / profiles&lt;br&gt;surface / geometry / scene&lt;br&gt;spectral/&lt;br&gt;Layers, boundaries and grid&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="60" y="310" width="410" height="370" />
+          <mxGeometry as="geometry" x="60" y="240" width="410" height="390" />
         </mxCell>
         <mxCell id="spectroscopy" value="&lt;b&gt;spectroscopy/&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Lines, tables and continuum&lt;br&gt;Species-resolved absorption&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="560" y="310" width="390" height="160" />
+          <mxGeometry as="geometry" x="560" y="240" width="390" height="150" />
         </mxCell>
-        <mxCell id="optics" value="&lt;b&gt;optics/&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Absorption composition&lt;br&gt;Rayleigh / aerosol optical roles&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="560" y="540" width="390" height="140" />
+        <mxCell id="optics" value="&lt;b&gt;optics/&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Absorption, Rayleigh, aerosols&lt;br&gt;Fixed-cross-section&lt;br&gt;column tangents&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="450" width="390" height="180" />
         </mxCell>
         <mxCell id="transfer" value="Choose transfer explicitly" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=0;align=left;verticalAlign=top;spacingLeft=24;spacingTop=16;fontFamily=Helvetica;fontSize=23;fontStyle=1;fontColor=#52647A;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="1040" y="310" width="500" height="370" />
+          <mxGeometry as="geometry" x="1040" y="240" width="500" height="390" />
         </mxCell>
-        <mxCell id="solar" value="&lt;b&gt;transfer.solar&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Scene + solar source + optics&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="transfer">
-          <mxGeometry as="geometry" x="30" y="75" width="440" height="105" />
+        <mxCell id="solar" value="&lt;b&gt;transfer.solar / orders&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Reflected solar + tangents&lt;br&gt;Fixed-order scattering&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="transfer">
+          <mxGeometry as="geometry" x="30" y="65" width="440" height="135" />
         </mxCell>
-        <mxCell id="thermal" value="&lt;b&gt;transfer.thermal&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Scene + optics; non-scattering LTE&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="transfer">
-          <mxGeometry as="geometry" x="30" y="225" width="440" height="105" />
+        <mxCell id="thermal" value="&lt;b&gt;transfer.thermal&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Non-scattering LTE&lt;br&gt;Radiance + tangents&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="transfer">
+          <mxGeometry as="geometry" x="30" y="225" width="440" height="135" />
         </mxCell>
-        <mxCell id="radiance" value="&lt;b&gt;Radiance&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Physical values, grid and view&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="1040" y="760" width="500" height="80" />
+        <mxCell id="radiance" value="&lt;b&gt;Physical radiance&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Values and explicit derivatives&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1040" y="710" width="500" height="100" />
         </mxCell>
-        <mxCell id="state-spectroscopy" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.21621621621621623;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="state" target="spectroscopy">
+        <mxCell id="state-spectroscopy" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.19230769230769232;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="state" target="spectroscopy">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="state-optics" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.8108108108108109;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="state" target="optics">
+        <mxCell id="state-optics" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.7692307692307693;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="state" target="optics">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
         <mxCell id="spectroscopy-optics" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="spectroscopy" target="optics">
@@ -47,22 +41,27 @@
         <mxCell id="optics-transfer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="optics" target="transfer">
           <mxGeometry as="geometry" relative="1">
             <Array as="points">
-              <mxPoint x="995" y="610" />
-              <mxPoint x="995" y="495" />
+              <mxPoint x="995" y="540" />
+              <mxPoint x="995" y="435" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="transfer-radiance" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="transfer" target="radiance">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="state-note" value="Scene and spectral support are also supplied to transfer." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="60" y="745" width="920" height="35" />
+        <mxCell id="native" value="&lt;b&gt;Shared native tangent arithmetic&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Numerics C++ headers; physical derivatives owned by Radiative&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#FFFFFF;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="60" y="710" width="890" height="100" />
         </mxCell>
-        <mxCell id="solar-note" value="solar/ supplies illumination; radiometry.py supplies Planck values." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=22;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="60" y="787" width="930" height="35" />
+        <mxCell id="optics-native" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.7808988764044944;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=1;" edge="1" parent="1" source="optics" target="native">
+          <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="key" value="Arrows: selected value flow, not imports. Solar and thermal operations are alternatives." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="60" y="860" width="1470" height="30" />
+        <mxCell id="transfer-native" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0;exitY=0.9;entryX=1;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=1;" edge="1" parent="1" source="transfer" target="native">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="995" y="591" />
+              <mxPoint x="995" y="760" />
+            </Array>
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>

@@ -1,152 +1,209 @@
 """Physical instrument acquisition, native detector reads and calibrated ground-band cubes."""
 
-from .acquisition import Acquisition as Acquisition
-from .acquisition import LinearTrajectory as LinearTrajectory
-from .acquisition import RasterReadSchedule as RasterReadSchedule
-from .acquisition import ReadSchedule as ReadSchedule
-from .acquisition import along_track_acquisition as along_track_acquisition
-from .acquisition import along_track_exposure_bounds as along_track_exposure_bounds
-from .acquisition import along_track_raster_reads as along_track_raster_reads
-from .acquisition import along_track_read_schedule as along_track_read_schedule
-from .acquisition import along_track_strip_templates as along_track_strip_templates
-from .acquisition import ground_fixed_pointing as ground_fixed_pointing
-from .acquisition import ground_scroll_pointing as ground_scroll_pointing
-from .acquisition import raster_exposure_bounds as raster_exposure_bounds
-from .acquisition import raster_read_schedule as raster_read_schedule
-from .acquisition import read_schedule as read_schedule
-from .acquisition import rectangular_acquisition as rectangular_acquisition
-from .acquisition import select_raster_reads as select_raster_reads
-from .acquisition import select_read_schedule as select_read_schedule
-from .charge import ExpectedElectrons as ExpectedElectrons
-from .charge import combine_source_paths as combine_source_paths
-from .detector import DetectorElectronics as DetectorElectronics
-from .detector import DetectorOperatingPoints as DetectorOperatingPoints
-from .detector import DetectorProperties as DetectorProperties
-from .detector import DetectorReadings as DetectorReadings
-from .detector import correct_digital_readings as correct_digital_readings
-from .detector import detector_operating_points as detector_operating_points
-from .detector import digitize as digitize
-from .detector import electron_covariance as electron_covariance
-from .detector import electron_moments as electron_moments
-from .detector import pixel_quantum_efficiency as pixel_quantum_efficiency
-from .detector import regular_detector as regular_detector
-from .detector import regular_pixel_bounds as regular_pixel_bounds
-from .detector import sample_readout as sample_readout
-from .imaging.acquisition import ExposureSequence as ExposureSequence
-from .imaging.acquisition import exposure_sequence as exposure_sequence
-from .imaging.acquisition import image_acquisition as image_acquisition
-from .imaging.calibration import CalibratedElectrons as CalibratedElectrons
-from .imaging.calibration import CalibratedFrames as CalibratedFrames
-from .imaging.calibration import calibrate_frame_electrons as calibrate_frame_electrons
-from .imaging.calibration import calibrate_frames as calibrate_frames
-from .imaging.geolocation import SurfaceAcquisitionGrid as SurfaceAcquisitionGrid
-from .imaging.geolocation import SurfaceProjection as SurfaceProjection
-from .imaging.geolocation import camera_acquisition_grid as camera_acquisition_grid
-from .imaging.geolocation import frame_exposure_bounds as frame_exposure_bounds
-from .imaging.geolocation import ground_integration_bounds as ground_integration_bounds
-from .imaging.geolocation import (
+from orsia_instruments.acquisition.images import ExposureSequence as ExposureSequence
+from orsia_instruments.acquisition.images import exposure_sequence as exposure_sequence
+from orsia_instruments.acquisition.images import image_acquisition as image_acquisition
+from orsia_instruments.acquisition.los import LineOfSightRadiance as LineOfSightRadiance
+from orsia_instruments.acquisition.los import LineOfSightSamples as LineOfSightSamples
+from orsia_instruments.acquisition.los import RadianceCoverage as RadianceCoverage
+from orsia_instruments.acquisition.los import (
+    sample_line_of_sight_radiance as sample_line_of_sight_radiance,
+)
+from orsia_instruments.acquisition.los import sample_lines_of_sight as sample_lines_of_sight
+from orsia_instruments.acquisition.quadrature import Acquisition as Acquisition
+from orsia_instruments.acquisition.quadrature import GroundScrollPointing as GroundScrollPointing
+from orsia_instruments.acquisition.quadrature import (
+    along_track_acquisition as along_track_acquisition,
+)
+from orsia_instruments.acquisition.quadrature import read_schedule as read_schedule
+from orsia_instruments.acquisition.quadrature import (
+    rectangular_acquisition as rectangular_acquisition,
+)
+from orsia_instruments.acquisition.schedule import LinearTrajectory as LinearTrajectory
+from orsia_instruments.acquisition.schedule import RasterReadSchedule as RasterReadSchedule
+from orsia_instruments.acquisition.schedule import ReadSchedule as ReadSchedule
+from orsia_instruments.acquisition.schedule import (
+    along_track_exposure_bounds as along_track_exposure_bounds,
+)
+from orsia_instruments.acquisition.schedule import (
+    along_track_raster_reads as along_track_raster_reads,
+)
+from orsia_instruments.acquisition.schedule import (
+    along_track_read_schedule as along_track_read_schedule,
+)
+from orsia_instruments.acquisition.schedule import (
+    along_track_strip_templates as along_track_strip_templates,
+)
+from orsia_instruments.acquisition.schedule import raster_exposure_bounds as raster_exposure_bounds
+from orsia_instruments.acquisition.schedule import raster_read_schedule as raster_read_schedule
+from orsia_instruments.acquisition.schedule import select_raster_reads as select_raster_reads
+from orsia_instruments.acquisition.schedule import select_read_schedule as select_read_schedule
+from orsia_instruments.acquisition.surface import SurfaceAcquisitionGrid as SurfaceAcquisitionGrid
+from orsia_instruments.acquisition.surface import SurfaceProjection as SurfaceProjection
+from orsia_instruments.acquisition.surface import camera_acquisition_grid as camera_acquisition_grid
+from orsia_instruments.acquisition.surface import frame_exposure_bounds as frame_exposure_bounds
+from orsia_instruments.acquisition.surface import (
+    ground_integration_bounds as ground_integration_bounds,
+)
+from orsia_instruments.acquisition.surface import (
     spectrometer_acquisition_grid as spectrometer_acquisition_grid,
 )
-from .imaging.geolocation import (
+from orsia_instruments.acquisition.surface import (
     wgs84_surface_projection_from_camera as wgs84_surface_projection_from_camera,
 )
-from .imaging.measurements import ImageMeasurements as ImageMeasurements
-from .imaging.photodetection import ImageIndices as ImageIndices
-from .imaging.photodetection import ImagePhotoelectrons as ImagePhotoelectrons
-from .imaging.photodetection import ImageQuantumEfficiency as ImageQuantumEfficiency
-from .imaging.photodetection import combine_image_source_paths as combine_image_source_paths
-from .imaging.photodetection import image_charge as image_charge
-from .imaging.photodetection import image_photoelectrons as image_photoelectrons
-from .imaging.radiometry import FrameMeasurements as FrameMeasurements
-from .imaging.radiometry import SurfaceRadiance as SurfaceRadiance
-from .imaging.radiometry import SurfaceRadianceCoverage as SurfaceRadianceCoverage
-from .imaging.radiometry import frame_response as frame_response
-from .imaging.radiometry import simulate_frames as simulate_frames
-from .imaging.readout import image_readout as image_readout
-from .imaging.reconstruction import reconstruct_radiance_cube as reconstruct_radiance_cube
-from .imaging.response.band import NativeBandResponse as NativeBandResponse
-from .imaging.response.band import group_native_bands as group_native_bands
-from .imaging.response.instrument import DetectorResponse as DetectorResponse
-from .imaging.response.instrument import GroundGrid as GroundGrid
-from .imaging.response.instrument import InstrumentResponse as InstrumentResponse
-from .imaging.response.instrument import SceneRadiance as SceneRadiance
-from .imaging.response.instrument import detector_response as detector_response
-from .imaging.response.instrument import (
-    gaussian_along_track_response as gaussian_along_track_response,
+from orsia_instruments.calibration.frames import CalibratedElectrons as CalibratedElectrons
+from orsia_instruments.calibration.frames import CalibratedFrames as CalibratedFrames
+from orsia_instruments.calibration.frames import (
+    calibrate_frame_electrons as calibrate_frame_electrons,
 )
-from .imaging.response.instrument import (
-    gaussian_cross_track_response as gaussian_cross_track_response,
+from orsia_instruments.calibration.frames import calibrate_frames as calibrate_frames
+from orsia_instruments.calibration.radiometry import (
+    RadiometricObservations as RadiometricObservations,
 )
-from .imaging.response.instrument import instrument_response as instrument_response
-from .imaging.response.instrument import response_electrons as response_electrons
-from .imaging.response.joint import SpatialSpectralResponse as SpatialSpectralResponse
-from .imaging.response.joint import spatial_spectral_response as spatial_spectral_response
-from .imaging.response.joint import stack_frame_electrons as stack_frame_electrons
-from .imaging.simulation import simulate_images as simulate_images
-from .los import LineOfSightRadiance as LineOfSightRadiance
-from .los import LineOfSightSamples as LineOfSightSamples
-from .los import RadianceCoverage as RadianceCoverage
-from .los import sample_line_of_sight_radiance as sample_line_of_sight_radiance
-from .los import sample_lines_of_sight as sample_lines_of_sight
-from .optics.camera import FilterCamera as FilterCamera
-from .optics.camera import FilterStrip as FilterStrip
-from .optics.camera import FocalPlaneImager as FocalPlaneImager
-from .optics.camera import ImagerSizing as ImagerSizing
-from .optics.camera import filter_camera as filter_camera
-from .optics.camera import filter_strip as filter_strip
-from .optics.camera import focal_plane_imager as focal_plane_imager
-from .optics.camera import sized_focal_length as sized_focal_length
-from .optics.cavities import cavity_imager as cavity_imager
-from .optics.cavities import cavity_transmission as cavity_transmission
-from .optics.dispersion import dispersive_imager as dispersive_imager
-from .optics.dispersion import dispersive_response as dispersive_response
-from .optics.dispersion import polynomial_image_map as polynomial_image_map
-from .optics.filters import filter_imager as filter_imager
-from .optics.filters import gaussian_filter as gaussian_filter
-from .optics.filters import longpass_filter as longpass_filter
-from .optics.filters import lorentzian_filter as lorentzian_filter
-from .optics.filters import lvf_centre as lvf_centre
-from .optics.filters import lvf_imager as lvf_imager
-from .optics.filters import notch_filter as notch_filter
-from .optics.filters import rectangular_filter as rectangular_filter
-from .optics.filters import shortpass_filter as shortpass_filter
-from .optics.filters import spatial_filter_imager as spatial_filter_imager
-from .optics.filters import super_gaussian_filter as super_gaussian_filter
-from .optics.filters import tabulated_transmission as tabulated_transmission
-from .optics.pixels import gaussian_pixel_fraction as gaussian_pixel_fraction
-from .optics.pixels import pixel_acceptance as pixel_acceptance
-from .optics.psfs import GaussianPSF as GaussianPSF
-from .optics.psfs import PointSpreadFunction as PointSpreadFunction
-from .optics.psfs import SpatialDensity as SpatialDensity
-from .optics.psfs import TabulatedPSF as TabulatedPSF
-from .optics.psfs import airy_psf as airy_psf
-from .optics.psfs import gaussian_psf as gaussian_psf
-from .optics.response import ImageResponse as ImageResponse
-from .optics.response import ImagingOptics as ImagingOptics
-from .optics.response import OpticalResponse as OpticalResponse
-from .optics.spectrometer import DispersiveSpectrometer as DispersiveSpectrometer
-from .optics.spectrometer import dispersive_spectrometer as dispersive_spectrometer
-from .optics.two_beam import interferometric_imager as interferometric_imager
-from .optics.two_beam import two_beam_ports as two_beam_ports
-from .photoelectrons import OpticalAcceptance as OpticalAcceptance
-from .photoelectrons import QuantumEfficiency as QuantumEfficiency
-from .photoelectrons import expected_electrons as expected_electrons
-from .photoelectrons import line_of_sight_expected_electrons as line_of_sight_expected_electrons
-from .photoelectrons import photoelectron_response as photoelectron_response
-from .photoelectrons import sample_optical_acceptance as sample_optical_acceptance
-from .scene import RadianceField as RadianceField
-from .scene import sample_radiance as sample_radiance
-from .scene import uniform_radiance_field as uniform_radiance_field
-from .tolerances import NativeSignalBudget as NativeSignalBudget
-from .tolerances import analogue_dn_budget as analogue_dn_budget
-from .tolerances import central_difference as central_difference
-from .tolerances import monte_carlo_dn as monte_carlo_dn
-from .tolerances import monte_carlo_native as monte_carlo_native
-from .tolerances import native_difference as native_difference
-from .tolerances import native_sensitivities as native_sensitivities
-from .tolerances import native_tolerance_budget as native_tolerance_budget
+from orsia_instruments.calibration.radiometry import (
+    RadiometricParameterMaps as RadiometricParameterMaps,
+)
+from orsia_instruments.calibration.radiometry import (
+    accumulate_observations as accumulate_observations,
+)
+from orsia_instruments.calibration.radiometry import calibrate_readings as calibrate_readings
+from orsia_instruments.calibration.radiometry import (
+    normalized_accumulation_weights as normalized_accumulation_weights,
+)
+from orsia_instruments.detector import DetectorElectronics as DetectorElectronics
+from orsia_instruments.detector import DetectorOperatingPoints as DetectorOperatingPoints
+from orsia_instruments.detector import DetectorProperties as DetectorProperties
+from orsia_instruments.detector import DetectorReadings as DetectorReadings
+from orsia_instruments.detector import correct_digital_readings as correct_digital_readings
+from orsia_instruments.detector import detector_operating_points as detector_operating_points
+from orsia_instruments.detector import digitize as digitize
+from orsia_instruments.detector import electron_covariance as electron_covariance
+from orsia_instruments.detector import electron_moments as electron_moments
+from orsia_instruments.detector import pixel_quantum_efficiency as pixel_quantum_efficiency
+from orsia_instruments.detector import regular_detector as regular_detector
+from orsia_instruments.detector import regular_pixel_bounds as regular_pixel_bounds
+from orsia_instruments.detector import sample_readout as sample_readout
+from orsia_instruments.observation.measurements import BandRadianceCube
+from orsia_instruments.observation.measurements import FrameMeasurements as FrameMeasurements
+from orsia_instruments.observation.measurements import ImageMeasurements as ImageMeasurements
+from orsia_instruments.observation.native import CalibratedObservations as CalibratedObservations
+from orsia_instruments.observation.native import ObservationCube as ObservationCube
+from orsia_instruments.observation.native import calibrate_observations as calibrate_observations
+from orsia_instruments.observation.native import form_observation_cube as form_observation_cube
+from orsia_instruments.optics.camera import FilterCamera as FilterCamera
+from orsia_instruments.optics.camera import FilterStrip as FilterStrip
+from orsia_instruments.optics.camera import FocalPlaneImager as FocalPlaneImager
+from orsia_instruments.optics.camera import ImagerSizing as ImagerSizing
+from orsia_instruments.optics.camera import filter_camera as filter_camera
+from orsia_instruments.optics.camera import filter_strip as filter_strip
+from orsia_instruments.optics.camera import focal_plane_imager as focal_plane_imager
+from orsia_instruments.optics.camera import sized_focal_length as sized_focal_length
+from orsia_instruments.optics.cavities import cavity_imager as cavity_imager
+from orsia_instruments.optics.cavities import cavity_transmission as cavity_transmission
+from orsia_instruments.optics.dispersion import dispersive_imager as dispersive_imager
+from orsia_instruments.optics.dispersion import dispersive_response as dispersive_response
+from orsia_instruments.optics.dispersion import polynomial_image_map as polynomial_image_map
+from orsia_instruments.optics.filters import FilterPassband as FilterPassband
+from orsia_instruments.optics.filters import filter_imager as filter_imager
+from orsia_instruments.optics.filters import gaussian_filter as gaussian_filter
+from orsia_instruments.optics.filters import longpass_filter as longpass_filter
+from orsia_instruments.optics.filters import lorentzian_filter as lorentzian_filter
+from orsia_instruments.optics.filters import lvf_centre as lvf_centre
+from orsia_instruments.optics.filters import lvf_imager as lvf_imager
+from orsia_instruments.optics.filters import notch_filter as notch_filter
+from orsia_instruments.optics.filters import rectangular_filter as rectangular_filter
+from orsia_instruments.optics.filters import shortpass_filter as shortpass_filter
+from orsia_instruments.optics.filters import spatial_filter_imager as spatial_filter_imager
+from orsia_instruments.optics.filters import super_gaussian_filter as super_gaussian_filter
+from orsia_instruments.optics.filters import tabulated_transmission as tabulated_transmission
+from orsia_instruments.optics.pixels import gaussian_pixel_fraction as gaussian_pixel_fraction
+from orsia_instruments.optics.pixels import pixel_acceptance as pixel_acceptance
+from orsia_instruments.optics.pixels import square_pixel_etendue as square_pixel_etendue
+from orsia_instruments.optics.psfs import GaussianPSF as GaussianPSF
+from orsia_instruments.optics.psfs import PointSpreadFunction as PointSpreadFunction
+from orsia_instruments.optics.psfs import SpatialDensity as SpatialDensity
+from orsia_instruments.optics.psfs import TabulatedPSF as TabulatedPSF
+from orsia_instruments.optics.psfs import airy_psf as airy_psf
+from orsia_instruments.optics.psfs import gaussian_psf as gaussian_psf
+from orsia_instruments.optics.response import ImageResponse as ImageResponse
+from orsia_instruments.optics.response import ImagingOptics as ImagingOptics
+from orsia_instruments.optics.response import OpticalResponse as OpticalResponse
+from orsia_instruments.optics.spectrometer import DispersiveSpectrometer as DispersiveSpectrometer
+from orsia_instruments.optics.spectrometer import dispersive_spectrometer as dispersive_spectrometer
+from orsia_instruments.optics.two_beam import interferometric_imager as interferometric_imager
+from orsia_instruments.optics.two_beam import two_beam_ports as two_beam_ports
+from orsia_instruments.photodetection.charge import ExpectedElectrons as ExpectedElectrons
+from orsia_instruments.photodetection.charge import combine_source_paths as combine_source_paths
+from orsia_instruments.photodetection.coefficients import OpticalAcceptance as OpticalAcceptance
+from orsia_instruments.photodetection.coefficients import QuantumEfficiency as QuantumEfficiency
+from orsia_instruments.photodetection.coefficients import expected_electrons as expected_electrons
+from orsia_instruments.photodetection.coefficients import (
+    line_of_sight_expected_electrons as line_of_sight_expected_electrons,
+)
+from orsia_instruments.photodetection.coefficients import (
+    photoelectron_response as photoelectron_response,
+)
+from orsia_instruments.photodetection.coefficients import (
+    sample_optical_acceptance as sample_optical_acceptance,
+)
+from orsia_instruments.photodetection.frames import SurfaceRadiance as SurfaceRadiance
+from orsia_instruments.photodetection.frames import (
+    SurfaceRadianceCoverage as SurfaceRadianceCoverage,
+)
+from orsia_instruments.photodetection.frames import (
+    frame_electron_tangents as frame_electron_tangents,
+)
+from orsia_instruments.photodetection.frames import frame_response as frame_response
+from orsia_instruments.photodetection.images import ImageIndices as ImageIndices
+from orsia_instruments.photodetection.images import ImagePhotoelectrons as ImagePhotoelectrons
+from orsia_instruments.photodetection.images import ImageQuantumEfficiency as ImageQuantumEfficiency
+from orsia_instruments.photodetection.images import (
+    combine_image_source_paths as combine_image_source_paths,
+)
+from orsia_instruments.photodetection.images import image_charge as image_charge
+from orsia_instruments.photodetection.images import image_photoelectrons as image_photoelectrons
+from orsia_instruments.registration.reconstruction import (
+    reconstruct_radiance_cube as reconstruct_radiance_cube,
+)
+from orsia_instruments.response.bands import NativeBandResponse as NativeBandResponse
+from orsia_instruments.response.bands import group_native_bands as group_native_bands
+from orsia_instruments.response.grid import GridElectronResponse as GridElectronResponse
+from orsia_instruments.response.grid import along_track_response as along_track_response
+from orsia_instruments.response.grid import detector_response as detector_response
+from orsia_instruments.response.grid import instrument_response as instrument_response
+from orsia_instruments.response.grid import response_electrons as response_electrons
+from orsia_instruments.response.joint import SpatialSpectralResponse as SpatialSpectralResponse
+from orsia_instruments.response.joint import spatial_spectral_response as spatial_spectral_response
+from orsia_instruments.response.joint import stack_frame_electrons as stack_frame_electrons
+from orsia_instruments.response.spectral import FilterElectronResponse as FilterElectronResponse
+from orsia_instruments.response.spectral import SpectralElectronResponse as SpectralElectronResponse
+from orsia_instruments.response.spectral import spectral_electrons as spectral_electrons
+from orsia_instruments.sampling.angular import AngularRadianceSamples as AngularRadianceSamples
+from orsia_instruments.sampling.angular import sample_radiance as sample_radiance
+from orsia_instruments.sampling.angular import uniform_radiance_field as uniform_radiance_field
+from orsia_instruments.sampling.surface import SurfaceRadianceSamples as SurfaceRadianceSamples
+from orsia_instruments.simulation import image_readout as image_readout
+from orsia_instruments.simulation import simulate_frames as simulate_frames
+from orsia_instruments.simulation import simulate_images as simulate_images
+from orsia_instruments.tolerances import NativeSignalBudget as NativeSignalBudget
+from orsia_instruments.tolerances import analogue_dn_budget as analogue_dn_budget
+from orsia_instruments.tolerances import central_difference as central_difference
+from orsia_instruments.tolerances import monte_carlo_dn as monte_carlo_dn
+from orsia_instruments.tolerances import monte_carlo_native as monte_carlo_native
+from orsia_instruments.tolerances import native_difference as native_difference
+from orsia_instruments.tolerances import native_sensitivities as native_sensitivities
+from orsia_instruments.tolerances import native_tolerance_budget as native_tolerance_budget
 
 __all__ = [
+    "RadiometricObservations",
+    "calibrate_readings",
+    "accumulate_observations",
+    "normalized_accumulation_weights",
+    "CalibratedObservations",
+    "ObservationCube",
+    "RadiometricParameterMaps",
+    "calibrate_observations",
+    "form_observation_cube",
     "FocalPlaneImager",
     "focal_plane_imager",
     "CalibratedElectrons",
@@ -182,28 +239,32 @@ __all__ = [
     "ground_integration_bounds",
     "wgs84_surface_projection_from_camera",
     "NativeBandResponse",
+    "BandRadianceCube",
+    "GridElectronResponse",
+    "FilterPassband",
+    "FilterElectronResponse",
+    "SpectralElectronResponse",
+    "spectral_electrons",
+    "square_pixel_etendue",
+    "SurfaceRadianceSamples",
     "SurfaceRadiance",
     "SurfaceRadianceCoverage",
     "FrameMeasurements",
     "simulate_frames",
+    "frame_electron_tangents",
     "CalibratedFrames",
     "calibrate_frames",
     "reconstruct_radiance_cube",
     "airy_psf",
     "Acquisition",
     "LinearTrajectory",
-    "DetectorResponse",
     "LineOfSightSamples",
     "RadianceCoverage",
     "LineOfSightRadiance",
-    "InstrumentResponse",
-    "GroundGrid",
-    "SceneRadiance",
     "detector_response",
     "sample_lines_of_sight",
     "instrument_response",
-    "gaussian_along_track_response",
-    "gaussian_cross_track_response",
+    "along_track_response",
     "response_electrons",
     "along_track_acquisition",
     "along_track_exposure_bounds",
@@ -211,8 +272,7 @@ __all__ = [
     "raster_exposure_bounds",
     "along_track_raster_reads",
     "along_track_strip_templates",
-    "ground_fixed_pointing",
-    "ground_scroll_pointing",
+    "GroundScrollPointing",
     "photoelectron_response",
     "line_of_sight_expected_electrons",
     "ReadSchedule",
@@ -237,7 +297,7 @@ __all__ = [
     "NativeSignalBudget",
     "OpticalResponse",
     "PointSpreadFunction",
-    "RadianceField",
+    "AngularRadianceSamples",
     "analogue_dn_budget",
     "cavity_transmission",
     "cavity_imager",

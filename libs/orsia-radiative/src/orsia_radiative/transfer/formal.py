@@ -14,8 +14,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import exprel
 
-from .native.transfer_native import apply as _native_apply
-from .native.transfer_native import prepare as _native_prepare
+from orsia_radiative.transfer.native.transfer_native import apply as _native_apply
+from orsia_radiative.transfer.native.transfer_native import prepare as _native_prepare
 
 
 @dataclass(frozen=True, eq=False)
@@ -463,27 +463,79 @@ def _prepare_numpy[Real: np.float32 | np.float64](
     above = None
     if solar_mu is not None:
         above = np.zeros_like(extinction)
-        above[:-1] = np.cumsum(extinction[:0:-1])[::-1]
+        with np.errstate(over="ignore"):
+            above[:-1] = np.cumsum(extinction[:0:-1])[::-1]
     depth = extinction[:, None]
-    attenuation = depth / direction
+    # Infinite slant depth is a valid opaque limit for finite vertical depth.
+    with np.errstate(over="ignore"):
+        attenuation = depth / direction
     transmission[:] = np.exp(-attenuation)
     centre_transmission[:] = np.exp(-attenuation / 2)
-    source_weight[:] = _constant_source_weight(attenuation) / direction
-    centre_source_weight[:] = _constant_source_weight(attenuation / 2) / (2 * direction)
+    thin = attenuation <= 1
+    np.divide(_constant_source_weight(attenuation), direction, out=source_weight, where=thin)
+    np.divide(
+        _constant_source_weight(attenuation / 2),
+        2 * direction,
+        out=centre_source_weight,
+        where=thin,
+    )
+    np.divide(-np.expm1(-attenuation), depth, out=source_weight, where=~thin)
+    np.divide(-np.expm1(-attenuation / 2), depth, out=centre_source_weight, where=~thin)
     if solar_mu is not None:
         assert above is not None
         assert solar_source_weight is not None and solar_centre_source_weight is not None
         # Endpoint exponents in travel order. Both are nonpositive, including
         # near-equal downward beam/ray cosines; never subtract exponentials.
-        top = -above[:, None] / solar_mu
-        bottom = -(above[:, None] + depth) / solar_mu
-        entry = np.where(mu > 0, bottom, top)
-        end = np.where(mu > 0, top, bottom)
-        midpoint = -(above[:, None] + depth / 2) / solar_mu
-        solar_source_weight[:] = integrated_exponential(entry - attenuation, end) / direction
-        solar_centre_source_weight[:] = integrated_exponential(
-            entry - attenuation / 2, np.broadcast_to(midpoint, attenuation.shape)
-        ) / (2 * direction)
+        with np.errstate(over="ignore"):
+            top = -above[:, None] / solar_mu
+            bottom = -(above[:, None] + depth) / solar_mu
+            entry = np.where(mu > 0, bottom, top)
+            end = np.where(mu > 0, top, bottom)
+            midpoint = -(above[:, None] + depth / 2) / solar_mu
+            solar_source_weight[:] = _beam_source_weight(
+                entry - attenuation, end, depth, mu, solar_mu, 1.0
+            )
+            solar_centre_source_weight[:] = _beam_source_weight(
+                entry - attenuation / 2,
+                np.broadcast_to(midpoint, attenuation.shape),
+                depth,
+                mu,
+                solar_mu,
+                0.5,
+            )
+
+
+def _beam_source_weight[Real: np.float32 | np.float64](
+    a: NDArray[Real],
+    b: NDArray[Real],
+    depth: NDArray[Real],
+    mu: NDArray[Real],
+    solar_mu: float,
+    fraction: float,
+) -> NDArray[Real]:
+    """Integrate beam forcing with a vertical-depth opaque limit.
+
+    Returns:
+        Source weights on the full cell/direction grid, including half-cell measure.
+    """
+    finite = np.isfinite(a) & np.isfinite(b)
+    direction = np.abs(mu)
+    if np.all(finite):
+        return integrated_exponential(a, b) / (direction / fraction)
+    result = np.zeros_like(a)
+    np.divide(
+        integrated_exponential(np.where(finite, a, 0), np.where(finite, b, 0)),
+        direction / fraction,
+        out=result,
+        where=finite,
+    )
+    amplitude = np.exp(np.maximum(a, b))
+    opaque = ~finite & (amplitude > 0)
+    denominator = np.where(mu > 0, solar_mu + direction, np.abs(solar_mu - direction))
+    ratio = np.zeros_like(a)
+    np.divide(solar_mu, denominator, out=ratio, where=opaque)
+    np.divide(amplitude * ratio, depth, out=result, where=opaque)
+    return result
 
 
 def _constant_source_weight[Real: np.float32 | np.float64](

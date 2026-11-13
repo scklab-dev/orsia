@@ -19,6 +19,8 @@ test:
     uv run --locked --all-packages coverage report --include='libs/orsia-data/src/*'
     uv run --locked --all-packages coverage report --include='libs/orsia-instruments/src/*'
     uv run --locked --all-packages coverage report --include='libs/orsia-inverse/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-dispersion/src/*'
+    uv run --locked --all-packages coverage report --include='libs/orsia-scene/src/*'
 
 # Focused single-process tests; supply root-relative paths and keep reader scopes separate.
 pytest +args:

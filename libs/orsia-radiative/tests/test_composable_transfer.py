@@ -15,22 +15,22 @@ from orsia_radiative import (
     Absorber,
     Absorption,
     AerosolComponent,
-    Atmosphere,
-    CrossSectionField,
+    ColumnScene,
+    LayerAtmosphere,
+    LayerCrossSections,
     Line,
     LineSet,
     ObservationGeometry,
     Radiance,
-    RadiativeScene,
     RayleighComponent,
     SolarSource,
     SpectralIrradiance,
     SurfaceState,
     compose_absorption,
     compose_atmospheric_optics,
-    cross_sections,
     evaluate_table_absorption,
     line_absorption,
+    resample_layer_cross_sections,
     solar_source,
     table_absorption,
     transfer,
@@ -39,9 +39,9 @@ from orsia_radiative import (
 )
 
 
-def case() -> tuple[RadiativeScene, SpectralIrradiance, RayleighComponent, AerosolComponent]:
+def case() -> tuple[ColumnScene, SpectralIrradiance, RayleighComponent, AerosolComponent]:
     grid = np.array([1000.0, 1001.0])
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -54,7 +54,7 @@ def case() -> tuple[RadiativeScene, SpectralIrradiance, RayleighComponent, Aeros
             Absorber("Y", np.array([3e25, 4e25]), "total_air"),
         ),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(wavenumber_grid(grid), reflectance=np.array([0.2, 0.3])),
         ObservationGeometry(20.0),
@@ -70,8 +70,8 @@ def case() -> tuple[RadiativeScene, SpectralIrradiance, RayleighComponent, Aeros
     return scene, solar, rayleigh, aerosol
 
 
-def field(scene: RadiativeScene, species: str = "X") -> CrossSectionField:
-    return CrossSectionField(
+def field(scene: ColumnScene, species: str = "X") -> LayerCrossSections:
+    return LayerCrossSections(
         species,
         "1",
         "cross_section",
@@ -79,10 +79,11 @@ def field(scene: RadiativeScene, species: str = "X") -> CrossSectionField:
         scene.atmosphere.temperature_k,
         scene.atmosphere.pressure_pa,
         np.array([[1e-27, 2e-27, 4e-27], [2e-27, 4e-27, 6e-27]]),
+        height_edges_m=scene.atmosphere.height_boundaries_m,
     )
 
 
-def change_gas(scene: RadiativeScene, factor: float, species: str = "X") -> RadiativeScene:
+def change_gas(scene: ColumnScene, factor: float, species: str = "X") -> ColumnScene:
     gases = tuple(
         replace(gas, columns_molecules_m2=factor * gas.columns_molecules_m2)
         if gas.species == species
@@ -93,8 +94,14 @@ def change_gas(scene: RadiativeScene, factor: float, species: str = "X") -> Radi
 
 
 def test_transfer_exposes_complete_solar_boundary() -> None:
-    assert transfer.__all__ == ["solar", "thermal"]
-    assert transfer.solar.__all__ == ["reflected_radiance"]
+    assert transfer.__all__ == ["paths", "solar", "thermal"]
+    assert importlib.import_module("orsia_radiative.transfer.paths") is transfer.paths
+    assert callable(transfer.paths.direct_surface_radiance)
+    assert callable(transfer.paths.direct_surface_radiance_tangent)
+    assert transfer.solar.__all__ == [
+        "reflected_radiance",
+        "reflected_radiance_tangent",
+    ]
     assert importlib.import_module("orsia_radiative.transfer") is transfer
     assert importlib.import_module("orsia_radiative.transfer.solar") is transfer.solar
     for name in transfer.solar.__all__:
@@ -109,6 +116,10 @@ def test_transfer_exposes_complete_solar_boundary() -> None:
     evaluation = inspect.signature(transfer.solar.reflected_radiance).parameters
     assert evaluation["source"].kind is inspect.Parameter.KEYWORD_ONLY
     assert evaluation["optics"].kind is inspect.Parameter.KEYWORD_ONLY
+    tangent = inspect.signature(transfer.solar.reflected_radiance_tangent).parameters
+    for name in ("source", "optics", "optical_depth_tangent", "reflectance_tangent"):
+        assert tangent[name].kind is inspect.Parameter.KEYWORD_ONLY
+        assert tangent[name].default is inspect.Parameter.empty
     assert importlib.import_module("orsia_radiative.transfer.thermal") is transfer.thermal
 
 
@@ -116,7 +127,7 @@ def test_transfer_exposes_complete_solar_boundary() -> None:
 def test_unique_origin_explicit_roles_and_no_repeated_composition(max_order: int) -> None:
     scene, solar, rayleigh, aerosol = case()
     source = solar_source(solar, direction=(30.0, 70.0))
-    gas = table_absorption(scene.atmosphere, solar.wavenumbers_cm1, field(scene))
+    gas = table_absorption(scene.atmosphere, wavenumber_grid(solar.wavenumbers_cm1), field(scene))
     total = compose_absorption(scene.atmosphere, source, (gas,))
     optics = compose_atmospheric_optics(
         scene.atmosphere, source, absorption=total, rayleigh=rayleigh, aerosol=aerosol
@@ -193,9 +204,9 @@ def test_upstream_selective_reuse_matches_full_recomputation(factor: float) -> N
     source = solar_source(solar, direction=(30.0, 70.0))
     grid = solar.wavenumbers_cm1
     x_table, y_table = field(scene), field(scene, "Y")
-    prepared_table = cross_sections(grid, x_table)
+    prepared_table = resample_layer_cross_sections(wavenumber_grid(grid), x_table)
     x = evaluate_table_absorption(scene.atmosphere, prepared_table)
-    y = table_absorption(scene.atmosphere, grid, y_table)
+    y = table_absorption(scene.atmosphere, wavenumber_grid(grid), y_table)
     old_total = compose_absorption(scene.atmosphere, source, (x, y))
     old_optics = compose_atmospheric_optics(scene.atmosphere, source, absorption=old_total)
     changed = change_gas(scene, factor)
@@ -213,8 +224,8 @@ def test_upstream_selective_reuse_matches_full_recomputation(factor: float) -> N
         changed.atmosphere,
         source,
         (
-            table_absorption(changed.atmosphere, grid, x_table),
-            table_absorption(changed.atmosphere, grid, y_table),
+            table_absorption(changed.atmosphere, wavenumber_grid(grid), x_table),
+            table_absorption(changed.atmosphere, wavenumber_grid(grid), y_table),
         ),
     )
     assert total.grid == full_total.grid
@@ -263,7 +274,7 @@ def test_line_recomputation_is_not_tau_scaling() -> None:
         (80000.0, 100000.0),
     )
     original = line_absorption(scene.atmosphere, grid, lines)
-    y = table_absorption(scene.atmosphere, grid, field(scene, "Y"))
+    y = table_absorption(scene.atmosphere, wavenumber_grid(grid), field(scene, "Y"))
     changed = change_gas(scene, 2.0)
     with pytest.raises(ValueError, match="stale absorption"):
         compose_absorption(
@@ -290,14 +301,14 @@ def test_line_recomputation_is_not_tau_scaling() -> None:
 def test_table_support_and_owned_snapshots() -> None:
     scene, solar, _, _ = case()
     grid = solar.wavenumbers_cm1.copy()
-    prepared = cross_sections(grid, field(scene))
+    prepared = resample_layer_cross_sections(wavenumber_grid(grid), field(scene))
     grid[0] = 900.0
     assert prepared.wavenumbers_cm1[0] == 1000.0
-    single = cross_sections(np.array([1000.5]), field(scene))
+    single = resample_layer_cross_sections(wavenumber_grid(np.array([1000.5])), field(scene))
     np.testing.assert_allclose(single.cross_sections_m2_per_molecule, [[2.5e-27], [4.5e-27]])
     for target in (np.array([998.0]), np.array([1003.0])):
         with pytest.raises(ValueError, match="extrapolation"):
-            cross_sections(target, field(scene))
+            resample_layer_cross_sections(wavenumber_grid(target), field(scene))
     for changes in (
         {"temperature_k": np.array([291.0, 280.0])},
         {"pressure_pa": np.array([94000.0, 85000.0])},
@@ -323,7 +334,7 @@ def test_reuse_checks_physical_dependencies_not_retrieval_membership(dependency:
         (80000.0, 100000.0),
     )
     x = line_absorption(atmosphere, grid, lines)
-    y = table_absorption(atmosphere, grid, field(scene, "Y"))
+    y = table_absorption(atmosphere, wavenumber_grid(grid), field(scene, "Y"))
     changes: dict[str, Any] = {
         "temperature": {"temperature_k": atmosphere.temperature_k + 1.0},
         "pressure": {"pressure_pa": atmosphere.pressure_pa * 0.99},
@@ -362,7 +373,7 @@ def test_reprepare_shares_records_and_surface_view_changes_do_not_invalidate() -
     total = compose_absorption(
         scene.atmosphere,
         source,
-        (table_absorption(scene.atmosphere, solar.wavenumbers_cm1, field(scene)),),
+        (table_absorption(scene.atmosphere, wavenumber_grid(solar.wavenumbers_cm1), field(scene)),),
     )
     optics = compose_atmospheric_optics(
         scene.atmosphere, source, absorption=total, rayleigh=rayleigh, aerosol=aerosol

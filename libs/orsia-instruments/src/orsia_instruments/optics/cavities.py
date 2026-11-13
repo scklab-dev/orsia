@@ -5,9 +5,9 @@ from collections.abc import Callable, Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from ..quadrature import validate_quadrature_order
-from .psfs import SpatialDensity
-from .response import (
+from orsia_instruments.acquisition.quadrature import validate_quadrature_order
+from orsia_instruments.optics.psfs import SpatialDensity
+from orsia_instruments.optics.response import (
     ImagingOptics,
     SpectralParameter,
     constant_or_default,

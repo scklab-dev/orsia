@@ -4,10 +4,10 @@ import numpy as np
 from numpy.typing import NDArray
 from orsia_instruments import (
     Acquisition,
+    AngularRadianceSamples,
     ExpectedElectrons,
     GaussianPSF,
     OpticalResponse,
-    RadianceField,
     ReadSchedule,
     cavity_transmission,
     dispersive_response,
@@ -20,10 +20,10 @@ from orsia_instruments import (
     two_beam_ports,
 )
 from orsia_radiative import (
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
     Radiance,
-    RadiativeScene,
     SpectralDomain,
     SpectralGrid,
     SpectralIrradiance,
@@ -47,7 +47,7 @@ def make_case(
     shift: float = 0,
     pointing_shift: float = 0,
     time_shift: float = 0,
-) -> tuple[RadianceField, Acquisition, OpticalResponse]:
+) -> tuple[AngularRadianceSamples, Acquisition, OpticalResponse]:
     """A fixed synthetic scene with finite pixels, sequential settings and moving pointing.
 
     shift changes a family parameter: wavelength centre [m] for filter/LVF,
@@ -66,7 +66,7 @@ def make_case(
     spectrum = 1e-3 * (1 - 0.3 * np.exp(-(((points - 4995) / 7) ** 2)))
     spatial = 1 + 40 * u[:, None] - 20 * v[None, :] + 4000 * u[:, None] * v[None, :]
     values = (1 + 2 * times[:, None, None, None]) * spatial[None, :, :, None] * spectrum
-    field = RadianceField(grid, times, u, v, values)
+    field = AngularRadianceSamples(grid, times, u, v, values)
     identities = [
         (repeat, setting, pixel, port)
         for repeat in range(repeats)
@@ -177,7 +177,7 @@ def radiative_inputs() -> tuple[Radiance, Radiance]:
         np.linspace(4900.0, 5100.0, 257),
         SpectralDomain("wavenumber_cm1", ((4900.0, 5100.0),)),
     )
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0]),
         np.array([100000.0, 90000.0]),
         np.array([95000.0]),
@@ -190,7 +190,7 @@ def radiative_inputs() -> tuple[Radiance, Radiance]:
     surface = SurfaceState(
         grid, reflectance=np.full(257, 0.2), emissivity=np.full(257, 0.8), temperature_k=300.0
     )
-    scene = RadiativeScene(atmosphere, surface, ObservationGeometry(0.0))
+    scene = ColumnScene(atmosphere, surface, ObservationGeometry(0.0))
     optics = atmospheric_optics(atmosphere, grid)
     source = solar_source(SpectralIrradiance(grid, np.full(257, 0.1)), direction=(30.0, 0.0))
     solar = transfer.solar.reflected_radiance(

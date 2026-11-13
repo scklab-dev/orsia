@@ -15,14 +15,15 @@ from orsia_data import (
 )
 from orsia_radiative import (
     Absorber,
-    Atmosphere,
     EmptyLineSelection,
+    LayerAtmosphere,
     evaluate_partition_function,
     line_absorption,
     line_set,
     table_absorption,
     water_continuum_absorption,
 )
+from orsia_radiative.spectral.grid import wavenumber_grid
 from scipy.constants import atomic_mass
 from scipy.io import netcdf_file
 
@@ -36,8 +37,8 @@ def record(molecule: int = 1, isotope: str = "1", centre: float = 950.0, flag: i
     return prefix.ljust(98) + f"{flag:2d}" + " " * 60 + "\n"
 
 
-def atmosphere() -> Atmosphere:
-    return Atmosphere(
+def atmosphere() -> LayerAtmosphere:
+    return LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -188,13 +189,25 @@ def test_normalized_cross_sections(tmp_path: Path) -> None:
         pressure_pa=np.array([95000.0, 85000.0]),
         cross_sections_m2_per_molecule=np.full((2, 3), 1e-27),
     )
-    field = read_cross_section_table(path, species="H2O", isotopologue="1", kind="cross_section")
-    assert field.cross_sections_m2_per_molecule.flags.writeable
-    result = table_absorption(atmosphere(), np.array([925.0, 950.0]), field)
+    field = read_cross_section_table(
+        path,
+        species="H2O",
+        isotopologue="1",
+        kind="cross_section",
+        height_edges_m=atmosphere().height_boundaries_m,
+    )
+    assert not field.cross_sections_m2_per_molecule.flags.writeable
+    result = table_absorption(atmosphere(), wavenumber_grid(np.array([925.0, 950.0])), field)
     np.testing.assert_array_equal(result.optical_depth, [[1.0, 1.0], [0.5, 0.5]])
     np.savez(path, wrong=np.ones(2))
     with pytest.raises(ValueError, match="arrays"):
-        read_cross_section_table(path, species="H2O", isotopologue="1", kind="cross_section")
+        read_cross_section_table(
+            path,
+            species="H2O",
+            isotopologue="1",
+            kind="cross_section",
+            height_edges_m=atmosphere().height_boundaries_m,
+        )
 
 
 def test_classic_mt_ckd_reading_and_absorption(tmp_path: Path) -> None:

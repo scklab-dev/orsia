@@ -4,8 +4,9 @@ from typing import assert_type
 
 import numpy as np
 from numpy.typing import NDArray
-from orsia_instruments.acquisition import ReadSchedule, read_schedule
-from orsia_instruments.imaging.acquisition import ExposureSequence
+from orsia_instruments.acquisition.images import ExposureSequence
+from orsia_instruments.acquisition.quadrature import read_schedule
+from orsia_instruments.acquisition.schedule import ReadSchedule
 from orsia_instruments.optics.filters import gaussian_filter
 from orsia_instruments.optics.response import exposure_setting
 

@@ -5,7 +5,7 @@ from typing import Any
 import numpy as np
 import pytest
 from numpy.typing import NDArray
-from orsia_inverse import retrieval_diagnostics, solve_map
+from orsia_inverse import prior_from_covariance, retrieval_diagnostics, solve_map
 from orsia_uncertainty import factor_covariance
 
 
@@ -15,10 +15,12 @@ def test_factor_dimensions_and_inverse_support(name: str) -> None:
         options: dict[str, Any] = {
             "observation_factor": factor_covariance(np.ones(2), method="eigh")
         }
-        if name == "prior_factor":
-            options["prior_mean"] = np.zeros(2)
-        options[name] = factor_covariance(covariance, method="eigh")
         with pytest.raises(ValueError, match="size|ill-conditioned"):
+            factor = factor_covariance(covariance, method="eigh")
+            if name == "prior_factor":
+                options["prior"] = prior_from_covariance(np.zeros(2), factor)
+            else:
+                options[name] = factor
             solve_map(lambda q: q, lambda q: np.eye(2), np.ones(2), np.zeros(2), **options)
 
 
@@ -39,9 +41,11 @@ def test_variance_vectors_and_dense_diagonals_agree(
         observation_factor=factor_covariance(
             variances if diagonal_observation else np.diag(variances), method="cholesky"
         ),
-        prior_mean=qa,
-        prior_factor=factor_covariance(
-            prior_variances if diagonal_prior else np.diag(prior_variances), method="cholesky"
+        prior=prior_from_covariance(
+            qa,
+            factor_covariance(
+                prior_variances if diagonal_prior else np.diag(prior_variances), method="cholesky"
+            ),
         ),
     )
     precision = k.T @ np.diag(1 / variances) @ k + np.diag(1 / prior_variances)
@@ -77,15 +81,17 @@ def test_covariance_snapshots_and_writable_diagnostics(dense: bool) -> None:
         np.ones(2),
         np.zeros(2),
         observation_factor=factor_covariance(se, method="cholesky"),
-        prior_mean=qa,
-        prior_factor=factor_covariance(sa, method="cholesky"),
+        prior=prior_from_covariance(qa, factor_covariance(sa, method="cholesky")),
     )
     np.testing.assert_allclose(estimate.state, [4 / 6, 5 / 8])
-    for retained, original in ((estimate.observation_factor, se), (estimate.prior_factor, sa)):
-        assert retained is not None and not retained.root.flags.writeable
-        assert not np.shares_memory(retained.root, original)
-    assert estimate.prior_mean is not None
-    np.testing.assert_array_equal(estimate.prior_mean, np.zeros(2))
+    assert estimate.prior is not None
+    for retained, original in (
+        (estimate.observation_factor.root, se),
+        (estimate.prior.precision_root, sa),
+    ):
+        assert not retained.flags.writeable
+        assert not np.shares_memory(retained, original)
+    np.testing.assert_array_equal(estimate.prior.mean, np.zeros(2))
     diagnostics = retrieval_diagnostics(estimate, include_gain=True, include_averaging_kernel=True)
     for values in (
         diagnostics.posterior_covariance,

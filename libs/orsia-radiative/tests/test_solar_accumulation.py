@@ -11,10 +11,10 @@ import orders_reference as reference
 import pytest
 from orsia_radiative import (
     Absorption,
-    Atmosphere,
     AtmosphericOptics,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SpectralIrradiance,
     SurfaceState,
@@ -144,9 +144,9 @@ def test_many_layer_accumulation_is_owned_and_concurrent() -> None:
 
 def _inputs(
     case: str, reflectance: float, *, layers: int = 3
-) -> tuple[RadiativeScene, SolarSource, AtmosphericOptics]:
+) -> tuple[ColumnScene, SolarSource, AtmosphericOptics]:
     grid = wavenumber_grid(np.array([12000.0, 12001.0, 12002.0]))
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.arange(layers + 1, dtype=np.float64) * 1000,
         np.linspace(1e5, 2e4, layers + 1, dtype=np.float64),
         np.linspace(9.5e4, 2.5e4, layers, dtype=np.float64),
@@ -156,7 +156,7 @@ def _inputs(
         np.full(layers, 1e28),
         (),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(grid, reflectance=np.full(3, reflectance)),
         ObservationGeometry(20.0),

@@ -10,7 +10,7 @@ dependencies = []
 package = false
 
 [tool.uv.workspace]
-members = ["libs/orsia-geometry", "libs/orsia-numerics", "libs/orsia-uncertainty", "libs/orsia-radiative", "libs/orsia-data", "libs/orsia-instruments", "libs/orsia-inverse"]
+members = ["libs/orsia-geometry", "libs/orsia-numerics", "libs/orsia-uncertainty", "libs/orsia-radiative", "libs/orsia-data", "libs/orsia-instruments", "libs/orsia-inverse", "libs/orsia-dispersion", "libs/orsia-scene"]
 
 [tool.uv.sources]
 orsia-geometry = { workspace = true }
@@ -20,6 +20,8 @@ orsia-radiative = { workspace = true }
 orsia-data = { workspace = true }
 orsia-instruments = { workspace = true }
 orsia-inverse = { workspace = true }
+orsia-dispersion = { workspace = true }
+orsia-scene = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -32,6 +34,7 @@ dev = [
     "ruff>=0.16.7,<0.17",
     "scipy>=1.16,<2",
     "sasktran2==2026.10.0",
+    "satkit==0.24.1",
     "xarray>=2026.1,<2027",
     "cdsapi>=0.7,<0.8",
     "ipykernel>=7,<8",
@@ -63,12 +66,12 @@ extend-select = ["D100", "D101", "D102", "D103", "D104", "D200", "D201", "D202",
 [tool.pytest.ini_options]
 # Notebook companions are workspace namespace modules, not installed packages.
 pythonpath = ["."]
-testpaths = ["tests", "libs/orsia-geometry/tests", "libs/orsia-numerics/tests", "libs/orsia-uncertainty/tests", "libs/orsia-radiative/tests", "libs/orsia-data/tests", "libs/orsia-instruments/tests", "libs/orsia-inverse/tests"]
+testpaths = ["tests", "libs/orsia-geometry/tests", "libs/orsia-numerics/tests", "libs/orsia-uncertainty/tests", "libs/orsia-radiative/tests", "libs/orsia-data/tests", "libs/orsia-instruments/tests", "libs/orsia-inverse/tests", "libs/orsia-dispersion/tests", "libs/orsia-scene/tests"]
 addopts = "-ra --cov --cov-config=pyproject.toml --cov-report=term-missing"
 
 [tool.coverage.run]
 branch = true
-source = ["libs/orsia-geometry/src", "libs/orsia-numerics/src", "libs/orsia-uncertainty/src", "libs/orsia-radiative/src", "libs/orsia-data/src", "libs/orsia-instruments/src", "libs/orsia-inverse/src"]
+source = ["libs/orsia-geometry/src", "libs/orsia-numerics/src", "libs/orsia-uncertainty/src", "libs/orsia-radiative/src", "libs/orsia-data/src", "libs/orsia-instruments/src", "libs/orsia-inverse/src", "libs/orsia-dispersion/src", "libs/orsia-scene/src"]
 relative_files = true
 
 [tool.coverage.report]
@@ -76,6 +79,6 @@ fail_under = 90
 precision = 2
 
 [tool.pyrefly]
-project-includes = ["scripts/**/*.py", "notebooks/support/prepare_five_band.py", "notebooks/support/prepare_five_band_enriched.py", "notebooks/support/replay_instrument_response.py", "tests/**/*.py", "libs/*/src/**/*.py", "libs/*/tests/**/*.py"]
-search-path = ["libs/orsia-radiative/tests", "libs/orsia-data/tests", "tests"]
+project-includes = ["scripts/**/*.py", "notebooks/support/prepare_five_band.py", "notebooks/support/prepare_five_band_enriched.py", "notebooks/support/replay_instrument_response.py", "notebooks/support/spatial_scene.py", "notebooks/support/terrain.py", "tests/**/*.py", "libs/*/src/**/*.py", "libs/*/tests/**/*.py"]
+search-path = ["libs/orsia-radiative/tests", "libs/orsia-data/tests", "libs/orsia-instruments/tests", "libs/orsia-dispersion/tests", "libs/orsia-scene/tests", "scripts", "tests"]
 python-version = "3.14"

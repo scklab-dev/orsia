@@ -1,24 +1,25 @@
 {
   "manifest": "../../outputs/five-band-enriched-inputs/manifest.json",
   "spectroscopy_collection": "../../outputs/spectroscopy/five-band",
+  "water_continuum_manifest": "../../outputs/spectroscopy/mt-ckd-4.3/manifest.json",
   "bands": {
     "UV": {
       "low_nm": 320,
       "high_nm": 325,
       "thermal": false,
-      "solar": {"max_order": 16, "angular_order": 4, "layer_subdivisions": 2}
+      "solar": {"max_order": 16, "angular_order": 6, "layer_subdivisions": 2}
     },
     "VNIR": {
       "low_nm": 758,
       "high_nm": 765,
       "thermal": false,
-      "solar": {"max_order": 2, "angular_order": 2, "layer_subdivisions": 1}
+      "solar": {"max_order": 3, "angular_order": 4, "layer_subdivisions": 1}
     },
     "SWIR": {
       "low_nm": 1645,
       "high_nm": 1655,
       "thermal": false,
-      "solar": {"max_order": 1, "angular_order": 2, "layer_subdivisions": 1}
+      "solar": {"max_order": 2, "angular_order": 4, "layer_subdivisions": 1}
     },
     "MWIR": {"low_nm": 4250, "high_nm": 4300, "thermal": true},
     "LWIR": {"low_nm": 9950, "high_nm": 10050, "thermal": true}

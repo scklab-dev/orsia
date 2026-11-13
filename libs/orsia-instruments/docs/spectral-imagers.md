@@ -13,27 +13,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import numpy as np
-from orsia_instruments import (
-    ExpectedElectrons,
-    detector_operating_points,
-    electron_moments,
-    GaussianPSF,
-    calibrate_frame_electrons,
-    calibrate_frames,
-    camera_acquisition_grid,
-    cavity_imager,
-    focal_plane_imager,
-    frame_response,
-    group_native_bands,
-    interferometric_imager,
-    lvf_imager,
-    raster_read_schedule,
-    reconstruct_radiance_cube,
-    regular_detector,
-    simulate_frames,
-    spatial_spectral_response,
-    stack_frame_electrons,
-)
+from orsia_instruments import ExpectedElectrons, detector_operating_points, electron_moments, GaussianPSF, calibrate_frame_electrons, calibrate_frames, camera_acquisition_grid, cavity_imager, focal_plane_imager, frame_response, group_native_bands, interferometric_imager, lvf_imager, raster_read_schedule, reconstruct_radiance_cube, regular_detector, simulate_frames, spatial_spectral_response, stack_frame_electrons
 from orsia_inverse.linear import solve_linear
 from orsia_radiative import SpectralDomain, wavenumber_grid
 
@@ -75,7 +55,7 @@ def attitude(times):
 
 def surface(origins, directions, times):
     distance = -origins[..., 2] / directions[..., 2]
-    return (origins + distance[..., None] * directions)[..., :2], distance > 0
+    return (origins + distance[..., None] * directions)[..., :2], -directions, distance > 0
 
 
 def acquisition(camera, trajectory_law=trajectory):
@@ -95,8 +75,9 @@ def acquisition(camera, trajectory_law=trajectory):
     )
 
 
-def scene(xy, directions, times, points):
+def scene(xy, directions, times, spectral):
     # Static, direction-independent, two-cell/two-bin spectral radiance density.
+    points = spectral.points
     return np.where(
         xy[..., 0, None] < 0,
         np.where(points < 5000, 1e-5, 3e-5),
@@ -109,7 +90,7 @@ def coverage(grid, spectral_grid):
     return np.ones(len(grid.read_bands), dtype=bool)
 ```
 
-Scene values are W m^-2 sr^-1 per (cm^-1). The source's coverage callback certifies the complete continuous acquisition support and declared spectral interval. Grid endpoints alone cannot establish physical rejection outside that interval. Supply order blocking or certify that excluded illumination is negligible for the intended model.
+The surface fixture explicitly shares GCRS Cartesian axes with its chart and returns reversed outward views. `scene` receives flat `(N,2)` coordinates, `(N,3)` chart-local unit views, `(N,)` elapsed seconds and `(K,)` wavenumbers, then returns `(N,K)` radiance. Instruments flattens reads then nodes in C order. Scene values are W m^-2 sr^-1 per (cm^-1). The source's coverage callback certifies the complete continuous acquisition support and declared spectral interval. Grid endpoints alone cannot establish physical rejection outside that interval. Supply order blocking or certify that excluded illumination is negligible for the intended model.
 
 ## LVF: fixed detector-plane law and achieved bands
 
@@ -235,6 +216,14 @@ The matrix stacks separate `RasterReadSchedule` objects in the supplied order. `
 `SpatialSpectralResponse` uses the same batched joint coefficient generator as frame simulation. It retains actual motion, PSF, spectral transmission, QE and finite-pixel response. Spatial cells must enclose every conservative continuous footprint, including exterior illumination. Spectral bins must enclose every declared spectral node. The state is static and direction-independent, with constant radiance density in each `(y,x,spectral_bin)` cell. Refine quadrature near cell/bin discontinuities. Unmodelled temporal, angular or within-bin spectral variation can bias the inverse.
 
 `solve_linear` uses covariance whitening and a rank-truncated singular-value decomposition. Its signed `resolution` describes the expected estimated-state response and remains separate from positive `SpectralBand` objects. `coverage` measures physical sensitivity; `identifiable` tests whether individual state coordinates are resolved. Missing reads, repeated OPDs or zero visibility can reduce rank despite positive coverage. Unresolved state components follow a minimum-norm convention. Their true uncertainty is unconstrained; the returned covariance measures noise in that estimator and does not assign certainty to its null space. The memory budget is a conservative dense-array estimate, excluding backend allocator overhead. Oversized construction or solving raises `MemoryError` before the large dense allocation.
+
+### Bounded response products
+
+`imaging.response.joint.spatial_spectral_operator` applies the same cell basis and photon coefficients as `spatial_spectral_response`. Each product recomputes bounded read batches without allocating the full response matrix. State coordinates use C-order `(y, x, spectral_bin)` radiance density in W m-2 sr-1 per (cm-1). Output coordinates stack ports in supplied order and preserve each native read schedule.
+
+An optional fixed `valid` mask selects rows in that order. The mask and cell edges are snapshotted; instruments, acquisition grids and spectral support are borrowed and must remain stable for the operator lifetime. The transpose accumulates the physical electron response coefficients without normalization. Normalized radiance reconstruction has its own contract.
+
+The per-call memory estimate covers coefficient workspace, gathered direction blocks and results. Provider-internal allocations and numerical-adapter copies are outside its scope. A budget failure raises `MemoryError` before applying the requested block. The [Numerics adapter](../../orsia-numerics/docs/tangents.md#general-linear-operators) defines block shapes and ownership.
 
 ## Fabry-Perot: retain the complete transmitted response
 

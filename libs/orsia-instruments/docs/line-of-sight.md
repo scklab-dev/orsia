@@ -21,14 +21,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 from orsia_geometry import sphere_intersections
-from orsia_instruments import (
-    DetectorElectronics,
-    ReadSchedule,
-    gaussian_pixel_fraction,
-    line_of_sight_expected_electrons,
-    sample_lines_of_sight,
-    sample_readout,
-)
+from orsia_instruments import DetectorElectronics, ReadSchedule, gaussian_pixel_fraction, line_of_sight_expected_electrons, sample_lines_of_sight, sample_readout
 from orsia_radiative import SpectralDomain, SpectralGrid
 
 EPOCH = datetime(2000, 1, 1, tzinfo=UTC)
@@ -191,7 +184,7 @@ Supply `epoch`, a timezone-aware UTC instant, and `validity_s`, the finite close
 
 The sensor boresight is +instrument-z toward the scene. Each per-read FOV rectangle `(umin,umax,vmin,vmax)` contains instrument-frame direction cosines in the forward unit disk. A node direction is `(u,v,sqrt(1-u²-v²))`. The GCRS ray points from optical origin toward the scene. A sight-line radiance provider receives **that travel direction** and produces unpolarized spectral radiance in `W m^-2 sr^-1 (cm^-1)^-1` on the caller's increasing, fully sampled connected wavenumber grid. Provider adapters perform any conversion from incoming-photon or solver-specific look conventions. The virtual forward image plane uses `(f*u/w,f*v/w)` metres with `w=sqrt(1-u²-v²)`; callers match this coordinate orientation to the selected optical response law.
 
-Temporal and angular Gauss rules integrate `dt du dv / w` with weights in `s sr`. The weights express a coordinate measure; `response(read,wavelengths_m,acquisition)` supplies a separate physical accepted-intensity fraction with axes `(nodes,wavenumbers)`. `photoelectron_response` multiplies this fraction by projected collecting area, throughput, QE, trapezoidal `cm^-1` spectral measure and photon-energy conversion once. `RadianceField` uses path-dependent local u/v conventions. `LineOfSightRadiance` receives GCRS 3D origins and directions, with its distinct `RadianceCoverage` contract. Its output has axes `(reads,nodes,wavenumbers)`; origins and directions have `(reads,nodes,3)` axes, times have `(reads,nodes)` and the grid is a 1-D increasing vector in cm^-1.
+Temporal and angular Gauss rules integrate `dt du dv / w` with weights in `s sr`. The weights express a coordinate measure; `response(read,wavelengths_m,acquisition)` supplies a separate physical accepted-intensity fraction with axes `(nodes,wavenumbers)`. `photoelectron_response` multiplies this fraction by projected collecting area, throughput, QE, trapezoidal `cm^-1` spectral measure and photon-energy conversion once. `AngularRadianceSamples` uses path-dependent local u/v conventions. `LineOfSightRadiance` receives GCRS 3D origins and directions, with its distinct `RadianceCoverage` contract. Its output has axes `(reads,nodes,wavenumbers)`; origins and directions have `(reads,nodes,3)` axes, times have `(reads,nodes)` and the grid is a 1-D increasing vector in cm^-1.
 
 With `entrance_bounds_m=(reads,4)`, `sample_lines_of_sight` samples focal-plane entrance rectangles in metres instead of a direction-cosine rectangle. The corresponding solid-angle Jacobian is `f/(f**2+x**2+y**2)**1.5`. Detector `pixel_bounds_m` remain separate output apertures. The supplied FOV must enclose the complete entrance rectangle, including direction-cosine extrema at axis crossings; an under-enclosing FOV raises `ValueError`. The [slit-spectrometer path](slit-spectrometer.md) uses this mode for hard finite slits, with conservative FOV-corner support and focal-plane Gauss quadrature using the exact solid-angle Jacobian.
 

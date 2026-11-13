@@ -7,16 +7,16 @@ import numpy as np
 import pytest
 from orsia_radiative import (
     AbsorptionComponent,
-    CrossSectionField,
+    LayerCrossSections,
     Line,
     LineSet,
-    cross_sections,
+    resample_layer_cross_sections,
     wavenumber_grid,
 )
 
 
-def table() -> CrossSectionField:
-    return CrossSectionField(
+def table() -> LayerCrossSections:
+    return LayerCrossSections(
         "X",
         "1",
         "cross_section",
@@ -24,6 +24,7 @@ def table() -> CrossSectionField:
         np.array([290.0]),
         np.array([95000.0]),
         np.array([[1e-27, 2e-27]]),
+        height_edges_m=np.array([0.0, 1000.0]),
     )
 
 
@@ -33,7 +34,7 @@ def table() -> CrossSectionField:
         ({"species": ""}, "species"),
         ({"kind": "unknown"}, "supported kind"),
         ({"isotopologue": None}, "isotopologue"),
-        ({"grid": wavenumber_grid(np.array([1000.0]))}, "at least two"),
+        ({"grid": wavenumber_grid(np.array([1000.0]))}, "shape"),
         ({"temperature_k": np.empty(0)}, "shape"),
         ({"pressure_pa": np.array([95000.0, 90000.0])}, "shape"),
         ({"cross_sections_m2_per_molecule": np.empty((0, 2))}, "shape"),
@@ -108,7 +109,7 @@ def test_signed_temperature_exponent() -> None:
 @pytest.mark.parametrize("rows", [(), ((1e-27,),), ((-1e-27, 2e-27),)])
 def test_prepared_cross_section_shape_and_sign(rows: tuple[tuple[float, ...], ...]) -> None:
     inputs = table()
-    prepared = cross_sections(inputs.wavenumbers_cm1, inputs)
+    prepared = resample_layer_cross_sections(wavenumber_grid(inputs.wavenumbers_cm1), inputs)
     with pytest.raises(ValueError):
         replace(prepared, cross_sections_m2_per_molecule=np.asarray(rows, dtype=np.float64))
 
@@ -124,9 +125,11 @@ def test_table_and_prepared_identity_and_owned_grids() -> None:
         changed.cross_sections_m2_per_molecule, 2 * inputs.cross_sections_m2_per_molecule
     )
     grid = inputs.wavenumbers_cm1.copy()
-    prepared = cross_sections(grid, inputs)
+    prepared = resample_layer_cross_sections(wavenumber_grid(grid), inputs)
     grid[0] = 900.0
-    independently_prepared = cross_sections(inputs.wavenumbers_cm1, table())
+    independently_prepared = resample_layer_cross_sections(
+        wavenumber_grid(inputs.wavenumbers_cm1), table()
+    )
     assert prepared != independently_prepared
     np.testing.assert_equal(asdict(prepared), asdict(independently_prepared))
     changed_prepared = replace(prepared, cross_sections_m2_per_molecule=np.array([[2e-27, 3e-27]]))
@@ -142,10 +145,10 @@ def test_cross_section_interpolation_preserves_high_dynamic_range(
 ) -> None:
     inputs = replace(table(), cross_sections_m2_per_molecule=np.array([values]))
     nodes = inputs.wavenumbers_cm1
-    exact = cross_sections(nodes, inputs)
+    exact = resample_layer_cross_sections(wavenumber_grid(nodes), inputs)
     np.testing.assert_array_equal(exact.cross_sections_m2_per_molecule, [values])
     grid = np.array([nodes[0], 1000.25, 1000.5, 1000.75, nodes[-1]])
-    prepared = cross_sections(grid, inputs)
+    prepared = resample_layer_cross_sections(wavenumber_grid(grid), inputs)
     expected = np.array(
         [
             [

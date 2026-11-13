@@ -35,18 +35,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import numpy as np
-from orsia_instruments import (
-    GaussianPSF,
-    calibrate_frames,
-    dispersive_spectrometer,
-    frame_exposure_bounds,
-    ground_integration_bounds,
-    reconstruct_radiance_cube,
-    regular_detector,
-    simulate_frames,
-    spectrometer_acquisition_grid,
-    frame_response,
-)
+from orsia_instruments import GaussianPSF, calibrate_frames, dispersive_spectrometer, frame_exposure_bounds, ground_integration_bounds, reconstruct_radiance_cube, regular_detector, simulate_frames, spectrometer_acquisition_grid, frame_response
 from orsia_radiative import SpectralBand, SpectralDomain, wavenumber_grid
 
 
@@ -126,7 +115,7 @@ def instrument_attitude(times_s):
 def surface(origins_gcrs_m, directions_gcrs, times_s):
     distance_m = -origins_gcrs_m[..., 2] / directions_gcrs[..., 2]
     points = origins_gcrs_m + distance_m[..., None] * directions_gcrs
-    return points[..., :2], distance_m > 0
+    return points[..., :2], -directions_gcrs, distance_m > 0
 
 
 exposures = frame_exposure_bounds(
@@ -168,7 +157,7 @@ print("Surface support (metres):", ground_integration_bounds(truth_grid))
 
 For this rotation, the exact surface coordinates are `X=0.2*time_s-1000*x` and `Y=1000*y`. The admitted rays remain near nadir throughout all exposures. The continuous projected speed is exactly 0.2 m/s. A directional infinity-norm Lipschitz bound of 301 m encloses the small local direction domain. The same bound also covers the conservative direction-rectangle corner rays used for support checks.
 
-`SurfaceAcquisitionGrid.xy_m` has shape `(reads,nodes,2)`. The grid retains complete exposure intervals, elapsed seconds from a timezone-aware UTC epoch, GCRS rays, native `(frame,row,column)` indices and conservative per-read surface bounds. `slit_order` refines both entrance coordinates; `time_order` refines exposure motion. Changed orders require new radiance evaluation. The full hard slit bounds scene support for every detector pixel, wavelength and post-slit PSF tail. No PSF-tail scene truncation is needed in this model.
+`SurfaceAcquisitionGrid.xy_m` has shape `(reads,nodes,2)`; required `view_local` has shape `(reads,nodes,3)` in the same chart-fixed Cartesian frame. This fixture explicitly shares GCRS axes with its chart and reverses ray direction in projection. Radiance receives flat `(N,2)`, `(N,3)`, `(N,)` queries and a `SpectralGrid` with K points and returns `(N,K)`; Instruments flattens reads then nodes in C order. The grid retains complete exposure intervals, elapsed seconds from a timezone-aware UTC epoch, GCRS rays, native `(frame,row,column)` indices and conservative per-read surface bounds. `slit_order` refines both entrance coordinates; `time_order` refines exposure motion. Changed orders require new radiance evaluation. The full hard slit bounds scene support for every detector pixel, wavelength and post-slit PSF tail. No PSF-tail scene truncation is needed in this model.
 
 ### 3. Evaluate radiance on the instrument-selected coordinates
 
@@ -177,7 +166,8 @@ The analytic source is spatially uniform and emits `wavenumber_cm1*1e-8` W m^-2 
 The attached detector supplies QE and electronics for frame simulation. Its regular factory requires explicit geometry and all eight photoelectric/electronic fields, including for expectation-only calculations. The values in step 1 are illustrative assumptions.
 
 ```python
-def radiance(xy_m, directions_gcrs, times_s, wavenumbers_cm1):
+def radiance(xy_m, view_local, times_s, spectral):
+    wavenumbers_cm1 = spectral.points
     return np.broadcast_to(
         wavenumbers_cm1 * 1e-8,
         (*times_s.shape, len(wavenumbers_cm1)),
@@ -283,7 +273,7 @@ Expected final output: `Cube shape: (2, 6, 10)`. The cube uses `(y,x,band)` axes
 
 ## Checks and sources
 
-The maintained implementation is in `optics/spectrometer.py`, `imaging/geolocation.py`, `los.py` and `imaging/radiometry.py`. Shared supplied-calibration and cube contracts are in `imaging/calibration.py`, `imaging/response/band.py`, `imaging/reconstruction.py` and Radiative's [bands and cubes](../../orsia-radiative/docs/bands-and-cubes.md). The optical centroid and finite-pixel kernels remain in `optics/dispersion.py`.
+The maintained implementation is in `optics/spectrometer.py`, `acquisition/surface.py`, `acquisition/los.py` and `photodetection/frames.py`. Shared supplied-calibration and cube contracts are in `calibration/frames.py`, `response/bands.py`, `registration/reconstruction.py` and Radiative's [bands and cubes](../../orsia-radiative/docs/bands-and-cubes.md). The optical centroid and finite-pixel kernels remain in `optics/dispersion.py`.
 
 [The spectrometer regressions](../tests/test_slit_spectrometer.py) check line placement, finite slit width, independently integrated photon counts, spatial/spectral coupling with smile/keystone, an analytic moving surface, estimated-geometry registration, supplied calibration perturbations, seeded noise, flags, missing coverage and quadrature refinement. [Executable guide tests](../../../tests/test_library_guides.py) run this complete walkthrough with sockets blocked. Run focused instrument checks through `devbox run -- just --justfile tests/justfile pytest libs/orsia-instruments/tests tests/test_instrument_examples.py tests/test_lvf_scan.py tests/test_instrument_composition.py` from the Orsia root.
 

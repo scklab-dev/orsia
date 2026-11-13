@@ -11,16 +11,16 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
+from orsia_radiative.columns import ColumnScene
 from orsia_radiative.optics.atmosphere import AtmosphericOptics, validate_scene_optics
 from orsia_radiative.radiance import Radiance
 from orsia_radiative.radiometry import planck_wavenumber
-from orsia_radiative.scene import RadiativeScene
 from orsia_radiative.transfer.formal import schwarzschild
 from scipy.special import expn, roots_legendre
 
 
 def schwarzschild_radiance(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     *,
     optics: AtmosphericOptics,
     angular_order: int = 32,
@@ -47,7 +47,7 @@ def schwarzschild_radiance(
 
 
 def schwarzschild_terms(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     *,
     optics: AtmosphericOptics,
     angular_order: int = 32,

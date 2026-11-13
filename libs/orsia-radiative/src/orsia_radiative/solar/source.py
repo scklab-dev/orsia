@@ -12,6 +12,7 @@ from orsia_radiative.spectral.grid import (
     SpectralDomain,
     SpectralGrid,
     convert_spectral_grid,
+    require_wavenumber_grid,
 )
 from orsia_radiative.spectral.interpolation import interpolate_point_density
 
@@ -62,7 +63,7 @@ def solar_source(irradiance: SpectralIrradiance, *, direction: tuple[float, floa
         Validated solar source with the supplied irradiance and direction.
 
     Raises:
-        ValueError: Zenith or relative azimuth lies outside the supported interval.
+        ValueError: Irradiance uses nm, or the direction is outside its supported interval.
     """
     zenith, azimuth = direction
     return SolarSource(irradiance, zenith, azimuth)
@@ -100,6 +101,7 @@ class SolarSource:
     __hash__ = None
 
     def __post_init__(self) -> None:
+        require_wavenumber_grid(self.irradiance.grid)
         if not isfinite(self.zenith_deg) or not 0 <= self.zenith_deg < 90:
             raise ValueError("source zenith must be in [0, 90) degrees")
         if not isfinite(self.relative_azimuth_deg) or not 0 <= self.relative_azimuth_deg < 360:

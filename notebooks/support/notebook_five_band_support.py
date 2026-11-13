@@ -37,6 +37,29 @@ def verify_inputs(path):
     return manifest, base, input_paths, provenance
 
 
+def verify_water_continuum(path):
+    """Verify the offline MT_CKD 4.3 receipt and return its native path and hashes.
+
+    Args:
+        path: Local JSON receipt, with its native file path relative to the receipt.
+
+    Returns:
+        Native classic-NetCDF path and provenance for both file and receipt.
+
+    Raises:
+        OSError: The receipt or native reference is unavailable.
+        ValueError: The edition or native-file checksum differs from the receipt.
+    """
+    receipt = json.loads(path.read_text())
+    if receipt["edition"] != "4.3":
+        raise ValueError("notebook water continuum requires MT_CKD 4.3")
+    native = (path.parent / receipt["file"]).resolve()
+    digest = file_sha256(native)
+    if digest != receipt["sha256"]:
+        raise ValueError("water continuum checksum mismatch")
+    return native, {str(path): file_sha256(path), str(native): digest}
+
+
 def sasktran2_inputs(scene, optics, source, *, mu0, muv, emissivity, surface_temperature_k):
     """Expose the notebook's evaluated scene in the existing reference-worker schema.
 

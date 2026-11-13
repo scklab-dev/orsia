@@ -7,9 +7,9 @@ from typing import Any
 from urllib.parse import urlencode
 from uuid import UUID
 
-from ...acquisition import download_bearer_file, retrieve_file
-from ...http import JsonSession
-from ..catalogue import geographic_bbox, utc_interval
+from orsia_data.acquisition import download_bearer_file, retrieve_file
+from orsia_data.http import JsonSession
+from orsia_data.services.catalogue import geographic_bbox, utc_interval
 
 
 def search_sentinel2_l2a(

@@ -9,17 +9,16 @@ from typing import Any, cast
 import numpy as np
 import pytest
 from orsia_geometry import (
+    NumericalPropagator,
     SGP4MeanElements,
+    SGP4Propagator,
+    WGS84SurfaceProjection,
     axis_rotations,
     compute_lines_of_sight,
     ellipsoid_intersections,
     frame_rotations,
-    numerical_propagator,
-    sgp4_propagator,
     transform_rays,
     transform_states,
-    wgs84_surface_projection,
-    wgs84_surface_projection_from_ray,
 )
 from orsia_geometry.constants import WGS84_SEMIAXES_M
 
@@ -242,7 +241,7 @@ def test_time_frame_and_coverage_failures(backend):
 
 def test_numerical_constructor_retains_owned_dense_result(backend):
     elements = ELEMENTS.copy()
-    trajectory = numerical_propagator(elements, epoch=EPOCH, validity_s=(0, 2))
+    trajectory = NumericalPropagator(elements, epoch=EPOCH, validity_s=(0, 2))
     np.testing.assert_array_equal(elements, ELEMENTS)
     elements[:] = np.nan
     times = np.array([2.0, 0.0, 1.0, 1.0, 2.0])
@@ -276,13 +275,13 @@ def test_numerical_constructor_retains_owned_dense_result(backend):
 )
 def test_invalid_classical_elements(elements, backend):
     with pytest.raises(ValueError, match="elements"):
-        numerical_propagator(elements, epoch=EPOCH, validity_s=(0, 1))
+        NumericalPropagator(elements, epoch=EPOCH, validity_s=(0, 1))
 
 
 def test_numerical_support_validation(backend):
     for validity in ((-1.0, 1.0), (0.0, 0.0)):
         with pytest.raises(ValueError, match="forward"):
-            numerical_propagator(ELEMENTS, epoch=EPOCH, validity_s=validity)
+            NumericalPropagator(ELEMENTS, epoch=EPOCH, validity_s=validity)
     assert backend.calls == []
 
 
@@ -301,7 +300,7 @@ def test_numerical_support_validation(backend):
     ],
 )
 def test_scalar_controls_keep_native_model_explicit_and_settings_fresh(backend, changes):
-    numerical_propagator(ELEMENTS, epoch=EPOCH, validity_s=(1, 2), **changes)
+    NumericalPropagator(ELEMENTS, epoch=EPOCH, validity_s=(1, 2), **changes)
     call = backend.calls[-1]
     settings = call["propsettings"]
     assert vars(settings) == {
@@ -321,7 +320,7 @@ def test_scalar_controls_keep_native_model_explicit_and_settings_fresh(backend, 
     }
     assert call["begin"].value == 0 and call["end"].value == 2
     assert call["satproperties"] is None and call["output_phi"] is False
-    numerical_propagator(ELEMENTS, epoch=EPOCH, validity_s=(0, 2))
+    NumericalPropagator(ELEMENTS, epoch=EPOCH, validity_s=(0, 2))
     assert backend.calls[-1]["propsettings"] is not settings
 
 
@@ -342,13 +341,13 @@ def test_scalar_controls_keep_native_model_explicit_and_settings_fresh(backend, 
 )
 def test_numerical_scalar_domain_errors_precede_backend_use(backend, changes, message):
     with pytest.raises(ValueError, match=message):
-        numerical_propagator(ELEMENTS, epoch=EPOCH, validity_s=(0, 1), **changes)
+        NumericalPropagator(ELEMENTS, epoch=EPOCH, validity_s=(0, 1), **changes)
     assert backend.calls == []
 
 
 def test_removed_native_settings_keyword_is_rejected(backend):
     with pytest.raises(TypeError, match="settings"):
-        cast(Any, numerical_propagator)(ELEMENTS, epoch=EPOCH, validity_s=(0, 1), settings=None)
+        cast(Any, NumericalPropagator)(ELEMENTS, epoch=EPOCH, validity_s=(0, 1), settings=None)
     assert backend.calls == []
 
 
@@ -369,7 +368,7 @@ def mean_elements():
 
 def test_sgp4_scalar_contract_and_errors(backend):
     elements = mean_elements()
-    trajectory = sgp4_propagator(elements, epoch=EPOCH, validity_s=(0, 1))
+    trajectory = SGP4Propagator(elements, epoch=EPOCH, validity_s=(0, 1))
     with pytest.raises(FrozenInstanceError):
         cast(Any, elements).object_name = "changed"
     p, v = trajectory(np.array([0.0, 1.0]))
@@ -382,7 +381,7 @@ def test_sgp4_scalar_contract_and_errors(backend):
     with pytest.raises(ValueError, match="SGP4"):
         trajectory(np.array([0.0]))
     with pytest.raises(ValueError, match="derivative"):
-        sgp4_propagator(elements, epoch=EPOCH, validity_s=(0, 1), derivative_step_s=0)
+        SGP4Propagator(elements, epoch=EPOCH, validity_s=(0, 1), derivative_step_s=0)
 
 
 @pytest.mark.parametrize(
@@ -478,6 +477,70 @@ def test_transform_rays_invalid_inputs(backend, times, origins, directions):
     assert not backend.rotation_calls
 
 
+def test_callable_configuration_snapshots_and_immutable_bindings(backend):
+    elements = ELEMENTS.copy()
+    interval = np.array([0.0, 2.0])
+    origin = np.array([WGS84_SEMIAXES_M[0], 0.0, 0.0])
+    numerical = NumericalPropagator(
+        elements,
+        epoch=EPOCH,
+        validity_s=cast(Any, interval),
+        gravity_degree=4,
+        gravity_order=2,
+        sun_gravity=True,
+        moon_gravity=True,
+        absolute_tolerance=1e-5,
+        relative_tolerance=1e-12,
+    )
+    mean = mean_elements()
+    sgp4 = SGP4Propagator(mean, epoch=EPOCH, validity_s=cast(Any, interval), derivative_step_s=0.25)
+    surface = WGS84SurfaceProjection(
+        epoch=EPOCH, validity_s=cast(Any, interval), chart_origin_itrf_m=origin
+    )
+    elements[:] = np.nan
+    interval[:] = np.nan
+    origin[:] = np.nan
+    assert numerical.gravity_degree == 4 and numerical.gravity_order == 2
+    assert numerical.sun_gravity and numerical.moon_gravity
+    assert numerical.absolute_tolerance == 1e-5 and numerical.relative_tolerance == 1e-12
+    assert sgp4.elements is mean and sgp4.derivative_step_s == 0.25
+    for obj in (numerical, sgp4, surface):
+        assert obj.epoch == EPOCH and obj.validity_s == (0.0, 2.0)
+        for name in ("epoch", "validity_s"):
+            with pytest.raises(FrozenInstanceError):
+                setattr(obj, name, None)
+    for name in (
+        "gravity_degree",
+        "gravity_order",
+        "sun_gravity",
+        "moon_gravity",
+        "absolute_tolerance",
+        "relative_tolerance",
+    ):
+        with pytest.raises(FrozenInstanceError):
+            setattr(numerical, name, 0)
+    with pytest.raises(FrozenInstanceError):
+        cast(Any, sgp4).elements = mean
+    with pytest.raises(FrozenInstanceError):
+        cast(Any, sgp4).derivative_step_s = 1.0
+    for obj, name, expected in (
+        (numerical, "elements", ELEMENTS),
+        (surface, "chart_origin_itrf_m", np.array([WGS84_SEMIAXES_M[0], 0.0, 0.0])),
+    ):
+        first, second = getattr(obj, name), getattr(obj, name)
+        assert first.flags.owndata and first.flags.writeable
+        assert not np.shares_memory(first, second)
+        first[:] = np.nan
+        np.testing.assert_array_equal(getattr(obj, name), expected)
+        with pytest.raises((AttributeError, TypeError)):
+            setattr(obj, name, first)
+    np.testing.assert_array_equal(numerical(np.array([2.0, 0.0]))[0][:, 0], [4.0, 2.0])
+    assert sgp4(np.array([0.0]))[0].shape == (1, 3)
+    xy, _, hit = surface(7e6 * X, -X, np.array(0.0))
+    assert hit
+    np.testing.assert_array_equal(xy, [0.0, 0.0])
+
+
 def test_transform_rays_time_and_backend_failures(backend, monkeypatch):
     for times, validity in (
         (np.array(np.nan), (0, 1)),
@@ -507,7 +570,7 @@ def test_wgs84_projection_callback_chart_snapshot_hits_misses_and_axes(backend, 
     a = WGS84_SEMIAXES_M[0]
     origin = np.array([a, 0, 0])
     surface = (
-        wgs84_surface_projection_from_ray(
+        WGS84SurfaceProjection.from_ray(
             origin_gcrs_m=origin,
             direction_gcrs=-X,
             time_s=0.0,
@@ -515,8 +578,9 @@ def test_wgs84_projection_callback_chart_snapshot_hits_misses_and_axes(backend, 
             validity_s=(0, 1),
         )
         if from_ray
-        else wgs84_surface_projection(epoch=EPOCH, validity_s=(0, 1), chart_origin_itrf_m=origin)
+        else WGS84SurfaceProjection(epoch=EPOCH, validity_s=(0, 1), chart_origin_itrf_m=origin)
     )
+    assert type(surface) is WGS84SurfaceProjection
     origin[:] = np.nan  # The retained chart is a private snapshot.
     count = int(np.prod(leading))
     times = (np.arange(count).reshape(leading) % 3) / 2
@@ -529,12 +593,13 @@ def test_wgs84_projection_callback_chart_snapshot_hits_misses_and_axes(backend, 
     origins = np.einsum("...ij,...j->...i", inverse_rotation, itrf_origins)
     directions = np.einsum("...ij,...j->...i", inverse_rotation, itrf_directions)
     snapshots = [value.copy() for value in (origins, directions, times)]
-    xy, hits = surface(origins, directions, times)
+    xy, view, hits = surface(origins, directions, times)
     assert xy.shape == (*leading, 2) and hits.shape == leading
     np.testing.assert_array_equal(hits, mode != 1)
     np.testing.assert_allclose(xy[hits], 0, atol=1e-8, rtol=0)
     assert np.isnan(xy[~hits]).all()
-    for output in (xy, hits):
+    np.testing.assert_allclose(view, -itrf_directions[..., [1, 2, 0]], atol=2e-15, rtol=0)
+    for output in (xy, view, hits):
         assert output.flags.owndata and output.flags.writeable
         assert not any(np.shares_memory(output, value) for value in (origins, directions, times))
         output[...] = 0
@@ -556,7 +621,7 @@ def test_wgs84_projection_from_ray_matches_composition_and_snapshots(backend, re
     snapshots = [a.copy() for a in (reference_origin, reference_direction)]
     validity = np.array([0.0, 1.0])
     options = dict(epoch=EPOCH, validity_s=cast(Any, validity))
-    surface = wgs84_surface_projection_from_ray(
+    surface = WGS84SurfaceProjection.from_ray(
         origin_gcrs_m=reference_origin,
         direction_gcrs=reference_direction,
         time_s=reference_time,
@@ -567,7 +632,7 @@ def test_wgs84_projection_from_ray_matches_composition_and_snapshots(backend, re
     )
     hit, chart_origin = ellipsoid_intersections(origins_itrf, directions_itrf)
     assert hit
-    expected_surface = wgs84_surface_projection(chart_origin_itrf_m=chart_origin, **options)
+    expected_surface = WGS84SurfaceProjection(chart_origin_itrf_m=chart_origin, **options)
     for value, snapshot in zip((reference_origin, reference_direction), snapshots, strict=True):
         np.testing.assert_array_equal(value, snapshot)
         value.flags.writeable = True
@@ -576,10 +641,11 @@ def test_wgs84_projection_from_ray_matches_composition_and_snapshots(backend, re
     times = np.array([1.0, 0.0, 0.5, 0.5])
     origins = np.broadcast_to([7e6, 123.0, -89.0], (4, 3))
     directions = np.array([[-1.0, 0, 0], [1.0, 0, 0], [-1.0, 0, 0], [-1.0, 0, 0]])
-    actual_xy, actual_hits = surface(origins, directions, times)
-    expected_xy, expected_hits = expected_surface(origins, directions, times)
+    actual_xy, actual_view, actual_hits = surface(origins, directions, times)
+    expected_xy, expected_view, expected_hits = expected_surface(origins, directions, times)
     np.testing.assert_allclose(actual_xy, expected_xy, atol=1e-9, rtol=0)
     np.testing.assert_array_equal(actual_hits, expected_hits)
+    np.testing.assert_array_equal(actual_view, expected_view)
     assert actual_hits.tolist() == [True, False, True, True]
     assert np.isnan(actual_xy[1]).all()
 
@@ -605,7 +671,7 @@ def test_wgs84_projection_from_ray_matches_composition_and_snapshots(backend, re
 )
 def test_wgs84_projection_from_ray_rejects_invalid_single_ray(backend, origin, direction, time):
     with pytest.raises(ValueError):
-        wgs84_surface_projection_from_ray(
+        WGS84SurfaceProjection.from_ray(
             origin_gcrs_m=origin,
             direction_gcrs=direction,
             time_s=time,
@@ -618,18 +684,18 @@ def test_wgs84_projection_from_ray_rejects_invalid_single_ray(backend, origin, d
 def test_wgs84_projection_from_ray_misses_poles_and_backend_errors(backend, monkeypatch):
     options = dict(epoch=EPOCH, validity_s=(0, 1), time_s=0.0)
     with pytest.raises(ValueError, match="reference ray misses WGS84"):
-        wgs84_surface_projection_from_ray(origin_gcrs_m=7e6 * X, direction_gcrs=X, **options)
+        WGS84SurfaceProjection.from_ray(origin_gcrs_m=7e6 * X, direction_gcrs=X, **options)
     for sign in (-1, 1):
         with pytest.raises(ValueError, match="pole"):
-            wgs84_surface_projection_from_ray(
+            WGS84SurfaceProjection.from_ray(
                 origin_gcrs_m=sign * 7e6 * Z, direction_gcrs=-sign * Z, **options
             )
     backend.frametransform.eop_status = lambda t: "extrapolated"
     with pytest.raises(RuntimeError, match="coverage"):
-        wgs84_surface_projection_from_ray(origin_gcrs_m=7e6 * X, direction_gcrs=-X, **options)
+        WGS84SurfaceProjection.from_ray(origin_gcrs_m=7e6 * X, direction_gcrs=-X, **options)
     monkeypatch.setitem(sys.modules, "satkit", None)
     with pytest.raises(ImportError):
-        wgs84_surface_projection_from_ray(origin_gcrs_m=7e6 * X, direction_gcrs=-X, **options)
+        WGS84SurfaceProjection.from_ray(origin_gcrs_m=7e6 * X, direction_gcrs=-X, **options)
 
 
 @pytest.mark.parametrize(
@@ -645,7 +711,7 @@ def test_wgs84_projection_from_ray_misses_poles_and_backend_errors(backend, monk
 )
 def test_wgs84_projection_from_ray_invalid_epoch_and_interval(backend, epoch, validity):
     with pytest.raises(ValueError):
-        wgs84_surface_projection_from_ray(
+        WGS84SurfaceProjection.from_ray(
             origin_gcrs_m=7e6 * X,
             direction_gcrs=-X,
             time_s=0.0,

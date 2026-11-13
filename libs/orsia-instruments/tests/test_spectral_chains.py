@@ -75,7 +75,7 @@ def trajectory(times):
 
 def surface(origins, directions, times):
     distance = -origins[..., 2] / directions[..., 2]
-    return (origins + directions * distance[..., None])[..., :2], distance > 0
+    return (origins + directions * distance[..., None])[..., :2], -directions, distance > 0
 
 
 def grid(camera, frames=8, order=8, schedule=None, **kwargs):
@@ -126,11 +126,13 @@ def coverage(acquisition, spectral_grid):
     return np.ones(len(acquisition.read_bands), dtype=bool)
 
 
-def uniform(xy, directions, times, points):
+def uniform(xy, directions, times, query_spectral):
+    points = query_spectral.points
     return np.full((*times.shape, len(points)), 2e-5)
 
 
-def heterogeneous(xy, directions, times, points):
+def heterogeneous(xy, directions, times, query_spectral):
+    points = query_spectral.points
     return np.where(
         xy[..., 0, None] < 0,
         np.where(points < 5000, 1e-5, 3e-5),

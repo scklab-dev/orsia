@@ -1,13 +1,14 @@
 """Intersect rays with WGS84 or spheres and project points onto a fixed local chart."""
 
-from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import numpy as np
 from numpy.typing import NDArray
 
-from .constants import WGS84_SEMIAXES_M
-from .frames import require_time_support, require_utc_epoch, transform_rays
+from orsia_geometry.constants import WGS84_SEMIAXES_M
+from orsia_geometry.frames import require_time_support, require_utc_epoch, transform_rays
+from orsia_geometry.rays import validate_rays
 
 
 def sphere_intersections(
@@ -30,7 +31,7 @@ def sphere_intersections(
     """
     if not np.isfinite(radius_m) or radius_m <= 0:
         raise ValueError("sphere radius must be finite and positive")
-    _validate_rays(origins_m, directions)
+    validate_rays(origins_m, directions)
     projection = np.sum(origins_m * directions, axis=-1)
     c = np.sum(origins_m * origins_m, axis=-1) - radius_m**2
     return _quadratic_hits(origins_m, directions, np.sum(directions**2, axis=-1), projection, c)
@@ -58,7 +59,7 @@ def ellipsoid_intersections(
         ValueError: Ray shapes, finite values or unit directions are invalid.
     """
     axes = np.asarray(WGS84_SEMIAXES_M)
-    _validate_rays(origins_m, directions)
+    validate_rays(origins_m, directions)
     origin = origins_m / axes
     direction = directions / axes
     a = np.sum(direction**2, axis=-1)
@@ -140,120 +141,150 @@ def project_local_east_north(
     return (points_itrf_m - origin_itrf_m) @ axes
 
 
-def wgs84_surface_projection(
-    *,
-    epoch: datetime,
-    validity_s: tuple[float, float],
-    chart_origin_itrf_m: NDArray[np.float64],
-) -> Callable[
-    [NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
-    tuple[NDArray[np.float64], NDArray[np.bool_]],
-]:
-    """Build a dated GCRS-ray projection onto one explicit WGS84 metre chart.
+@dataclass(frozen=True, slots=True, init=False, eq=False)
+class WGS84SurfaceProjection:
+    """Project dated GCRS rays onto one fixed WGS84 east/north metre chart.
 
-    Construction snapshots the chart origin and validates local support without
-    loading SatKit. Evaluation composes transform_rays, ellipsoid_intersections
-    and project_local_east_north. Use the same origin for compared geometries.
-    Callers certify continuous visibility and motion/angular support bounds;
-    sampled intersections alone supply no such certificate.
+    Construction validates local support without loading SatKit. The chart origin
+    is a private snapshot, exposed through independent writable copies. The object
+    owns its cached local basis. Configuration bindings are immutable. Evaluation
+    uses SatKit's public auxiliaries and process-global caches; callers serialize
+    native operations and auxiliary refresh. Terrain, geoid heights and ray bending are excluded.
+    Continuous visibility and motion/angular support bounds remain caller duties.
 
-    Args:
+    Attributes:
         epoch: Timezone-aware UTC reference instant with zero offset.
         validity_s: Finite closed accepted interval in physical elapsed SI seconds.
-        chart_origin_itrf_m: Finite nonpolar (3,) ITRF chart origin in metres on
-            height-zero WGS84, with dimensionless surface residual <= 1e-10.
-
-    Returns:
-        Plain callable surface(origins_gcrs_m, directions_gcrs, times_s) returning
-        (xy_m, hits). Matching finite (...,3) GCRS origins and unit directions use
-        exactly (...) times. Owned writable outputs have shapes (...,2) and (...),
-        ordered east/north metres and Boolean hits. The nearest forward WGS84
-        intersection is used; misses return NaN pairs and false hits. Surface
-        origins hit at zero; inside origins use the forward exit. Inputs remain
-        unchanged. Terrain, geoid heights and ray bending are excluded. Evaluation
-        lazily uses SatKit's normal public auxiliaries and process-global caches;
-        callers serialize native operations and auxiliary refresh.
-
-    Raises:
-        ValueError: Construction has invalid epoch, interval or chart origin, or
-            evaluation has invalid ray shapes, finite values, norms or time support.
-        ImportError: Evaluation cannot load the required SatKit installation.
-        RuntimeError: Evaluation lacks EOP coverage or the backend operation fails.
+        chart_origin_itrf_m: Copy of the nonpolar (3,) ITRF height-zero chart origin,
+            metres. Dimensionless WGS84 surface residual is at most 1e-10.
     """
-    require_utc_epoch(epoch)
-    require_time_support(np.empty(0), validity_s)
-    bounds = np.asarray(validity_s, dtype=np.float64)
-    validity = (float(bounds[0]), float(bounds[1]))
-    origin = np.array(chart_origin_itrf_m, dtype=np.float64, copy=True)
-    _local_east_north_axes(origin)
 
-    def surface(
+    epoch: datetime
+    validity_s: tuple[float, float]
+    _origin: NDArray[np.float64] = field(repr=False)
+    _local_axes: NDArray[np.float64] = field(repr=False)
+
+    def __init__(
+        self,
+        *,
+        epoch: datetime,
+        validity_s: tuple[float, float],
+        chart_origin_itrf_m: NDArray[np.float64],
+    ) -> None:
+        """Snapshot the chart and prepare its fixed Cartesian basis.
+
+        Args:
+            epoch: Timezone-aware UTC reference instant with zero offset.
+            validity_s: Finite closed interval in physical elapsed SI seconds.
+            chart_origin_itrf_m: Borrowed finite nonpolar (3,) ITRF chart origin
+                in metres on WGS84, with surface residual at most 1e-10.
+
+        Raises:
+            ValueError: Epoch, interval or chart origin is invalid.
+        """
+        require_utc_epoch(epoch)
+        require_time_support(np.empty(0), validity_s)
+        bounds = np.asarray(validity_s, dtype=np.float64)
+        origin = np.array(chart_origin_itrf_m, dtype=np.float64, copy=True)
+        horizontal_axes = _local_east_north_axes(origin)
+        local_axes = np.column_stack(
+            (horizontal_axes, np.cross(horizontal_axes[:, 0], horizontal_axes[:, 1]))
+        )
+        object.__setattr__(self, "epoch", epoch)
+        object.__setattr__(self, "validity_s", (float(bounds[0]), float(bounds[1])))
+        object.__setattr__(self, "_origin", origin)
+        object.__setattr__(self, "_local_axes", local_axes)
+
+    @classmethod
+    def from_ray(
+        cls,
+        *,
+        origin_gcrs_m: NDArray[np.float64],
+        direction_gcrs: NDArray[np.float64],
+        time_s: float,
+        epoch: datetime,
+        validity_s: tuple[float, float],
+    ) -> WGS84SurfaceProjection:
+        """Build a fixed east/north chart at one dated GCRS ray's WGS84 intercept.
+
+        Construction transforms the reference ray to ITRF, selects its nearest forward
+        WGS84 intersection, and delegates to WGS84SurfaceProjection. Reuse the returned
+        callback for simulation and estimated geometry to keep their chart fixed.
+
+        Args:
+            origin_gcrs_m: Borrowed finite (3,) GCRS x/y/z ray origin in metres.
+            direction_gcrs: Borrowed finite (3,) GCRS scene-directed unit vector,
+                with absolute norm tolerance 1e-10.
+            time_s: Finite scalar physical elapsed SI seconds from epoch, within validity_s.
+            epoch: Timezone-aware UTC reference instant with zero offset.
+            validity_s: Finite closed accepted interval in physical elapsed SI seconds.
+
+        Returns:
+            WGS84SurfaceProjection with matching (...,3) rays and (...) times.
+            Calls surface(origins_gcrs_m, directions_gcrs, times_s)
+            produce (xy_m, view_local, hits): owned writable float64 (...,2) east/north
+            metres, (...,3) outward unit views in fixed chart-origin ENU, and Boolean
+            (...) hits. Missed evaluation rays have NaN coordinates and false hits. The chart
+            and interval are snapshots; reference inputs remain unchanged and are not
+            retained. Continuous visibility and support bounds remain caller duties.
+            Construction and evaluation use the required SatKit backend and its normal
+            public auxiliaries and process-global caches; callers serialize native
+            operations and auxiliary refresh. Terrain, geoid heights and ray bending are excluded.
+
+        Raises:
+            ValueError: Reference ray shapes, finite values, unit norm, epoch or time
+                support are invalid, the reference ray misses WGS84, or its intercept
+                is an exact pole. Callback validation follows WGS84SurfaceProjection.
+            ImportError: Construction or evaluation cannot load the required SatKit installation.
+            RuntimeError: Required EOP coverage or backend evaluation fails.
+        """
+        time = np.asarray(time_s, dtype=np.float64)
+        if origin_gcrs_m.shape != (3,) or direction_gcrs.shape != (3,) or time.shape != ():
+            raise ValueError("reference ray needs (3,) origin/direction and scalar time_s")
+        origin, direction = transform_rays(
+            time, origin_gcrs_m, direction_gcrs, epoch=epoch, validity_s=validity_s
+        )
+        hit, point = ellipsoid_intersections(origin, direction)
+        if not hit:
+            raise ValueError("reference ray misses WGS84")
+        return cls(epoch=epoch, validity_s=validity_s, chart_origin_itrf_m=point)
+
+    @property
+    def chart_origin_itrf_m(self) -> NDArray[np.float64]:
+        """Return a writable copy of the fixed (3,) ITRF chart origin in metres."""
+        return self._origin.copy()
+
+    def __call__(
+        self,
         origins_gcrs_m: NDArray[np.float64],
         directions_gcrs: NDArray[np.float64],
         times_s: NDArray[np.float64],
-    ) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.bool_]]:
+        """Intersect dated rays and express hits and views in the fixed chart.
+
+        Args:
+            origins_gcrs_m: Borrowed finite (...,3) GCRS origins in metres.
+            directions_gcrs: Matching scene-directed unit vectors.
+            times_s: Exactly (...) finite elapsed SI seconds within validity_s.
+
+        Returns:
+            Owned writable (xy_m, view_local, hits), shaped (...,2), (...,3), (...).
+            Coordinates are east/north metres; outward views use the chart-origin
+            east/north/up basis. Misses have NaN pairs, false hits and finite views.
+            The nearest forward hit is used, including zero-distance surface hits
+            and forward exits from inside WGS84. Inputs remain unchanged.
+
+        Raises:
+            ValueError: Ray shapes, finite values, norms or time support are invalid.
+            ImportError: Evaluation cannot load the required SatKit installation.
+            RuntimeError: EOP coverage or backend evaluation fails.
+        """
         origins, directions = transform_rays(
-            times_s, origins_gcrs_m, directions_gcrs, epoch=epoch, validity_s=validity
+            times_s, origins_gcrs_m, directions_gcrs, epoch=self.epoch, validity_s=self.validity_s
         )
         hits, points = ellipsoid_intersections(origins, directions)
-        return project_local_east_north(points, origin_itrf_m=origin), hits
-
-    return surface
-
-
-def wgs84_surface_projection_from_ray(
-    *,
-    origin_gcrs_m: NDArray[np.float64],
-    direction_gcrs: NDArray[np.float64],
-    time_s: float,
-    epoch: datetime,
-    validity_s: tuple[float, float],
-) -> Callable[
-    [NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
-    tuple[NDArray[np.float64], NDArray[np.bool_]],
-]:
-    """Build a fixed east/north chart at one dated GCRS ray's WGS84 intercept.
-
-    Construction transforms the reference ray to ITRF, selects its nearest forward
-    WGS84 intersection, and delegates to wgs84_surface_projection. Reuse the returned
-    callback for simulation and estimated geometry to keep their chart fixed.
-
-    Args:
-        origin_gcrs_m: Borrowed finite (3,) GCRS x/y/z ray origin in metres.
-        direction_gcrs: Borrowed finite (3,) GCRS scene-directed unit vector,
-            with absolute norm tolerance 1e-10.
-        time_s: Finite scalar physical elapsed SI seconds from epoch, within validity_s.
-        epoch: Timezone-aware UTC reference instant with zero offset.
-        validity_s: Finite closed accepted interval in physical elapsed SI seconds.
-
-    Returns:
-        Plain surface(origins_gcrs_m, directions_gcrs, times_s) callback with the
-        wgs84_surface_projection contract: matching (...,3) rays and (...) times
-        produce owned writable float64 (...,2) east/north metres and Boolean (...)
-        hits. Missed evaluation rays have NaN coordinates and false hits. The chart
-        and interval are snapshots; reference inputs remain unchanged and are not
-        retained. Continuous visibility and support bounds remain caller duties.
-        Construction and evaluation use the required SatKit backend and its normal
-        public auxiliaries and process-global caches; callers serialize native
-        operations and auxiliary refresh. Terrain and ray bending are excluded.
-
-    Raises:
-        ValueError: Reference ray shapes, finite values, unit norm, epoch or time
-            support are invalid, the reference ray misses WGS84, or its intercept
-            is an exact pole. Callback validation follows wgs84_surface_projection.
-        ImportError: Construction or evaluation cannot load the required SatKit installation.
-        RuntimeError: Required EOP coverage or backend evaluation fails.
-    """
-    time = np.asarray(time_s, dtype=np.float64)
-    if origin_gcrs_m.shape != (3,) or direction_gcrs.shape != (3,) or time.shape != ():
-        raise ValueError("reference ray needs (3,) origin/direction and scalar time_s")
-    origin, direction = transform_rays(
-        time, origin_gcrs_m, direction_gcrs, epoch=epoch, validity_s=validity_s
-    )
-    hit, point = ellipsoid_intersections(origin, direction)
-    if not hit:
-        raise ValueError("reference ray misses WGS84")
-    return wgs84_surface_projection(epoch=epoch, validity_s=validity_s, chart_origin_itrf_m=point)
+        view_local = -directions @ self._local_axes
+        return project_local_east_north(points, origin_itrf_m=self._origin), view_local, hits
 
 
 def _local_east_north_axes(origin: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -272,18 +303,6 @@ def _local_east_north_axes(origin: NDArray[np.float64]) -> NDArray[np.float64]:
     east = np.array([-origin[1] / equatorial_radius, origin[0] / equatorial_radius, 0.0])
     north = np.cross(normal, east)
     return np.column_stack((east, north))
-
-
-def _validate_rays(origins: NDArray[np.float64], directions: NDArray[np.float64]) -> None:
-    if (
-        origins.ndim < 1
-        or origins.shape[-1] != 3
-        or directions.shape != origins.shape
-        or not np.isfinite(origins).all()
-        or not np.isfinite(directions).all()
-        or not np.allclose(np.linalg.norm(directions, axis=-1), 1, atol=1e-10, rtol=0)
-    ):
-        raise ValueError("rays need matching finite (...,3) origins and unit directions")
 
 
 def _quadratic_hits(

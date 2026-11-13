@@ -1,5 +1,5 @@
-"""Explicit reflected-solar and LTE thermal transfer families."""
+"""Explicit direct-path, column reflected-solar and LTE thermal transfer families."""
 
-from . import solar, thermal
+from . import paths, solar, thermal
 
-__all__ = ["solar", "thermal"]
+__all__ = ["paths", "solar", "thermal"]

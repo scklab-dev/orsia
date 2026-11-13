@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 from orsia_instruments import (
+    AngularRadianceSamples,
     DetectorProperties,
     ImagingOptics,
-    RadianceField,
     ReadSchedule,
     expected_electrons,
     exposure_sequence,
@@ -49,7 +49,7 @@ def inputs():
             + 30 * u[None, :, None, None]
             - 10 * v[None, None, :, None]
         ) * spectrum
-        return RadianceField(grid, t, u, v, values)
+        return AngularRadianceSamples(grid, t, u, v, values)
 
     def response(i, wave, acq):
         # Supplied LVF varies across pixels, with wavelength centre tied to x.
@@ -151,7 +151,7 @@ def test_motion_jitter_rolling_and_static_uniform_limit(inputs):
     )
     uniform = field(acq)
     values = np.broadcast_to(uniform.values[0, 0, 0], uniform.values.shape)
-    constant = RadianceField(uniform.grid, uniform.times_s, uniform.u, uniform.v, values)
+    constant = AngularRadianceSamples(uniform.grid, uniform.times_s, uniform.u, uniform.v, values)
     a = expected_electrons(constant, acq, response, collecting_area_m2=1e-8)
     assert a.total[0] == pytest.approx(a.total[2], rel=2e-13)
     assert a.total[1] == pytest.approx(a.total[3], rel=2e-13)
@@ -168,7 +168,7 @@ def test_time_refinement_and_scene_coverage(inputs):
     assert abs(values[1] - values[2]) < abs(values[0] - values[2])
     acq = scan(inputs)
     resident = field(acq)
-    short = RadianceField(
+    short = AngularRadianceSamples(
         resident.grid, acq.times_s[0, [0, -1]], resident.u, resident.v, resident.values
     )
     with pytest.raises(ValueError, match="entire acquisition support"):
@@ -254,7 +254,7 @@ def test_scene_callback_must_cover_full_acquisition(inputs):
 
     def incomplete(acquisition):
         resident = field(acquisition)
-        return RadianceField(
+        return AngularRadianceSamples(
             resident.grid,
             np.array([0.0, 0.01]),
             resident.u,

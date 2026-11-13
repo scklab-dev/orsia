@@ -69,6 +69,47 @@ def test_preparation_near_zero_exprel(monkeypatch):
         np.testing.assert_allclose(a, e, rtol=8e-16, atol=0)
 
 
+@pytest.mark.parametrize("dtype,depth", [(np.float64, 1e308), (np.float32, 1e38)])
+@pytest.mark.parametrize("preparation", ["native", "numpy"])
+@pytest.mark.parametrize("sign", [-1, 1])
+def test_opaque_finite_source_survives_slant_depth_overflow(dtype, depth, preparation, sign):
+    mu = np.array([-0.1, 0.1], dtype=dtype)
+    if preparation == "numpy":
+        mu = np.r_[-np.linspace(0.01, 0.1, 20), np.linspace(0.01, 0.1, 20)].astype(dtype)
+    tau = np.full(2, depth, dtype=dtype)
+    source = np.full((2, mu.size), sign * depth, dtype=dtype)
+    with np.errstate(over="raise", invalid="raise"):
+        coefficients = formal.propagation_coefficients(tau, mu)
+        centres, exits = formal.apply_propagation(source, coefficients)
+        numpy_centres, numpy_exits = formal._apply_numpy(
+            source,
+            coefficients,
+            coefficients.source_weight,
+            coefficients.centre_source_weight,
+            0.0,
+            True,
+        )
+    for actual in (centres, exits, numpy_centres, numpy_exits):
+        assert actual is not None
+        np.testing.assert_allclose(
+            actual, sign, rtol=2e-6 if dtype == np.float32 else 2e-15, atol=0
+        )
+
+
+@pytest.mark.parametrize("dtype,depth", [(np.float64, 1e308), (np.float32, 1e38)])
+@pytest.mark.parametrize("preparation", ["native", "numpy"])
+def test_opaque_solar_source_preserves_finite_upward_weight(dtype, depth, preparation):
+    mu = np.array([-0.1, 0.1], dtype=dtype)
+    if preparation == "numpy":
+        mu = np.r_[-np.linspace(0.01, 0.1, 20), np.linspace(0.01, 0.1, 20)].astype(dtype)
+    source = np.full((2, mu.size), depth, dtype=dtype)
+    with np.errstate(over="raise", invalid="raise"):
+        centres, exits = formal.propagate(source, np.full(2, depth, dtype=dtype), mu, solar_mu=0.8)
+    expected = np.where(mu > 0, 0.8 / (0.8 + np.abs(mu)), 0)
+    np.testing.assert_allclose(exits, expected, rtol=3e-6 if dtype == np.float32 else 3e-15, atol=0)
+    np.testing.assert_array_equal(centres, 0)
+
+
 @pytest.mark.parametrize("size", [32, 1024, 1025])
 @pytest.mark.parametrize("dtype", [np.float32, np.float64])
 def test_raw_preparation_unique_cosines(monkeypatch, size, dtype):

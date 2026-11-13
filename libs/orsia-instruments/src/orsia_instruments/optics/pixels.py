@@ -6,8 +6,39 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.special import ndtr
 
-from ..quadrature import interval_quadrature
-from .psfs import GaussianPSF, SpatialDensity, TabulatedPSF, gaussian_psf
+from orsia_instruments.acquisition.quadrature import interval_quadrature
+from orsia_instruments.optics.psfs import GaussianPSF, SpatialDensity, TabulatedPSF, gaussian_psf
+
+
+def square_pixel_etendue(
+    pixel_size_m: float,
+    optical_f_number: float,
+    detector_f_number: float,
+) -> float:
+    """Calculate the retained square-pixel acceptance-cone approximation.
+
+    Args:
+        pixel_size_m: Positive active square width, metres. Using detector pitch
+            asserts a full-fill square pixel; geometry is otherwise caller-owned.
+        optical_f_number: Positive finite optical f-number.
+        detector_f_number: Positive finite detector acceptance f-number.
+
+    Returns:
+        Finite positive accepted etendue in m2 sr, pi*size^2/(4*max(f_numbers)^2).
+        The larger f-number limits acceptance. This approximation supplies no PSF,
+        field geometry, throughput, QE, duration or number of reads.
+
+    Raises:
+        ValueError: Parameters or represented etendue are nonpositive or nonfinite.
+    """
+    values = np.array([pixel_size_m, optical_f_number, detector_f_number], dtype=np.float64)
+    if not np.isfinite(values).all() or np.any(values <= 0):
+        raise ValueError("positive finite square-pixel size and f-numbers required")
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        result = np.pi / 4 * (values[0] / max(values[1:])) ** 2
+    if not np.isfinite(result) or result <= 0:
+        raise ValueError("square-pixel etendue exceeds positive finite support")
+    return float(result)
 
 
 def gaussian_pixel_fraction(

@@ -1,0 +1,97 @@
+<mxfile host="app.diagrams.net" version="32.6.1">
+  <diagram id="dispersion" name="Common fields and scene layers">
+    <mxGraphModel dx="1760" dy="990" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1760" pageHeight="990" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="particles_sampling" parent="1" edge="1" source="particle_model" target="sampling" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.75;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="390" y="770" />
+              <mxPoint x="390" y="592.5" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="stationary_sampling" source="stationary_model" target="sampling" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.25;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="390" y="355" />
+              <mxPoint x="390" y="477.5" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="puffs_sampling" source="puff_model" target="sampling" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="380" y="560" />
+              <mxPoint x="380" y="535" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="times_sampling" source="times" target="sampling" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="sampling_integration" source="sampling" target="integration" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="support_integration" source="support" target="integration" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="integration_conversion" source="integration" target="conversion" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="species_conversion" source="species" target="conversion" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="conversion_render" source="conversion" target="render" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="preparation_render" source="preparation" target="render" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="stationary_model" value="StationaryGaussianPlume&#10;&#10;Constant source + wind&#10;Class-D widths + Briggs rise" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf7f2;strokeColor=#6e9f86;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="20" y="280" width="340" height="150" />
+        </mxCell>
+        <mxCell id="puff_model" value="GaussianPuffDispersion&#10;&#10;Release history + forcing&#10;Gaussian or compact kernel" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf7f2;strokeColor=#6e9f86;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="20" y="470" width="340" height="180" />
+        </mxCell>
+        <mxCell id="times" value="Observation times&#10;&#10;Increasing times (s)&#10;Explicit particle RNG" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf4fc;strokeColor=#7595b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="410.0" y="100" width="240" height="170" />
+        </mxCell>
+        <mxCell id="support" value="LayeredCells&#10;&#10;Frame + pixel bounds&#10;Interfaces + terrain" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf4fc;strokeColor=#7595b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="700.0" y="100" width="300" height="170" />
+        </mxCell>
+        <mxCell id="species" value="Gas identity&#10;&#10;Species + molar mass&#10;(kg/mol)" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf4fc;strokeColor=#7595b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1050.0" y="100" width="260" height="170" />
+        </mxCell>
+        <mxCell id="preparation" value="Physical scene preparation&#10;&#10;Atmosphere + surface&#10;Sun + frozen interval" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf4fc;strokeColor=#7595b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1360.0" y="100" width="340" height="170" />
+        </mxCell>
+        <mxCell id="sampling" value="sample_fields&#10;&#10;MassField&#10;Plume, puff&#10;or particle snapshot" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf7f2;strokeColor=#6e9f86;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="410.0" y="420" width="240" height="230" />
+        </mxCell>
+        <mxCell id="integration" value="pixel_layer_moments&#10;&#10;LayerMassMoments&#10;Quadrature or deposition&#10;(kg/m2 + kg/m)" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf7f2;strokeColor=#6e9f86;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="700.0" y="420" width="300" height="230" />
+        </mxCell>
+        <mxCell id="conversion" value="gas_layer_columns&#10;&#10;GasLayerColumns&#10;Molecules/m2&#10;Altitude centroids (m)" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#f1edfa;strokeColor=#9583b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1050.0" y="420" width="260" height="230" />
+        </mxCell>
+        <mxCell id="render" value="DirectSolarScene&#10;with_gas / radiance&#10;&#10;Spectral radiance&#10;Explicit physical queries" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#f1edfa;strokeColor=#9583b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1360.0" y="420" width="340" height="230" />
+        </mxCell>
+        <mxCell id="key_input" value="Application inputs" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf4fc;strokeColor=#7595b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="700.0" y="860" width="300" height="60" />
+        </mxCell>
+        <mxCell id="key_dispersion" value="Dispersion" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf7f2;strokeColor=#6e9f86;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1040.0" y="860" width="300" height="60" />
+        </mxCell>
+        <mxCell id="key_scene" value="Scene" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#f1edfa;strokeColor=#9583b5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1380.0" y="860" width="300" height="60" />
+        </mxCell>
+        <mxCell id="particle_model" parent="1" vertex="1" value="BoundedParticleDispersion&#10;&#10;Point releases + wind bound&#10;Homogeneous turbulence" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;spacing=18;arcSize=12;fillColor=#edf7f2;strokeColor=#6e9f86;">
+          <mxGeometry as="geometry" x="20" y="690" width="340" height="160" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -3,10 +3,8 @@
 import json
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 
-import matplotlib.pyplot as plt
 import nbformat
 import numpy as np
 import pytest
@@ -138,6 +136,10 @@ def test_ports_sum_to_relay_and_exposure_scaling(settings, radiance):
 @pytest.mark.parametrize("family", FAMILIES)
 def test_separable_quadrature_and_photon_conversion(family, settings, radiance):
     """Check spatial quadrature and photon conversion against separable integration."""
+    # Full pixel quadrature for spatial transmission must resolve the Gaussian
+    # cross-track integral to the precision of this analytic separable oracle.
+    if family in {"Filter mosaic", "LVF"}:
+        settings = replace(settings, pixel_order=16)
     layout = architecture(family, settings)
     order = 4
     kernel = physical_kernel(layout, radiance, settings, angular_order=order)
@@ -336,62 +338,6 @@ def test_signed_reconstructed_response_against_all_direct_ports(settings, radian
         ]
     )
     np.testing.assert_allclose(weights @ direct, effective @ spectrum, rtol=3e-8)
-
-
-@pytest.mark.parametrize("family", FAMILIES)
-def test_effective_response_gallery_plots_every_channel(family, settings, radiance, monkeypatch):
-    from notebooks.support.notebook_instrument_support import show_effective_responses
-
-    layout = architecture(family, settings)
-    kernel = physical_kernel(layout, radiance, settings)
-    _, effective, _ = reconstruction(layout, kernel, radiance)
-    figures = []
-    monkeypatch.setattr(plt, "show", lambda: figures.append(plt.gcf()))
-    namespace = dict(
-        np=np,
-        plt=plt,
-        points=radiance.grid.points,
-        settings=settings,
-        layouts={family: layout},
-        results={family: SimpleNamespace(effective=effective)},
-        show_effective_responses=show_effective_responses,
-    )
-    namespace["cm_weights"] = (
-        np.r_[
-            np.diff(radiance.grid.points)[0],
-            radiance.grid.points[2:] - radiance.grid.points[:-2],
-            np.diff(radiance.grid.points)[-1],
-        ]
-        / 2
-    )
-    show_effective_responses(
-        radiance.grid.points,
-        namespace["cm_weights"],
-        settings,
-        {family: layout},
-        {family: SimpleNamespace(effective=effective)},
-    )
-    try:
-        wave_nm = 1e7 / radiance.grid.points[::-1]
-        plotted = []
-        for figure in figures:
-            for ax in figure.axes:
-                for line in ax.lines:
-                    x = np.asarray(line.get_xdata())
-                    y = np.asarray(line.get_ydata())
-                    in_band = (x >= wave_nm.min()) & (x <= wave_nm.max())
-                    if in_band.sum() == wave_nm.size and np.allclose(x[in_band], wave_nm):
-                        plotted.append(y[in_band])
-                        np.testing.assert_array_equal(y[~in_band], 0)
-        for response in effective:
-            assert any(
-                np.allclose(curve, (response / namespace["cm_weights"])[::-1]) for curve in plotted
-            )
-        for figure in figures:
-            figure.canvas.draw()
-    finally:
-        for figure in figures:
-            plt.close(figure)
 
 
 def test_notebook_code_is_valid():

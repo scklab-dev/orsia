@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from scipy import constants
 from scipy.special import voigt_profile
 
-from orsia_radiative.atmosphere import Atmosphere
+from orsia_radiative.atmosphere import LayerAtmosphere
 from orsia_radiative.spectral.grid import SpectralGrid, wavenumber_grid
 from orsia_radiative.spectroscopy.components import AbsorptionComponent, _gas
 
@@ -22,7 +22,9 @@ _SECOND_RADIATION_CONSTANT_CM_K = 100 * constants.h * constants.c / constants.k
 
 
 def line_absorption(
-    atmosphere: Atmosphere, wavenumbers_cm1: NDArray[np.float64] | SpectralGrid, inputs: LineSet
+    atmosphere: LayerAtmosphere,
+    wavenumbers_cm1: NDArray[np.float64] | SpectralGrid,
+    inputs: LineSet,
 ) -> AbsorptionComponent:
     """Evaluate isolated Lorentz or explicit thermal Voigt lines.
 

@@ -44,65 +44,75 @@ def wavenumber_to_wavelength(wavenumbers_cm1: NDArray[np.float64]) -> NDArray[np
 
 
 def reverse_spectral_points(
-    values: NDArray[np.float64], source_points: NDArray[np.float64]
+    values: NDArray[np.float64], source_points: NDArray[np.float64], *, axis: int = -1
 ) -> NDArray[np.float64]:
     """Match point values to a reciprocal spectral axis by reversing their order.
 
     Args:
-        values: Finite dimensionless samples in source axis order.
+        values: Finite point values in source order, with any nonspectral axes.
         source_points: Positive increasing source spectral coordinates.
+        axis: Spectral array axis, negative indices allowed; defaults to the last axis.
 
     Returns:
-        Owned samples in the converted axis order, without density conversion.
+        Fresh writable samples with the same shape and reversed spectral order,
+        without density conversion. Other axes and signed values are preserved.
 
     Raises:
         ValueError: Point axis or sample shape/finite values fail validation.
     """
     _validate_points(source_points)
-    if values.shape != source_points.shape or not np.all(np.isfinite(values)):
+    if (
+        not -values.ndim <= axis < values.ndim
+        or values.shape[axis] != source_points.size
+        or not np.all(np.isfinite(values))
+    ):
         raise ValueError("spectral values must be finite and match the point grid")
-    return values[::-1].copy()
+    return np.flip(values, axis=axis).copy()
 
 
 def density_per_nm_to_per_cm1(
-    wavelengths_nm: NDArray[np.float64], values_per_nm: NDArray[np.float64]
+    wavelengths_nm: NDArray[np.float64], values_per_nm: NDArray[np.float64], *, axis: int = -1
 ) -> NDArray[np.float64]:
     """Convert wavelength point densities into per-wavenumber densities.
 
     Args:
         wavelengths_nm: Positive increasing wavelength points in nm.
-        values_per_nm: Finite point densities per nm in wavelength order.
+        values_per_nm: Finite point densities per nm in wavelength order, possibly signed.
+        axis: Spectral array axis, negative indices allowed; defaults to the last axis.
 
     Returns:
-        Owned reversed-order densities per cm-1 scaled by the point Jacobian.
+        Fresh writable densities per cm-1, with the same shape, reversed spectral
+        order and point Jacobian. All nonspectral axes retain their order.
 
     Raises:
         ValueError: Samples or converted densities are invalid or nonfinite.
     """
-    reversed_values = reverse_spectral_points(values_per_nm, wavelengths_nm)
-    result = reversed_values * (wavelengths_nm[::-1] ** 2 / _NM_CM)
+    reversed_values = reverse_spectral_points(values_per_nm, wavelengths_nm, axis=axis)
+    result = np.moveaxis(reversed_values, axis, -1) * (wavelengths_nm[::-1] ** 2 / _NM_CM)
     if not np.all(np.isfinite(result)):
         raise ValueError("converted spectral density must be finite")
-    return result
+    return np.moveaxis(result, -1, axis)
 
 
 def density_per_cm1_to_per_nm(
-    wavenumbers_cm1: NDArray[np.float64], values_per_cm1: NDArray[np.float64]
+    wavenumbers_cm1: NDArray[np.float64], values_per_cm1: NDArray[np.float64], *, axis: int = -1
 ) -> NDArray[np.float64]:
     """Convert wavenumber point densities into per-wavelength densities.
 
     Args:
         wavenumbers_cm1: Positive increasing wavenumber points in cm-1.
-        values_per_cm1: Finite point densities per cm-1 in wavenumber order.
+        values_per_cm1: Finite point densities per cm-1 in wavenumber order, possibly signed.
+        axis: Spectral array axis, negative indices allowed; defaults to the last axis.
 
     Returns:
-        Owned reversed-order densities per nm scaled by the point Jacobian.
+        Fresh writable densities per nm, with the same shape, reversed spectral
+        order and point Jacobian. All nonspectral axes retain their order.
 
     Raises:
         ValueError: Samples or converted densities are invalid or nonfinite.
     """
-    reversed_values = reverse_spectral_points(values_per_cm1, wavenumbers_cm1)
-    result = reversed_values * (wavenumbers_cm1[::-1] ** 2 / _NM_CM)
+    reversed_values = reverse_spectral_points(values_per_cm1, wavenumbers_cm1, axis=axis)
+    result = np.moveaxis(reversed_values, axis, -1) * (wavenumbers_cm1[::-1] ** 2 / _NM_CM)
     if not np.all(np.isfinite(result)):
         raise ValueError("converted spectral density must be finite")
-    return result
+    return np.moveaxis(result, -1, axis)

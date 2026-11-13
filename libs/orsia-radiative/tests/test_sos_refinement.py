@@ -10,9 +10,9 @@ import pytest
 import radiance_terms_support as terms_support
 from orsia_radiative import (
     AerosolComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SpectralIrradiance,
     SurfaceState,
@@ -28,8 +28,8 @@ def test_separate_and_combined_refinement_contracts_each_retained_path(
     g: float | None, rho: float
 ) -> None:
     axis = np.array([12000.0], dtype=np.float64)
-    scene = RadiativeScene(
-        Atmosphere(
+    scene = ColumnScene(
+        LayerAtmosphere(
             np.array([0.0, 1000.0]),
             np.array([1e5, 9e4]),
             np.array([9.5e4]),

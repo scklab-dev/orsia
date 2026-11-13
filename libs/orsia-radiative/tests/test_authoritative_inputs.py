@@ -12,22 +12,22 @@ from numpy.typing import NDArray
 from orsia_radiative import (
     Absorber,
     AerosolComponent,
-    Atmosphere,
     AtmosphericOptics,
-    CrossSectionField,
+    ColumnScene,
+    LayerAtmosphere,
+    LayerCrossSections,
     Line,
     LineSet,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SolarSource,
     SpectralIrradiance,
     SurfaceState,
     compose_absorption,
     compose_atmospheric_optics,
-    cross_sections,
     evaluate_table_absorption,
     line_absorption,
+    resample_layer_cross_sections,
     solar_source,
     transfer,
     validate_atmospheric_optics,
@@ -36,8 +36,8 @@ from orsia_radiative import (
 )
 
 
-def inputs() -> tuple[Atmosphere, SolarSource, CrossSectionField]:
-    atmosphere = Atmosphere(
+def inputs() -> tuple[LayerAtmosphere, SolarSource, LayerCrossSections]:
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -51,7 +51,7 @@ def inputs() -> tuple[Atmosphere, SolarSource, CrossSectionField]:
         SpectralIrradiance(wavenumber_grid(np.array([1000.0, 1001.0])), np.array([8.0, 10.0])),
         direction=(30.0, 70.0),
     )
-    table = CrossSectionField(
+    table = LayerCrossSections(
         "X",
         "1",
         "cross_section",
@@ -59,12 +59,13 @@ def inputs() -> tuple[Atmosphere, SolarSource, CrossSectionField]:
         atmosphere.temperature_k,
         atmosphere.pressure_pa,
         np.array([[1e-27, 5e-27], [2e-27, 6e-27]]),
+        height_edges_m=atmosphere.height_boundaries_m,
     )
     return atmosphere, source, table
 
 
-def scene(atmosphere: Atmosphere, source: SolarSource) -> RadiativeScene:
-    return RadiativeScene(
+def scene(atmosphere: LayerAtmosphere, source: SolarSource) -> ColumnScene:
+    return ColumnScene(
         atmosphere,
         SurfaceState(
             wavenumber_grid(source.irradiance.wavenumbers_cm1), reflectance=np.array([0.2, 0.3])
@@ -133,7 +134,9 @@ def test_composition_requires_source_and_retains_only_physical_values() -> None:
 def test_composition_does_not_depend_on_solar_illumination(change: str) -> None:
     atmosphere, source, table = inputs()
     grid = source.irradiance.wavenumbers_cm1
-    gas = evaluate_table_absorption(atmosphere, cross_sections(grid, table))
+    gas = evaluate_table_absorption(
+        atmosphere, resample_layer_cross_sections(wavenumber_grid(grid), table)
+    )
     total = compose_absorption(atmosphere, source, (gas,))
     if change == "irradiance":
         changed = replace(source, irradiance=replace(source.irradiance, values=np.zeros(2)))
@@ -156,7 +159,8 @@ def test_composition_does_not_depend_on_solar_illumination(change: str) -> None:
 def test_composition_rejects_components_outside_source_support(grid: NDArray[np.float64]) -> None:
     atmosphere, source, table = inputs()
     gas = evaluate_table_absorption(
-        atmosphere, cross_sections(source.irradiance.wavenumbers_cm1, table)
+        atmosphere,
+        resample_layer_cross_sections(wavenumber_grid(source.irradiance.wavenumbers_cm1), table),
     )
     changed = replace(
         source,
@@ -174,7 +178,7 @@ def test_composition_rejects_components_outside_source_support(grid: NDArray[np.
 def test_source_coordinate_storage_is_shared_through_spectroscopy_and_transfer() -> None:
     atmosphere, source, table = inputs()
     grid = source.irradiance.wavenumbers_cm1
-    prepared_table = cross_sections(grid, table)
+    prepared_table = resample_layer_cross_sections(wavenumber_grid(grid), table)
     gas = evaluate_table_absorption(atmosphere, prepared_table)
     total = compose_absorption(atmosphere, source, (gas,))
     rayleigh = RayleighComponent(wavenumber_grid(grid), np.full((2, 2), 0.01))
@@ -275,7 +279,7 @@ def test_contiguous_bytes_backed_subgrid_keeps_exact_original_coordinates() -> N
 def test_preparation_rejects_equal_shape_optics_on_a_different_source_grid(role: str) -> None:
     atmosphere, source, table = inputs()
     grid = source.irradiance.wavenumbers_cm1
-    prepared_table = cross_sections(grid, table)
+    prepared_table = resample_layer_cross_sections(wavenumber_grid(grid), table)
     gas = evaluate_table_absorption(atmosphere, prepared_table)
     total = compose_absorption(atmosphere, source, (gas,))
     optical_roles: dict[str, Any] = {
@@ -299,7 +303,8 @@ def test_preparation_rejects_equal_shape_optics_on_a_different_source_grid(role:
     assert prepared_table.wavenumbers_cm1 is grid
     # Reevaluate the table on the new source support explicitly, rather than relabel depths.
     new_gas = evaluate_table_absorption(
-        atmosphere, cross_sections(shifted.irradiance.wavenumbers_cm1, table)
+        atmosphere,
+        resample_layer_cross_sections(wavenumber_grid(shifted.irradiance.wavenumbers_cm1), table),
     )
     new_total = compose_absorption(atmosphere, shifted, (new_gas,))
     assert not np.array_equal(new_total.optical_depth, total.optical_depth)
@@ -315,7 +320,9 @@ def test_transfer_rejects_reuse_even_if_scene_and_source_move_to_same_new_grid(
 ) -> None:
     atmosphere, source, table = inputs()
     grid = source.irradiance.wavenumbers_cm1
-    gas = evaluate_table_absorption(atmosphere, cross_sections(grid, table))
+    gas = evaluate_table_absorption(
+        atmosphere, resample_layer_cross_sections(wavenumber_grid(grid), table)
+    )
     total = compose_absorption(atmosphere, source, (gas,))
     optics = compose_atmospheric_optics(atmosphere, source, absorption=total)
     shifted = replace(
@@ -336,7 +343,9 @@ def test_source_properties_and_equal_coordinate_copies_do_not_invalidate_optics(
 ) -> None:
     atmosphere, source, table = inputs()
     grid = source.irradiance.wavenumbers_cm1
-    gas = evaluate_table_absorption(atmosphere, cross_sections(grid, table))
+    gas = evaluate_table_absorption(
+        atmosphere, resample_layer_cross_sections(wavenumber_grid(grid), table)
+    )
     optics = compose_atmospheric_optics(
         atmosphere, source, absorption=compose_absorption(atmosphere, source, (gas,))
     )

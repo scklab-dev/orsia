@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from orsia_geometry import LocalCartesianFrame, PointLattice
 from orsia_instruments import (
     DetectorProperties,
     GaussianPSF,
@@ -25,9 +26,11 @@ from orsia_instruments import (
     sample_optical_acceptance,
     simulate_images,
 )
-from orsia_instruments.scene import RadianceField
+from orsia_instruments.sampling.angular import AngularRadianceSamples
 from orsia_radiative import SpectralDomain, SpectralGrid
 from scipy.constants import c, h
+
+FRAME = LocalCartesianFrame("instrument response test", "synthetic altitude")
 
 
 def case():
@@ -36,7 +39,7 @@ def case():
         np.array([4000.0, 5000.0, 6000.0]),
         SpectralDomain("wavenumber_cm1", ((4000.0, 6000.0),)),
     )
-    scene = RadianceField(
+    scene = AngularRadianceSamples(
         grid,
         np.array([0.0, 1.0]),
         np.array([-0.01, 0.01]),
@@ -289,8 +292,7 @@ def test_dense_projected_response_and_direct_correlation():
         acquisition,
         lambda read, wave, current: np.ones((current.times_s.shape[1], len(wave))),
         ground_xy_m=xy,
-        along_m=axis,
-        cross_m=axis,
+        lattice=PointLattice(axis, axis, FRAME),
         support_bounds_m=np.array([[-1.0, 1.0, -1.0, 1.0]]),
         collecting_area_m2=1,
     )
@@ -320,9 +322,8 @@ def test_dense_projected_response_and_direct_correlation():
     )
     image = np.ones((6, 6, 3))
     kwargs = dict(
-        scene_along_m=np.arange(6.0) - 2,
-        scene_cross_m=np.arange(6.0) - 2,
-        target_indices=(rows, cols),
+        scene_lattice=PointLattice(np.arange(6.0) - 2, np.arange(6.0) - 2, FRAME),
+        target_indices=(cols, rows),
         reads=translated,
     )
     direct = response_electrons(physical, image, method="direct", **kwargs)

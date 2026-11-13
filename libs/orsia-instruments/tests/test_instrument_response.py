@@ -1,25 +1,29 @@
 """Independent radiometry, local scan support and positive instrument response contracts."""
 
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
+from functools import partial
 from typing import Any, cast
 
 import numpy as np
 import pytest
+from orsia_geometry import LocalCartesianFrame, PointLattice
 from orsia_instruments import (
     DetectorElectronics,
     DetectorOperatingPoints,
-    DetectorResponse,
     ExpectedElectrons,
     GaussianPSF,
-    GroundGrid,
-    InstrumentResponse,
+    GridElectronResponse,
+    GroundScrollPointing,
     LinearTrajectory,
     ReadSchedule,
-    SceneRadiance,
+    SurfaceRadianceSamples,
+    TabulatedPSF,
+    airy_psf,
     along_track_acquisition,
     along_track_exposure_bounds,
     along_track_raster_reads,
     along_track_read_schedule,
+    along_track_response,
     along_track_strip_templates,
     correct_digital_readings,
     detector_response,
@@ -28,11 +32,7 @@ from orsia_instruments import (
     electron_moments,
     expected_electrons,
     filter_imager,
-    gaussian_along_track_response,
-    gaussian_cross_track_response,
     gaussian_filter,
-    ground_fixed_pointing,
-    ground_scroll_pointing,
     instrument_response,
     photoelectron_response,
     raster_exposure_bounds,
@@ -45,6 +45,8 @@ from orsia_instruments import (
 )
 from orsia_radiative import ObservationGeometry, Radiance, SpectralDomain, SpectralGrid
 from scipy.constants import c, h
+
+FRAME = LocalCartesianFrame("instrument response test", "synthetic altitude")
 
 
 def zero_pointing(read_index, times_s):
@@ -214,8 +216,7 @@ def projected(acquisition=None):
         acquisition=acquisition,
         optical_response=acceptance,
         ground_xy_m=xy,
-        along_m=np.array([-20.0, 0.0, 20.0]),
-        cross_m=np.array([-20.0, 0.0, 20.0]),
+        lattice=PointLattice(np.array([-20.0, 0.0, 20.0]), np.array([-20.0, 0.0, 20.0]), FRAME),
         support_bounds_m=np.tile([-20.0, 20.0, -20.0, 20.0], (2, 1)),
         collecting_area_m2=0.02,
         throughput=0.5,
@@ -223,124 +224,9 @@ def projected(acquisition=None):
     )
 
 
-def test_gaussian_scan_lift_matches_full_optical_law_and_checks_node_pairing():
-    trajectory = LinearTrajectory(height_m=1000, speed_m_s=100)
-    reads = along_track_read_schedule(
-        sample_ids=("a",),
-        pixel_ids=("strip",),
-        setting_ids=("0",),
-        port_ids=("direct",),
-        target_along_m=np.zeros(1),
-        ground_along_offsets_m=np.zeros(1),
-        exposure_s=0.2,
-        trajectory=trajectory,
-    )
-    params = dict(
-        target_xy_m=np.zeros((1, 2)),
-        pixel_bounds_m=np.array([[-10e-6, 10e-6, -10e-6, 10e-6]]),
-        along_edges_m=np.array([-20.0, 0.0, 20.0]),
-        focal_length_m=1,
-        time_order=2,
-        angular_order=3,
-    )
-    line = along_track_acquisition(
-        reads,
-        trajectory,
-        **params,
-        pointing_law=zero_pointing,
-        cross_edges_m=np.array([-0.5, 0.5]),
-        cross_order=1,
-    )
-    full = along_track_acquisition(
-        reads,
-        trajectory,
-        **params,
-        pointing_law=zero_pointing,
-        cross_edges_m=np.array([-20.0, 0.0, 20.0]),
-    )
-    optics = filter_imager(
-        focal_length_m=1,
-        collecting_area_m2=0.1,
-        spatial=GaussianPSF(4e-6),
-        filter=lambda wave: gaussian_filter(wave, centre_m=2e-6, width_m=1e-7),
-    )
-    lifted = gaussian_cross_track_response(line, optics, sigma_m=4e-6)(full)
-    wavelengths = np.array([1.9e-6, 2e-6])
-    np.testing.assert_allclose(
-        lifted(0, wavelengths, full), optics.response(0, 0, wavelengths, full), rtol=3e-15
-    )
-
-    def shifted_pointing(read_index, times_s):
-        return np.column_stack((np.zeros(len(times_s)), np.full(len(times_s), 5e-6)))
-
-    shifted_line = along_track_acquisition(
-        reads,
-        trajectory,
-        **params,
-        pointing_law=shifted_pointing,
-        cross_edges_m=np.array([-0.5, 0.5]),
-        cross_order=1,
-    )
-    shifted_full = along_track_acquisition(
-        reads,
-        trajectory,
-        **params,
-        pointing_law=shifted_pointing,
-        cross_edges_m=np.array([-20.0, 0.0, 20.0]),
-    )
-    shifted_law = gaussian_cross_track_response(shifted_line, optics, sigma_m=4e-6)(shifted_full)
-    np.testing.assert_allclose(
-        shifted_law(0, wavelengths, shifted_full),
-        optics.response(0, 0, wavelengths, shifted_full),
-        rtol=3e-15,
-    )
-
-    def slewing_cross_pointing(read_index, times_s):
-        return np.column_stack((np.zeros(len(times_s)), 5e-6 + times_s * 2e-6))
-
-    slewing_line = along_track_acquisition(
-        reads,
-        trajectory,
-        **params,
-        pointing_law=slewing_cross_pointing,
-        cross_edges_m=np.array([-0.5, 0.5]),
-        cross_order=1,
-    )
-    slewing_full = along_track_acquisition(
-        reads,
-        trajectory,
-        **params,
-        pointing_law=slewing_cross_pointing,
-        cross_edges_m=np.array([-20.0, 0.0, 20.0]),
-    )
-    slewing_law = gaussian_cross_track_response(slewing_line, optics, sigma_m=4e-6)(slewing_full)
-    np.testing.assert_allclose(
-        slewing_law(0, wavelengths, slewing_full),
-        optics.response(0, 0, wavelengths, slewing_full),
-        rtol=3e-15,
-    )
-
-    def distant_pointing(read_index, times_s):
-        return np.column_stack((np.zeros(len(times_s)), np.full(len(times_s), 100.0)))
-
-    distant_line = along_track_acquisition(
-        reads,
-        trajectory,
-        **params,
-        pointing_law=distant_pointing,
-        cross_edges_m=np.array([-0.5, 0.5]),
-        cross_order=1,
-    )
-    with pytest.raises(ValueError, match="reference acceptance"):
-        gaussian_cross_track_response(distant_line, optics, sigma_m=4e-6)(shifted_full)
-    with pytest.raises(ValueError, match="repeat the optical line"):
-        gaussian_cross_track_response(line, optics, sigma_m=4e-6)(scan())
-    with pytest.raises(ValueError, match="sigma"):
-        gaussian_cross_track_response(line, optics, sigma_m=0)
-
-
+@pytest.mark.parametrize("spatial_kind", ["gaussian", "tabulated", "callable"])
 @pytest.mark.parametrize("qe_kind", ["scalar", "column", "spectral", "full", "callback"])
-def test_gaussian_along_track_response_matches_independent_read_composition(qe_kind):
+def test_along_track_response_matches_independent_read_composition(qe_kind, spatial_kind):
     trajectory = LinearTrajectory(height_m=1000, speed_m_s=100, time_origin_s=2)
     reads = along_track_read_schedule(
         sample_ids=("read-0", "read-1"),
@@ -354,11 +240,20 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
     )
     pixels = np.tile([-10e-6, 10e-6, -10e-6, 10e-6], (2, 1))
     edges = np.array([-20.0, 0.0, 20.0])
+    spatial_models = {
+        "gaussian": GaussianPSF(4e-6),
+        "tabulated": TabulatedPSF(
+            np.array([-30e-6, 0, 30e-6]),
+            np.array([-30e-6, 0, 30e-6]),
+            np.array([[0.0, 0, 0], [0, 1, 0], [0, 0, 0]]) / (30e-6) ** 2,
+        ),
+        "callable": partial(airy_psf, f_number=2),
+    }
     optics = tuple(
         filter_imager(
-            focal_length_m=1,
+            focal_length_m=1e-3,
             collecting_area_m2=0.1 + read * 0.03,
-            spatial=GaussianPSF(4e-6),
+            spatial=spatial_models[spatial_kind],
             throughput=0.8 - read * 0.2,
             filter=lambda wave, read=read: gaussian_filter(
                 wave,
@@ -383,7 +278,7 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
         return qe_values[indices]
 
     qe = qe_callback if qe_kind == "callback" else qe_arrays[qe_kind]
-    result = gaussian_along_track_response(
+    result = along_track_response(
         grid(),
         reads,
         trajectory,
@@ -393,9 +288,8 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
         cross_edges_m=edges,
         time_order=2,
         angular_order=3,
-        ground_grid=GroundGrid(knots, knots),
-        focal_length_m=1,
-        sigma_m=4e-6,
+        lattice=PointLattice(knots, knots, FRAME),
+        focal_length_m=1e-3,
         pointing_law=zero_pointing,
         quantum_efficiency=qe,
     )
@@ -405,6 +299,7 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
         np.testing.assert_array_equal(qe_calls[0][1], 0.01 / grid().points)
     assert result.coefficients.shape == (2, 3, 3, 3)
     assert np.all(result.coefficients >= 0)
+    assert np.all(result.coefficients.sum(axis=(1, 2, 3)) > 0)
     assert result.reads.sample_ids == ("read-0", "read-1")
     np.testing.assert_allclose(result.support_bounds_m, [[-20, 20, -20, 20]] * 2)
     for read in range(2):
@@ -415,32 +310,19 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
             (reads.port_ids[read],),
             reads.exposure_bounds_s[read : read + 1],
         )
-        line = along_track_acquisition(
-            local_reads,
-            trajectory,
-            target_xy_m=np.zeros((1, 2)),
-            pixel_bounds_m=pixels[read : read + 1],
-            along_edges_m=edges,
-            cross_edges_m=np.array([-0.5, 0.5]),
-            cross_order=1,
-            time_order=2,
-            angular_order=3,
-            focal_length_m=1,
-            pointing_law=zero_pointing,
-        )
         reference = instrument_response(
             grid(),
             local_reads,
             trajectory,
-            gaussian_cross_track_response(line, optics[read], sigma_m=4e-6),
+            lambda acquisition, read=read: partial(optics[read].response, 0),
             target_xy_m=np.zeros((1, 2)),
             pixel_bounds_m=pixels[read : read + 1],
             along_edges_m=edges,
             cross_edges_m=edges,
             time_order=2,
             angular_order=3,
-            ground_grid=GroundGrid(knots, knots),
-            focal_length_m=1,
+            lattice=PointLattice(knots, knots, FRAME),
+            focal_length_m=1e-3,
             pointing_law=zero_pointing,
             collecting_area_m2=optics[read].collecting_area_m2,
             throughput=optics[read].throughput,
@@ -451,7 +333,7 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
             result.reads.exposure_bounds_s[read], reference.reads.exposure_bounds_s[0]
         )
     with pytest.raises(ValueError, match="pixel bounds"):
-        gaussian_along_track_response(
+        along_track_response(
             grid(),
             reads,
             trajectory,
@@ -460,9 +342,8 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
             along_edges_m=edges,
             cross_edges_m=edges,
             pointing_law=zero_pointing,
-            ground_grid=GroundGrid(knots, knots),
-            focal_length_m=1,
-            sigma_m=4e-6,
+            lattice=PointLattice(knots, knots, FRAME),
+            focal_length_m=1e-3,
         )
 
 
@@ -473,10 +354,10 @@ def test_gaussian_along_track_response_matches_independent_read_composition(qe_k
         (np.array([[np.nan], [0.5]]), "finite"),
         (np.array([[-0.1], [0.5]]), "finite"),
         (np.array([[0.5], [1.1]]), "finite"),
-        (np.ones((3, 3)), "reads,wavenumbers|broadcast"),
+        (np.ones((3, 3)), "reads,spectral|broadcast"),
     ],
 )
-def test_gaussian_along_track_qe_validation(callback, qe_values, match):
+def test_along_track_qe_validation(callback, qe_values, match):
     reads = ReadSchedule(
         ("a", "b"), ("p", "p"), ("s", "s"), ("+", "+"), np.array([[0.0, 0.2], [0.2, 0.4]])
     )
@@ -491,7 +372,7 @@ def test_gaussian_along_track_qe_validation(callback, qe_values, match):
 
     edges = np.array([-20.0, 0.0, 20.0])
     with pytest.raises(ValueError, match=match):
-        gaussian_along_track_response(
+        along_track_response(
             grid(),
             reads,
             LinearTrajectory(height_m=1000, speed_m_s=100),
@@ -499,9 +380,8 @@ def test_gaussian_along_track_qe_validation(callback, qe_values, match):
             pixel_bounds_m=np.tile([-1e-5, 1e-5, -1e-5, 1e-5], (2, 1)),
             along_edges_m=edges,
             cross_edges_m=edges,
-            ground_grid=GroundGrid(edges, edges),
+            lattice=PointLattice(edges, edges, FRAME),
             focal_length_m=1,
-            sigma_m=4e-6,
             pointing_law=zero_pointing,
             quantum_efficiency=qe if callback else qe_values,
         )
@@ -626,9 +506,9 @@ def test_ground_pointing_fixed_scroll_and_zero_parity():
     trajectory = LinearTrajectory(height_m=1000.0, speed_m_s=100.0)
     targets = np.array([[0.0, 0.0], [30.0, 15.0]])
     centres = np.array([0.0, 0.3])
-    fixed = ground_fixed_pointing(trajectory, targets, centres)
-    slow = ground_scroll_pointing(trajectory, targets, centres, ground_rate_m_s=25.0)
-    platform_fixed = ground_scroll_pointing(trajectory, targets, centres, ground_rate_m_s=100.0)
+    fixed = GroundScrollPointing.fixed(trajectory, targets, centres)
+    slow = GroundScrollPointing(trajectory, targets, centres, ground_rate_m_s=25.0)
+    platform_fixed = GroundScrollPointing(trajectory, targets, centres, ground_rate_m_s=100.0)
     t = np.array([-0.1, 0.0, 0.1])
     np.testing.assert_allclose(fixed(0, t)[:, 0], [0.01, 0, -0.01])
     np.testing.assert_allclose(slow(0, t)[:, 0], [0.0075, 0, -0.0075])
@@ -643,8 +523,8 @@ def test_ground_pointing_fixed_scroll_and_zero_parity():
     np.testing.assert_array_equal(zero.image_xy_m, explicit_zero.image_xy_m)
     np.testing.assert_array_equal(zero.weights_sr_s, explicit_zero.weights_sr_s)
     centres = zero.exposure_bounds_s.mean(axis=1)
-    fixed_law = ground_fixed_pointing(trajectory, np.zeros((2, 2)), centres)
-    slow_law = ground_scroll_pointing(trajectory, np.zeros((2, 2)), centres, ground_rate_m_s=25.0)
+    fixed_law = GroundScrollPointing.fixed(trajectory, np.zeros((2, 2)), centres)
+    slow_law = GroundScrollPointing(trajectory, np.zeros((2, 2)), centres, ground_rate_m_s=25.0)
     fixed_scan = scan(pointing_law=fixed_law)
     slow_scan = scan(pointing_law=slow_law)
     for actual in (fixed_scan, slow_scan):
@@ -664,7 +544,7 @@ def test_ground_pointing_fixed_scroll_and_zero_parity():
         100.0 * (slit.times_s - centres[:, None]) / trajectory.height_m,
         atol=2e-17,
     )
-    with_cross = ground_fixed_pointing(
+    with_cross = GroundScrollPointing.fixed(
         trajectory, np.zeros((2, 2)), centres, cross_offset_m=np.array([5.0, -5.0])
     )
     np.testing.assert_allclose(with_cross(0, np.array([centres[0]]))[0, 1], 0.005)
@@ -674,6 +554,133 @@ def test_ground_pointing_fixed_scroll_and_zero_parity():
     ):
         with pytest.raises(ValueError, match="pointing_law"):
             scan(pointing_law=bad)
+
+
+@pytest.mark.parametrize("rate", [-25.0, 0.0, 25.0, 100.0, 150.0])
+def test_ground_scroll_pointing_configuration_and_linear_reference(rate):
+    trajectory = LinearTrajectory(height_m=1000.0, speed_m_s=100.0, time_origin_s=7.0)
+    targets = np.array([[30.0, -2475.0], [200.0, 2475.0]])
+    centres = np.array([7.3, 9.1])
+    cross = np.array([5.0, -15.0])
+    pointing = GroundScrollPointing(
+        trajectory, targets, centres, ground_rate_m_s=rate, cross_offset_m=cross
+    )
+    assert pointing.trajectory is trajectory
+    assert pointing.ground_rate_m_s == rate
+    for name, original in (
+        ("target_xy_m", targets),
+        ("centre_times_s", centres),
+        ("cross_offset_m", cross),
+    ):
+        stored = getattr(pointing, name)
+        np.testing.assert_array_equal(stored, original)
+        assert not np.shares_memory(stored, original)
+        assert stored.flags.writeable
+    for name in (
+        "trajectory",
+        "target_xy_m",
+        "centre_times_s",
+        "ground_rate_m_s",
+        "cross_offset_m",
+    ):
+        with pytest.raises(FrozenInstanceError):
+            setattr(pointing, name, getattr(pointing, name))
+
+    # Mutating every caller input leaves the retained configuration unchanged.
+    targets[:] = 999.0
+    centres[:] = 999.0
+    cross[:] = 999.0
+    times = np.array([7.2, 7.3, 7.4])
+    original_times = times.copy()
+    for read in range(2):
+        expected = np.column_stack(
+            (
+                (
+                    np.array([0.0, -10.0])[read]
+                    + (rate - 100.0) * (times - pointing.centre_times_s[read])
+                )
+                / 1000.0,
+                np.full(3, np.array([0.005, -0.015])[read]),
+            )
+        )
+        actual = pointing(read, times)
+        np.testing.assert_allclose(actual, expected, atol=2e-16)
+        assert actual.flags.writeable
+        assert not np.shares_memory(actual, times)
+        assert not np.shares_memory(actual, pointing.target_xy_m)
+        repeated = pointing(read, times)
+        assert not np.shares_memory(actual, repeated)
+        actual[:] = 999.0
+        np.testing.assert_allclose(pointing(read, times), expected, atol=2e-16)
+    np.testing.assert_array_equal(times, original_times)
+    assert pointing(0, np.array([], dtype=np.float64)).shape == (0, 2)
+    with pytest.raises(IndexError):
+        pointing(2, times)
+    # The documented writable buffers remain the evaluated configuration.
+    pointing.cross_offset_m[0] = 10.0
+    np.testing.assert_array_equal(pointing(0, times)[:, 1], np.full(3, 0.01))
+
+
+@pytest.mark.parametrize("cross", [None, np.array([5.0, -15.0])])
+def test_ground_scroll_pointing_fixed_constructor_equivalence(cross):
+    trajectory = LinearTrajectory(height_m=1000.0, speed_m_s=100.0, time_origin_s=7.0)
+    targets = np.array([[30.0, -2475.0], [200.0, 2475.0]])
+    centres = np.array([7.3, 9.1])
+    fixed = GroundScrollPointing.fixed(trajectory, targets, centres, cross_offset_m=cross)
+    zero_rate = GroundScrollPointing(
+        trajectory, targets, centres, ground_rate_m_s=0.0, cross_offset_m=cross
+    )
+    assert type(fixed) is GroundScrollPointing
+    assert fixed.ground_rate_m_s == 0.0
+    np.testing.assert_array_equal(fixed.cross_offset_m, np.zeros(2) if cross is None else cross)
+    assert not np.shares_memory(fixed.cross_offset_m, zero_rate.cross_offset_m)
+    for read in range(2):
+        times = centres[read] + np.array([-0.1, 0.0, 0.2])
+        np.testing.assert_array_equal(fixed(read, times), zero_rate(read, times))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"target_xy_m": np.zeros((2, 3))},
+        {"target_xy_m": np.full((2, 2), np.nan)},
+        {"centre_times_s": np.zeros(3)},
+        {"centre_times_s": np.full(2, np.inf)},
+        {"cross_offset_m": np.zeros(3)},
+        {"cross_offset_m": np.full(2, np.nan)},
+        {"trajectory": LinearTrajectory(height_m=0.0, speed_m_s=100.0)},
+        {"trajectory": LinearTrajectory(height_m=-1.0, speed_m_s=100.0)},
+        {"trajectory": LinearTrajectory(height_m=np.inf, speed_m_s=100.0)},
+        {"trajectory": LinearTrajectory(height_m=1000.0, speed_m_s=0.0)},
+        {"trajectory": LinearTrajectory(height_m=1000.0, speed_m_s=-1.0)},
+        {"trajectory": LinearTrajectory(height_m=1000.0, speed_m_s=np.nan)},
+        {"trajectory": LinearTrajectory(height_m=1000.0, speed_m_s=100.0, time_origin_s=np.inf)},
+    ],
+)
+def test_ground_scroll_pointing_rejects_invalid_configuration(changes):
+    parameters = (
+        dict(
+            trajectory=LinearTrajectory(height_m=1000.0, speed_m_s=100.0),
+            target_xy_m=np.zeros((2, 2)),
+            centre_times_s=np.zeros(2),
+        )
+        | changes
+    )
+    with pytest.raises(ValueError, match="finite aligned"):
+        GroundScrollPointing(**parameters, ground_rate_m_s=25.0)
+    with pytest.raises(ValueError, match="finite aligned"):
+        GroundScrollPointing.fixed(**parameters)
+
+
+@pytest.mark.parametrize("rate", [np.nan, np.inf, -np.inf])
+def test_ground_scroll_pointing_rejects_nonfinite_rate(rate):
+    with pytest.raises(ValueError, match="finite aligned"):
+        GroundScrollPointing(
+            LinearTrajectory(height_m=1000.0, speed_m_s=100.0),
+            np.zeros((2, 2)),
+            np.zeros(2),
+            ground_rate_m_s=rate,
+        )
 
 
 def test_platform_slit_support_and_swept_ground():
@@ -939,7 +946,7 @@ def test_projection_against_independent_bilinear_polynomial_and_direct_field():
     np.testing.assert_allclose(
         response.coefficients, projected(acquisition).coefficients, rtol=1e-15
     )
-    x, y = np.meshgrid(response.along_m, response.cross_m, indexing="ij")
+    x, y = np.meshgrid(response.lattice.x_m, response.lattice.y_m, indexing="xy")
     spatial = 1 + 0.01 * x + 0.02 * y + 0.0001 * x * y
     spectrum = h * c * 100 * grid().points
     values = spatial[..., None] * spectrum
@@ -963,9 +970,9 @@ def test_projection_against_independent_bilinear_polynomial_and_direct_field():
     )
     xx = 1000 * u[None, :, None] + 100 * t[:, None, None]
     yy = 1000 * v[None, None, :]
-    from orsia_instruments import RadianceField
+    from orsia_instruments import AngularRadianceSamples
 
-    field = RadianceField(
+    field = AngularRadianceSamples(
         grid(), t, u, v, (1 + 0.01 * xx + 0.02 * yy + 0.0001 * xx * yy)[..., None] * spectrum
     )
     direct = expected_electrons(
@@ -996,13 +1003,12 @@ def test_halo_correlation_block_direct_and_native_identities():
         ("+",) * 4 + ("-",) * 4,
         np.tile([2.0, 2.2], (8, 1)),
     )
-    maps = np.arange(1.0, 99.0).reshape(2, 7, 7)
+    maps = np.arange(1.0, 99.0).reshape(2, 7, 7).swapaxes(1, 2)
     spectra = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
     common: dict = dict(
         spectra=spectra,
-        scene_along_m=axis,
-        scene_cross_m=axis,
-        target_indices=(rows, cols),
+        scene_lattice=PointLattice(axis, axis, FRAME),
+        target_indices=(cols, rows),
         reads=reads,
     )
     direct = response_electrons(response, maps, method="direct", **common)
@@ -1012,16 +1018,15 @@ def test_halo_correlation_block_direct_and_native_identities():
     dense_result = response_electrons(
         response,
         dense,
-        scene_along_m=axis,
-        scene_cross_m=axis,
-        target_indices=(rows, cols),
+        scene_lattice=PointLattice(axis, axis, FRAME),
+        target_indices=(cols, rows),
         reads=reads,
         method="correlation",
     )
     np.testing.assert_allclose(dense_result.total, direct.total, rtol=2e-15)
     assert direct.reads is reads
     for row, column, offset in ((1, 1, 0), (1, 5, 1), (5, 1, 2), (5, 5, 3)):
-        patch = dense[row - 1 : row + 2, column - 1 : column + 2]
+        patch = dense[column - 1 : column + 2, row - 1 : row + 2]
         np.testing.assert_allclose(
             direct.total[[offset, 4 + offset]],
             response_electrons(response, patch).total,
@@ -1075,16 +1080,15 @@ def test_physical_detector_then_signed_reconstruction_and_covariance():
 
 def test_ownership_and_whole_support():
     response = projected()
-    assert isinstance(response, DetectorResponse)
-    assert not isinstance(response, InstrumentResponse)
+    assert isinstance(response, GridElectronResponse)
     copied = replace(response)
     assert not np.shares_memory(copied.coefficients, response.coefficients)
     with pytest.raises(ValueError, match="entire ground support"):
         replace(response, support_bounds_m=np.tile([-20.0, 21.0, -20.0, 20.0], (2, 1)))
     with pytest.raises(ValueError, match="nonnegative"):
         replace(response, coefficients=-response.coefficients)
-    with pytest.raises(ValueError, match="ground axes"):
-        replace(response, along_m=np.array([0.0, 0.0, 1.0]))
+    with pytest.raises(ValueError, match="strictly increasing"):
+        replace(response, lattice=replace(response.lattice, x_m=np.array([0.0, 0.0, 1.0])))
     with pytest.raises(ValueError, match="coefficients must"):
         replace(response, coefficients=np.zeros((1, 1, 1, 1)))
     with pytest.raises(ValueError, match="finite ordered"):
@@ -1112,7 +1116,7 @@ def test_ownership_and_whole_support():
 
 
 def test_primitive_rejects_missing_spectral_support():
-    with pytest.raises(ValueError, match="connected"):
+    with pytest.raises(ValueError, match="coverage"):
         photoelectron_response(
             SpectralGrid("wavenumber_cm1", grid().points),
             sample_optical_acceptance(
@@ -1139,12 +1143,13 @@ def test_primitive_rejects_missing_spectral_support():
 
 def test_record_contract_is_positive_physical_response():
     response = projected()
-    assert isinstance(response, DetectorResponse)
+    assert isinstance(response, GridElectronResponse)
     assert response.coefficients.shape == (2, 3, 3, 3)
     assert response.grid == grid()
 
 
-def test_scan_response_derives_full_ground_support_and_preserves_direct_projection():
+@pytest.mark.parametrize("optical_binding", ["direct", "positional_factory", "keyword_factory"])
+def test_scan_response_derives_full_ground_support_and_preserves_direct_projection(optical_binding):
     identities = dict(
         sample_ids=("one",),
         pixel_ids=("pixel",),
@@ -1169,8 +1174,8 @@ def test_scan_response_derives_full_ground_support_and_preserves_direct_projecti
         angular_order=2,
         pointing_law=zero_pointing,
     )
-    ground_grid = GroundGrid(
-        np.array([-30.0, 0.0, 30.0, 60.0, 90.0]), np.array([30.0, 60.0, 90.0, 120.0])
+    lattice = PointLattice(
+        np.array([-30.0, 0.0, 30.0, 60.0, 90.0]), np.array([30.0, 60.0, 90.0, 120.0]), FRAME
     )
     for support_frame, expected_support in (
         ("ground", np.array([[10.0, 50.0, 50.0, 90.0]])),
@@ -1192,48 +1197,87 @@ def test_scan_response_derives_full_ground_support_and_preserves_direct_projecti
             acquisition,
             acceptance,
             ground_xy_m=ground_xy,
-            along_m=ground_grid.along_m,
-            cross_m=ground_grid.cross_m,
+            lattice=PointLattice(lattice.x_m, lattice.y_m, FRAME),
             support_bounds_m=expected_support,
             **kwargs,
         )
+        prepared = []
+
+        def prepare(current, calls=prepared):
+            calls.append(current)
+            fractions = np.where(np.arange(len(current.times_s)) == 0, 0.3, 0.7)
+
+            def response(read, wave, current_acquisition):
+                assert current_acquisition is current
+                return np.full((current.times_s.shape[1], len(wave)), fractions[read])
+
+            return response
+
+        binding: dict[str, Any] = (
+            {"optical_response": acceptance} if optical_binding == "direct" else {}
+        )
+        positional = [prepare] if optical_binding == "positional_factory" else []
+        if optical_binding == "keyword_factory":
+            binding["optical_factory"] = prepare
         actual = instrument_response(
-            spectral_grid=grid(),
-            reads=reads,
-            trajectory=trajectory,
-            optical_factory=lambda current: acceptance,
+            grid(),
+            reads,
+            trajectory,
+            *positional,
+            **binding,
             **params,
             support_frame=support_frame,
-            ground_grid=ground_grid,
+            lattice=lattice,
             focal_length_m=1.0,
             **kwargs,
         )
-        assert type(actual) is InstrumentResponse
-        assert type(explicit) is DetectorResponse
+        assert len(prepared) == (0 if optical_binding == "direct" else 1)
+        if prepared:
+            np.testing.assert_array_equal(prepared[0].times_s, acquisition.times_s)
+        else:
+            invalid_bindings: tuple[dict[str, Any], ...] = (
+                {},
+                {"optical_response": acceptance, "optical_factory": prepare},
+            )
+            for ambiguous in invalid_bindings:
+                with pytest.raises(ValueError, match="exactly one"):
+                    instrument_response(
+                        grid(),
+                        reads,
+                        trajectory,
+                        **ambiguous,
+                        **params,
+                        support_frame=support_frame,
+                        lattice=lattice,
+                        focal_length_m=1.0,
+                        **kwargs,
+                    )
+        assert type(actual) is GridElectronResponse
+        assert type(explicit) is GridElectronResponse
         assert not np.shares_memory(actual.coefficients, explicit.coefficients)
-        assert not np.shares_memory(actual.along_m, ground_grid.along_m)
+        assert actual.lattice is lattice
         assert not np.shares_memory(actual.coefficients, replace(actual).coefficients)
         np.testing.assert_allclose(actual.coefficients, explicit.coefficients, rtol=0, atol=0)
         np.testing.assert_allclose(actual.support_bounds_m, expected_support, rtol=0, atol=2e-13)
         np.testing.assert_array_equal(actual.reads.exposure_bounds_s, acquisition.exposure_bounds_s)
 
 
-def test_arline_of_sight_radiance_direct_and_translated_application_and_timing():
+def test_surface_samples_direct_translation_and_read_timing():
     response = projected()
-    lattice = GroundGrid(response.along_m, response.cross_m)
+    lattice = PointLattice(response.lattice.x_m, response.lattice.y_m, FRAME)
     values = np.ones((3, 3, 3))
-    scene = SceneRadiance(lattice, response.grid, values)
+    scene = SurfaceRadianceSamples(lattice, response.grid, values)
     values[:] = 2.0
     np.testing.assert_array_equal(
-        response_electrons(response, scene.values).total,
+        response_electrons(response, scene).total,
         response_electrons(response, np.ones((3, 3, 3))).total,
     )
     # Array application uses response.grid; callers select and align source spectra.
     axis = np.arange(-60.0, 61.0, 20.0)
     maps = np.ones((2, 7, 7))
     spectra = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-    dense_scene = SceneRadiance(
-        GroundGrid(axis, axis), response.grid, np.einsum("cij,ck->ijk", maps, spectra)
+    dense_scene = SurfaceRadianceSamples(
+        PointLattice(axis, axis, FRAME), response.grid, np.einsum("cij,ck->ijk", maps, spectra)
     )
     with pytest.raises(ValueError, match="nonnegative"):
         response_electrons(response, -maps, spectra=spectra)
@@ -1250,17 +1294,15 @@ def test_arline_of_sight_radiance_direct_and_translated_application_and_timing()
             response,
             maps,
             spectra=spectra,
-            scene_along_m=axis,
-            scene_cross_m=axis,
+            scene_lattice=PointLattice(axis, axis, FRAME),
             target_indices=indices,
             reads=reads,
             method=method,
         )
         dense_counts = response_electrons(
             response,
-            dense_scene.values,
-            scene_along_m=axis,
-            scene_cross_m=axis,
+            dense_scene,
+            scene_lattice=PointLattice(axis, axis, FRAME),
             target_indices=indices,
             reads=reads,
             method=method,
@@ -1271,8 +1313,7 @@ def test_arline_of_sight_radiance_direct_and_translated_application_and_timing()
             response,
             maps,
             spectra=spectra,
-            scene_along_m=axis,
-            scene_cross_m=axis,
+            scene_lattice=PointLattice(axis, axis, FRAME),
             target_indices=(np.array([0]), indices[1]),
             reads=reads,
         )

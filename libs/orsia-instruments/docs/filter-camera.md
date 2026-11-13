@@ -42,25 +42,9 @@ from datetime import UTC, datetime
 from functools import partial
 
 import numpy as np
-from orsia_geometry import (
-    numerical_propagator,
-    radial_nadir,
-)
+from orsia_geometry import NumericalPropagator, radial_nadir
 from orsia_geometry.constants import WGS84_SEMIMAJOR_AXIS_M
-from orsia_instruments import (
-    GaussianPSF,
-    calibrate_frames,
-    camera_acquisition_grid,
-    frame_response,
-    filter_camera,
-    filter_strip,
-    frame_exposure_bounds,
-    gaussian_filter,
-    reconstruct_radiance_cube,
-    regular_detector,
-    simulate_frames,
-    wgs84_surface_projection_from_camera,
-)
+from orsia_instruments import GaussianPSF, calibrate_frames, camera_acquisition_grid, frame_response, filter_camera, filter_strip, frame_exposure_bounds, gaussian_filter, reconstruct_radiance_cube, regular_detector, simulate_frames, wgs84_surface_projection_from_camera
 from orsia_radiative import SpectralBand, SpectralDomain, wavenumber_grid
 
 strips = [
@@ -104,7 +88,7 @@ camera = filter_camera(
 
 ### 2. Select the rays and project them onto Earth
 
-`numerical_propagator` constructs a Geocentric Celestial Reference System (GCRS) trajectory from osculating elements `[a,e,i,RAAN,arg_periapsis,true_anomaly]`, with lengths in metres and angles in radians. Time is elapsed SI seconds from the UTC epoch. The returned callback supplies `(times,3)` GCRS positions in metres and velocities in metres per second. The default force model is EGM96 degree 2/order 0 with RKV98 integration; see the [orbital adapter contract](../../orsia-geometry/docs/geometry.md#orbital-adapters) for tolerances and omitted forces.
+`NumericalPropagator` constructs a Geocentric Celestial Reference System (GCRS) trajectory from osculating elements `[a,e,i,RAAN,arg_periapsis,true_anomaly]`, with lengths in metres and angles in radians. Time is elapsed SI seconds from the UTC epoch. The callable object supplies `(times,3)` GCRS positions in metres and velocities in metres per second. The default force model is EGM96 degree 2/order 0 with RKV98 integration; see the [orbital adapter contract](../../orsia-geometry/docs/geometry.md#orbital-adapters) for tolerances and omitted forces.
 
 `radial_nadir` points platform `+z` towards Earth's centre and sets `+x` along transverse inertial motion. The instrument-to-platform rotation is identity. The two attitude callbacks return `(times,3,3)` column-vector rotations. They remain independent inputs to acquisition. The public trajectory evaluator accepts unordered and repeated times, including the repeated exposure nodes generated for different pixels.
 
@@ -118,7 +102,7 @@ elements = np.array(
         *np.deg2rad([98.0, 0.0, 0.0, 0.0]),
     ]
 )
-trajectory = numerical_propagator(elements, epoch=epoch, validity_s=validity_s)
+trajectory = NumericalPropagator(elements, epoch=epoch, validity_s=validity_s)
 
 
 def platform_attitude(times_s):
@@ -146,7 +130,9 @@ surface = wgs84_surface_projection_from_camera(
 )
 ```
 
-Build the exposure schedule and reuse this single `surface` callback for both truth and estimated acquisition grids. Construction snapshots the chart and time support; the returned callback retains no camera, reference arrays or trajectory/attitude laws. The chart remains fixed when estimated trajectory or pointing changes. Import `wgs84_surface_projection` directly from Geometry when a chart origin is already available in ITRF metres. Geometry's `wgs84_surface_projection_from_ray` also remains available for an explicit dated GCRS ray.
+The helper returns a Geometry-owned `WGS84SurfaceProjection` object, shared with the explicit-origin and from-ray constructors. Its `chart_origin_itrf_m` property returns an independent copy for inspection.
+
+Build the exposure schedule and reuse this single `surface` callable object for both truth and estimated acquisition grids. Construction snapshots the chart and time support; the returned callback retains no camera, reference arrays or trajectory/attitude laws. The chart remains fixed when estimated trajectory or pointing changes. Construct `WGS84SurfaceProjection` directly from Geometry when a chart origin is already available in ITRF metres. Geometry's `WGS84SurfaceProjection.from_ray` is available for an explicit dated GCRS ray.
 
 ```python
 from orsia_instruments import raster_read_schedule
@@ -190,7 +176,7 @@ Native shape: (3, 2, 2)
 Last read (frame,row,column): [2, 1, 1]
 ```
 
-The callback preserves all leading axes: integration rays have `(reads,nodes,3)` shape, while support-corner rays have `(reads,support_times,4,3)` shape. Their time arrays exactly match the leading axes, with the final coordinate axis omitted. `transform_rays` handles distinct dates, repeated times and axis restoration internally. `ellipsoid_intersections` returns `(hits,points)`; the surface callback returns `(xy_m,hits)`, with shapes `(...,2)` and `(...)`. Missed rays have NaN coordinates and false hits. `project_local_east_north` also exposes the chart operation directly for existing ITRF points. Ray coordinates require rotation only; velocity transformations also need the rotation derivative.
+The callback preserves all leading axes: integration rays have `(reads,nodes,3)` shape, while support-corner rays have `(reads,support_times,4,3)` shape. Their time arrays exactly match the leading axes, with the final coordinate axis omitted. `transform_rays` handles distinct dates, repeated times and axis restoration internally. `ellipsoid_intersections` returns `(hits,points)`; the surface callback returns `(xy_m,view_local,hits)`, with shapes `(...,2)`, `(...,3)` and `(...)`. Outward unit views use fixed chart-origin east/north/up axes after dated GCRS-to-ITRF rotation; the scene shares these Cartesian axes. Missed rays have NaN coordinates and false hits. `project_local_east_north` also exposes the chart operation directly for existing ITRF points. Ray coordinates require rotation only; velocity transformations also need the rotation derivative.
 
 The walkthrough's support bounds are conditional on the [continuous-domain assumptions](#walkthrough-support-bounds).
 
@@ -205,7 +191,8 @@ spectral = wavenumber_grid(
 )
 
 
-def radiance(xy_m, directions_gcrs, times_s, wavenumbers_cm1):
+def radiance(xy_m, view_local, times_s, spectral):
+    wavenumbers_cm1 = spectral.points
     return np.broadcast_to(
         wavenumbers_cm1 * 1e-8,
         (*times_s.shape, len(wavenumbers_cm1)),
@@ -298,6 +285,10 @@ The assertions check every supported cube value against its band's mean. Uniform
 
 ## Camera and PSF choices
 
+Construct cameras with `filter_camera`. One fixed optical model owns the strip layout, PSF, support and response. `camera.strips`, `camera.optics`, `camera.support_radius_m`, `camera.omitted_psf_mass` and `camera.row_bands` are derived read-only properties. Rebuild with `filter_camera` when those optical inputs change. The former six-field `FilterCamera` constructor and independent optical-property replacement are unsupported and raise `TypeError`.
+
+`dataclasses.replace(camera, detector=estimated_detector)` remains supported when active pixel rectangles are exactly equal, including their ordering. This permits different QE, gain and noise estimates without changing geometry. Changed detector rectangles raise `ValueError`. Custom responses use the generic `FocalPlaneImager` contract and its native channel identities; an already supported response must retain its existing pupil projection and clipping exactly once.
+
 Use these options when adapting the walkthrough:
 
 | Choice | Meaning and constraints |
@@ -349,19 +340,19 @@ Declare a connected positive cm^-1 interval with `SpectralDomain`. `simulate_fra
 
 | Callback | Borrowed arguments | Returned values |
 | --- | --- | --- |
-| `surface` | GCRS origins and instrument-to-scene unit directions `(...,3)`; elapsed times `(...)` | Metre-chart coordinates `(...,2)` and Boolean hits `(...)` |
-| `radiance` | Surface coordinates `(reads,nodes,2)`; GCRS directions `(reads,nodes,3)`; elapsed times `(reads,nodes)`; cm^-1 nodes `(spectral,)` | Finite nonnegative `(reads,nodes,spectral)` radiance, W m^-2 sr^-1 per (cm^-1) |
+| `surface` | GCRS origins and instrument-to-scene unit directions `(...,3)`; elapsed times `(...)` | Metre-chart coordinates `(...,2)`, chart-local outward unit views `(...,3)`, and Boolean hits `(...)` |
+| `radiance` | Surface coordinates `(N,2)`; chart-local surface-to-sensor unit views `(N,3)`; elapsed times `(N,)`; cm^-1 nodes `(K,)` | Finite nonnegative `(N,K)` radiance, W m^-2 sr^-1 per (cm^-1) |
 | `coverage` | Whole `SurfaceAcquisitionGrid` and `SpectralGrid` | Boolean `(reads,)` full-support attestation |
 
-Direction-dependent radiance functions own conversion from observation rays to their viewing convention. Keep callbacks pure, stable and pointwise across read batches. `read_batch_size` limits temporary dense integration storage while preserving physical read order and the RNG stream.
+Geometry preparation owns dated frame and sign conversion. `simulate_frames` flattens reads then nodes in C order, calls radiance, and restores its `(reads,nodes,spectral)` integration axes. `SurfaceAcquisitionGrid.view_local` is required; there is no identity-frame default. Keep callbacks pure, stable and pointwise across read batches. `read_batch_size` limits temporary dense integration storage while preserving physical read order and the RNG stream.
 
 ## Calibration and band compatibility
 
-For spatially uniform spectral radiance `L`, each read produces `dot(spectral_coefficients, L)` electrons. `NativeBandResponse.spectral_coefficients` has shape `(reads,spectral)` and includes all physical factors and quadrature. Dividing the coefficients by their sum gives the achieved photon-weighted spectral response.
+For spatially uniform spectral radiance `L`, each read produces the dot product of its physical spectral coefficients with `L` in electrons. Dense `NativeBandResponse.spectral_coefficients` has shape `(reads,spectral)` and includes all physical factors and quadrature. Dividing the coefficients by their sum gives the achieved photon-weighted spectral response. Characterized [shared tables](observation-cubes.md#shared-spectral-response-tables) use `(responses,spectral)` coefficients with an explicit read mapping and optional absolute per-read sensitivity. `response.sensitivity` works with both representations; `coefficients_for_reads(indices)` explicitly expands selected physical rows when needed.
 
 `calibrate_frames` divides corrected electrons by the supplied integrated sensitivity. Expected photoelectrons precede dark current and electronics, so they need no pedestal or dark subtraction. With DN available, calibration uses DN by default; `use_expectation=True` explicitly selects expected photoelectrons instead.
 
-A scalar sensitivity cannot generally turn an achieved photon-weighted mean into a different requested energy-response mean. Use normalized coefficients directly with `SpectralBand`, as in the walkthrough. Use `spectral_band` when starting from a sampled response density; it adds trapezoidal quadrature before normalization. Import these names and `RadianceCube` directly from `orsia_radiative`.
+A scalar sensitivity cannot generally turn an achieved photon-weighted mean into a different requested energy-response mean. Use normalized coefficients directly with `SpectralBand`, as in the walkthrough. Use `spectral_band` when starting from a sampled response density; it adds trapezoidal quadrature before normalization. Import `SpectralBand` and `spectral_band` from `orsia_radiative`, and `BandRadianceCube` from `orsia_instruments`.
 
 For each requested band, reconstruction checks the selected responsive reads against the requested weights and the first achieved response. The maximum L1 distance is `response_tolerance`, default `1e-8`. Incompatible spectral nodes or responses raise `ValueError`, including incompatible responses sharing one band identity. Supported cube bands retain the first compatible achieved response. A wholly missing band retains the requested response and is invalid everywhere.
 

@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Any
 from urllib.parse import urlencode, urljoin, urlsplit
 
-from ..http import JsonSession
+from orsia_data.http import JsonSession
 
 
 class StacClient:

@@ -1,16 +1,16 @@
 """Describe SGP4 mean elements and construct reusable GCRS orbit evaluators."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from math import degrees, tau
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
-from . import time_scales as _time_scales
-from .frames import require_time_support, require_utc_epoch, transform_states
-from .los import Trajectory
+from orsia_geometry import times as _times
+from orsia_geometry.frames import require_time_support, require_utc_epoch, transform_states
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,22 +90,15 @@ class SGP4MeanElements:
             raise ValueError("SGP4 mean elements outside supported finite domains")
 
 
-def numerical_propagator(
-    elements: NDArray[np.float64],
-    *,
-    epoch: datetime,
-    validity_s: tuple[float, float],
-    gravity_degree: int = 2,
-    gravity_order: int = 0,
-    sun_gravity: bool = False,
-    moon_gravity: bool = False,
-    absolute_tolerance: float = 1e-4,
-    relative_tolerance: float = 1e-11,
-) -> Trajectory:
+@dataclass(frozen=True, slots=True, init=False, eq=False)
+class NumericalPropagator:
     """Numerically propagate one classical osculating Earth orbit into a reusable dense evaluator.
 
-    Args:
-        elements: Borrowed (6,) [a,e,i,RAAN,arg_periapsis,true_anomaly] in GCRS,
+    Configuration bindings are immutable; native resources remain private.
+
+    Attributes:
+        elements: Writable copy of the initial (6,) GCRS
+            [a,e,i,RAAN,arg_periapsis,true_anomaly] elements,
             with a in metres, angles in radians, 0 <= e < 1 and 0 <= i <= pi.
         epoch: Timezone-aware UTC instant of the osculating elements.
         validity_s: Finite closed nonnegative interval with positive end, SI seconds.
@@ -119,103 +112,175 @@ def numerical_propagator(
         relative_tolerance: Finite positive dimensionless local integration error control.
             Tolerances control adaptive integration and supply no global trajectory bound.
 
-    Returns:
-        Pure serial-use evaluator accepting finite (times,) elapsed SI seconds and
-        returning independent writable float64 (times,3) GCRS positions m and velocities m/s.
-        The closure owns the native dense result until released; the element array is
-        not retained. Each construction uses fresh settings with EGM96 gravity, RKV98,
-        dense interpolation and strict EOP coverage. Tides, relativity, space weather,
-        drag, radiation pressure and thrust stay disabled for every scalar choice.
-        SatKit may acquire normal public auxiliaries during construction; interpolation
-        uses the retained result. Refinement and force-model suitability remain caller
-        responsibilities. Concurrent native use is unqualified.
+    Pure serial-use evaluator accepting finite (times,) elapsed SI seconds and
+    returning independent writable float64 (times,3) GCRS positions m and velocities m/s.
+    The object owns the native dense result until released; the element array is
+    copied privately and exposed only through independent writable copies. Each
+    construction uses fresh settings with EGM96 gravity, RKV98,
+    dense interpolation and strict EOP coverage. Tides, relativity, space weather,
+    drag, radiation pressure and thrust stay disabled for every scalar choice.
+    SatKit may acquire normal public auxiliaries during construction; interpolation
+    uses the retained result. Refinement and force-model suitability remain caller
+    responsibilities. Concurrent native use is unqualified.
 
     Raises:
         ValueError: Elements, epoch, interval, gravity bounds or tolerances are invalid.
         RuntimeError: EOP coverage, auxiliary preparation or numerical propagation fails.
         ImportError: The required SatKit installation cannot load.
     """
-    if (
-        elements.shape != (6,)
-        or not np.isfinite(elements).all()
-        or elements[0] <= 0
-        or not 0 <= elements[1] < 1
-        or not 0 <= elements[2] <= np.pi
-    ):
-        raise ValueError(
-            "classical elements require finite [a,e,i,RAAN,argp,nu] in supported domains"
+
+    epoch: datetime
+    validity_s: tuple[float, float]
+    gravity_degree: int
+    gravity_order: int
+    sun_gravity: bool
+    moon_gravity: bool
+    absolute_tolerance: float
+    relative_tolerance: float
+    _elements: NDArray[np.float64] = field(repr=False)
+    _result: Any = field(repr=False)
+
+    def __init__(
+        self,
+        elements: NDArray[np.float64],
+        *,
+        epoch: datetime,
+        validity_s: tuple[float, float],
+        gravity_degree: int = 2,
+        gravity_order: int = 0,
+        sun_gravity: bool = False,
+        moon_gravity: bool = False,
+        absolute_tolerance: float = 1e-4,
+        relative_tolerance: float = 1e-11,
+    ) -> None:
+        """Prepare fixed configuration and the private native resource.
+
+        Args:
+            elements: Borrowed (6,) [a,e,i,RAAN,arg_periapsis,true_anomaly] in GCRS,
+                with a in metres, angles in radians, 0 <= e < 1 and 0 <= i <= pi.
+            epoch: Timezone-aware UTC instant of the osculating elements.
+            validity_s: Finite closed nonnegative interval with positive end, SI seconds.
+                Integration starts at epoch even when the accepted interval starts later.
+            gravity_degree: EGM96 spherical-harmonic degree in [0, 70]; zero is two-body gravity.
+            gravity_order: EGM96 spherical-harmonic order in [0, gravity_degree].
+            sun_gravity: Include Sun third-body gravity when True.
+            moon_gravity: Include Moon third-body gravity when True.
+            absolute_tolerance: Finite positive local integration error control in state units:
+                metres for position components and metres per second for velocity components.
+            relative_tolerance: Finite positive dimensionless local integration error control.
+                Tolerances control adaptive integration and supply no global trajectory bound.
+
+        Raises:
+            ValueError: Elements, epoch, interval, gravity bounds or tolerances are invalid.
+            RuntimeError: EOP coverage, auxiliary preparation or numerical propagation fails.
+            ImportError: The required SatKit installation cannot load.
+        """
+        if (
+            elements.shape != (6,)
+            or not np.isfinite(elements).all()
+            or elements[0] <= 0
+            or not 0 <= elements[1] < 1
+            or not 0 <= elements[2] <= np.pi
+        ):
+            raise ValueError(
+                "classical elements require finite [a,e,i,RAAN,argp,nu] in supported domains"
+            )
+        require_utc_epoch(epoch)
+        require_time_support(np.array(validity_s), validity_s)
+        if validity_s[0] < 0 or validity_s[1] <= 0:
+            raise ValueError("numerical trajectory requires a forward nonnegative interval")
+        # SatKit 0.24.1 caps harmonic evaluation at degree 70; reject unsupported
+        # truncations explicitly, including order greater than degree.
+        if not 0 <= gravity_order <= gravity_degree <= 70:
+            raise ValueError("gravity requires 0 <= order <= degree <= 70")
+        if (
+            not math.isfinite(absolute_tolerance)
+            or absolute_tolerance <= 0
+            or not math.isfinite(relative_tolerance)
+            or relative_tolerance <= 0
+        ):
+            raise ValueError("integration tolerances must be finite and positive")
+        import satkit
+
+        settings = satkit.propsettings(
+            gravity_degree=gravity_degree,
+            gravity_order=gravity_order,
+            gravity_model=satkit.gravmodel.egm96,
+            integrator=satkit.integrator.rkv98,
+            abs_error=absolute_tolerance,
+            rel_error=relative_tolerance,
+            use_sun_gravity=sun_gravity,
+            use_moon_gravity=moon_gravity,
+            use_spaceweather=False,
+            tide_model=satkit.tidemodel.none,
+            use_relativistic_correction=False,
+            require_eop_coverage=True,
+            enable_interp=True,
         )
-    require_utc_epoch(epoch)
-    require_time_support(np.array(validity_s), validity_s)
-    if validity_s[0] < 0 or validity_s[1] <= 0:
-        raise ValueError("numerical trajectory requires a forward nonnegative interval")
-    # SatKit 0.24.1 caps harmonic evaluation at degree 70; reject unsupported
-    # truncations explicitly, including order greater than degree.
-    if not 0 <= gravity_order <= gravity_degree <= 70:
-        raise ValueError("gravity requires 0 <= order <= degree <= 70")
-    if (
-        not math.isfinite(absolute_tolerance)
-        or absolute_tolerance <= 0
-        or not math.isfinite(relative_tolerance)
-        or relative_tolerance <= 0
-    ):
-        raise ValueError("integration tolerances must be finite and positive")
-    import satkit
+        initial = satkit.kepler(*(float(v) for v in elements)).to_pv()
+        begin, end = _times._native_instants(np.array([0.0, validity_s[1]]), epoch=epoch)
+        # The backend precomputes force/frame inputs on padded nodes beyond the arc;
+        # require_eop_coverage also protects those backend nodes.
+        result = satkit.propagate(
+            pos=initial[0],
+            vel=initial[1],
+            begin=begin,
+            end=end,
+            propsettings=settings,
+            satproperties=None,
+            output_phi=False,
+        )
 
-    settings = satkit.propsettings(
-        gravity_degree=gravity_degree,
-        gravity_order=gravity_order,
-        gravity_model=satkit.gravmodel.egm96,
-        integrator=satkit.integrator.rkv98,
-        abs_error=absolute_tolerance,
-        rel_error=relative_tolerance,
-        use_sun_gravity=sun_gravity,
-        use_moon_gravity=moon_gravity,
-        use_spaceweather=False,
-        tide_model=satkit.tidemodel.none,
-        use_relativistic_correction=False,
-        require_eop_coverage=True,
-        enable_interp=True,
-    )
-    initial = satkit.kepler(*(float(v) for v in elements)).to_pv()
-    begin, end = _time_scales.native_instants(np.array([0.0, validity_s[1]]), epoch=epoch)
-    # The backend precomputes force/frame inputs on padded nodes beyond the arc;
-    # require_eop_coverage also protects those backend nodes.
-    result = satkit.propagate(
-        pos=initial[0],
-        vel=initial[1],
-        begin=begin,
-        end=end,
-        propsettings=settings,
-        satproperties=None,
-        output_phi=False,
-    )
+        object.__setattr__(self, "epoch", epoch)
+        object.__setattr__(self, "gravity_degree", gravity_degree)
+        object.__setattr__(self, "gravity_order", gravity_order)
+        object.__setattr__(self, "sun_gravity", sun_gravity)
+        object.__setattr__(self, "moon_gravity", moon_gravity)
+        object.__setattr__(self, "absolute_tolerance", absolute_tolerance)
+        object.__setattr__(self, "relative_tolerance", relative_tolerance)
+        object.__setattr__(self, "validity_s", (float(validity_s[0]), float(validity_s[1])))
+        object.__setattr__(self, "_elements", elements.copy())
+        object.__setattr__(self, "_result", result)
 
-    def evaluate(times_s: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        require_time_support(times_s, validity_s)
-        instants = _time_scales.native_instants(times_s, epoch=epoch)
+    def __call__(
+        self, times_s: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Evaluate the retained dense orbit at elapsed SI seconds.
+
+        Args:
+            times_s: Finite (times,) seconds within validity_s; arbitrary order and repeats.
+
+        Returns:
+            Independent writable float64 (times,3) GCRS positions m and velocities m/s.
+
+        Raises:
+            ValueError: Requested times violate the accepted interval or shape.
+            RuntimeError: The backend returns an invalid dense state.
+        """
+        require_time_support(times_s, self.validity_s)
+        instants = _times._native_instants(times_s, epoch=self.epoch)
         # SatKit's vector dense interpolator advances through nodes and assumes
         # chronological input. Sort privately, then restore order and repetitions.
         order = np.argsort(times_s, kind="stable")
-        ordered_state = result.interp([instants[int(i)] for i in order])
+        ordered_state = self._result.interp([instants[int(i)] for i in order])
         state = ordered_state[np.argsort(order)]
         if state.shape != (len(times_s), 6) or not np.isfinite(state).all():
             raise RuntimeError("numerical trajectory returned an invalid dense state")
         return state[:, :3].copy(), state[:, 3:].copy()
 
-    return evaluate
+    @property
+    def elements(self) -> NDArray[np.float64]:
+        """Return a writable copy of the initial (6,) GCRS classical elements."""
+        return self._elements.copy()
 
 
-def sgp4_propagator(
-    elements: SGP4MeanElements,
-    *,
-    epoch: datetime,
-    validity_s: tuple[float, float],
-    derivative_step_s: float = 0.5,
-) -> Trajectory:
+@dataclass(frozen=True, slots=True, init=False, eq=False)
+class SGP4Propagator:
     """Create a reusable GCRS evaluator from scalar SGP4 mean elements.
 
-    Args:
+    Configuration bindings are immutable; native resources remain private.
+
+    Attributes:
         elements: Immutable Earth-centred TEME/UTC SGP4 mean elements. Geometry
             converts scalar values directly to a private native record without a
             textual TLE round trip. Use Data for local reading and object selection.
@@ -224,46 +289,99 @@ def sgp4_propagator(
             element availability itself supplies no accepted prediction accuracy.
         derivative_step_s: Central rotation-derivative half-step, at least 1e-4 seconds.
 
-    Returns:
-        Serial-use evaluator yielding owned writable float64 GCRS (times,3) positions
-        m and velocities m/s. SatKit WGS72/AFSPC SGP4 outputs TEME; full IERS 2010
-        rotation and its time derivative map that state into GCRS. Physical elapsed SI
-        time follows SatKit across leap seconds, which differs from Vallado UTC-label
-        subtraction over a crossing. Inputs and native metadata remain unchanged.
-        Normal backend auxiliary search/download and global caches apply at evaluation.
+    Serial-use evaluator yielding owned writable float64 GCRS (times,3) positions
+    m and velocities m/s. SatKit WGS72/AFSPC SGP4 outputs TEME; full IERS 2010
+    rotation and its time derivative map that state into GCRS. Physical elapsed SI
+    time follows SatKit across leap seconds, which differs from Vallado UTC-label
+    subtraction over a crossing. Inputs and native metadata remain unchanged.
+    Normal backend auxiliary search/download and global caches apply at evaluation.
 
     Raises:
         ValueError: Time support, derivative step, element conventions or SGP4 state is invalid.
         RuntimeError: Auxiliary coverage or backend evaluation fails.
         ImportError: The required SatKit installation cannot load.
     """
-    require_utc_epoch(epoch)
-    require_time_support(np.array(validity_s), validity_s)
-    if not np.isfinite(derivative_step_s) or derivative_step_s < 1e-4:
-        raise ValueError("derivative step must be at least 1e-4 seconds")
-    import satkit
 
-    native = satkit.TLE.from_omm(
-        {
-            "NORAD_CAT_ID": elements.norad_id,
-            "EPOCH": elements.epoch.isoformat(),
-            "ECCENTRICITY": elements.eccentricity,
-            "INCLINATION": degrees(elements.inclination_rad),
-            "RA_OF_ASC_NODE": degrees(elements.raan_rad),
-            "ARG_OF_PERICENTER": degrees(elements.argument_of_perigee_rad),
-            "MEAN_ANOMALY": degrees(elements.mean_anomaly_rad),
-            "MEAN_MOTION": elements.mean_motion_rad_s / (tau / 86400),
-            "BSTAR": elements.bstar_per_earth_radius,
-            "MEAN_MOTION_DOT": elements.mean_motion_dot_rad_s2 / (2 * tau / 86400**2),
-            "MEAN_MOTION_DDOT": elements.mean_motion_ddot_rad_s3 / (6 * tau / 86400**3),
-        }
-    )
+    elements: SGP4MeanElements
+    epoch: datetime
+    validity_s: tuple[float, float]
+    derivative_step_s: float
+    _native: Any = field(repr=False)
 
-    def evaluate(times_s: NDArray[np.float64]) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        require_time_support(times_s, validity_s)
-        instants = _time_scales.native_instants(times_s, epoch=epoch)
+    def __init__(
+        self,
+        elements: SGP4MeanElements,
+        *,
+        epoch: datetime,
+        validity_s: tuple[float, float],
+        derivative_step_s: float = 0.5,
+    ) -> None:
+        """Prepare fixed configuration and the private native resource.
+
+        Args:
+            elements: Immutable Earth-centred TEME/UTC SGP4 mean elements. Geometry
+                converts scalar values directly to a private native record without a
+                textual TLE round trip. Use Data for local reading and object selection.
+            epoch: Timezone-aware UTC reference for evaluator elapsed seconds.
+            validity_s: Finite closed caller-accepted prediction interval in SI seconds;
+                element availability itself supplies no accepted prediction accuracy.
+            derivative_step_s: Central rotation-derivative half-step, at least 1e-4 seconds.
+
+        Raises:
+            ValueError: Time support, derivative step, element conventions or SGP4 state is invalid.
+            RuntimeError: Auxiliary coverage or backend evaluation fails.
+            ImportError: The required SatKit installation cannot load.
+        """
+        require_utc_epoch(epoch)
+        require_time_support(np.array(validity_s), validity_s)
+        if not np.isfinite(derivative_step_s) or derivative_step_s < 1e-4:
+            raise ValueError("derivative step must be at least 1e-4 seconds")
+        import satkit
+
+        native = satkit.TLE.from_omm(
+            {
+                "NORAD_CAT_ID": elements.norad_id,
+                "EPOCH": elements.epoch.isoformat(),
+                "ECCENTRICITY": elements.eccentricity,
+                "INCLINATION": degrees(elements.inclination_rad),
+                "RA_OF_ASC_NODE": degrees(elements.raan_rad),
+                "ARG_OF_PERICENTER": degrees(elements.argument_of_perigee_rad),
+                "MEAN_ANOMALY": degrees(elements.mean_anomaly_rad),
+                "MEAN_MOTION": elements.mean_motion_rad_s / (tau / 86400),
+                "BSTAR": elements.bstar_per_earth_radius,
+                "MEAN_MOTION_DOT": elements.mean_motion_dot_rad_s2 / (2 * tau / 86400**2),
+                "MEAN_MOTION_DDOT": elements.mean_motion_ddot_rad_s3 / (6 * tau / 86400**3),
+            }
+        )
+
+        object.__setattr__(self, "elements", elements)
+        object.__setattr__(self, "epoch", epoch)
+        object.__setattr__(self, "derivative_step_s", derivative_step_s)
+        object.__setattr__(self, "validity_s", (float(validity_s[0]), float(validity_s[1])))
+        object.__setattr__(self, "_native", native)
+
+    def __call__(
+        self, times_s: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Propagate the retained mean elements at elapsed SI seconds.
+
+        Args:
+            times_s: Finite (times,) seconds within validity_s; arbitrary order and repeats.
+
+        Returns:
+            Owned writable float64 (times,3) GCRS positions m and velocities m/s.
+
+        Raises:
+            ValueError: Time support or propagated SGP4 state is invalid.
+            RuntimeError: Auxiliary coverage or backend evaluation fails.
+            ImportError: The required SatKit installation cannot load.
+        """
+        require_time_support(times_s, self.validity_s)
+        import satkit
+
+        instants = _times._native_instants(times_s, epoch=self.epoch)
         positions, velocities, errors = satkit.sgp4(
-            native,
+            self._native,
             instants,
             gravconst=satkit.sgp4_gravconst.wgs72,
             opsmode=satkit.sgp4_opsmode.afspc,
@@ -279,11 +397,9 @@ def sgp4_propagator(
             times_s,
             positions,
             velocities,
-            epoch=epoch,
-            validity_s=validity_s,
+            epoch=self.epoch,
+            validity_s=self.validity_s,
             from_frame="TEME",
             to_frame="GCRS",
-            derivative_step_s=derivative_step_s,
+            derivative_step_s=self.derivative_step_s,
         )
-
-    return evaluate

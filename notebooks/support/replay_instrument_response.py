@@ -15,7 +15,14 @@ import numpy as np
 from orsia_radiative import ObservationGeometry, Radiance, wavenumber_grid
 
 ROOT = Path(__file__).resolve().parents[2]
-PREPARATION = {"atmosphere", "absorption-h2o", "absorption-co2", "absorption-ch4", "radiance"}
+PREPARATION = {
+    "atmosphere",
+    "water-continuum",
+    "absorption-h2o",
+    "absorption-co2",
+    "absorption-ch4",
+    "radiance",
+}
 
 
 def instrument_cells(root: Path) -> list[dict]:

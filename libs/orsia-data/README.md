@@ -42,7 +42,7 @@ Expected output: `[1.8, 1.9]`, in W m-2 nm-1 at point centres in nm. Reading per
 | Solar CSV, grouped HITRAN collections, native laboratory spectra, detailed line/partition tables and MT_CKD water | [Readers and acquisition](docs/readers-and-acquisition.md) |
 | Space-Track GP acquisition and scalar SGP4 mean-element reading/selection | [Orbital elements](docs/orbital-elements.md) |
 
-`orsia-data` depends on Geometry for the lightweight immutable `SGP4MeanElements` contract. SatKit 0.24.1 is a required dependency for local GP OMM JSON/TLE parsing and Space-Track payload validation. Its private parser import remains deferred until use. The diagram shows selected dependencies; the orbital contract dependency is described in the [SGP4 guide](docs/orbital-elements.md).
+`orsia-data` depends on Geometry for the lightweight immutable `SGP4MeanElements` contract. Install `orsia-data[orbital]` for local GP OMM JSON/TLE parsing and Space-Track payload validation; this extra supplies SatKit 0.24.1 and Geometry's matching orbital extra. Its private parser import remains deferred until use. The diagram includes this orbital contract dependency; the [SGP4 guide](docs/orbital-elements.md) defines parsing, selection and acquisition boundaries.
 
 ## Resource and evidence boundaries
 

@@ -7,9 +7,9 @@ set default-list
 prepare-five-band:
     uv run --locked --all-packages --extra hitran --extra atmosphere python -m notebooks.support.prepare_five_band
 
-# Import retained authentic spectroscopy offline into a local collection.
-prepare-spectroscopy:
-    uv run --no-sync --locked --all-packages --extra atmosphere python -m notebooks.support.prepare_spectroscopy
+# Import or verify retained spectroscopy and native water coefficients offline.
+prepare-spectroscopy *args:
+    uv run --no-sync --locked --all-packages --extra atmosphere python -m notebooks.support.prepare_spectroscopy "$@"
 
 # Verify retained enrichment offline; --download explicitly acquires inputs.
 prepare-five-band-enriched *args:
@@ -25,6 +25,16 @@ execute-instrument-responses:
     uv run --no-sync --locked --all-packages --extra atmosphere python -m ipykernel install --prefix outputs/jupyter --name orsia-314t --display-name "Orsia CPython 3.14 free-threaded"
     JUPYTER_PATH="$PWD/outputs/jupyter/share/jupyter${JUPYTER_PATH:+:$JUPYTER_PATH}" MPLBACKEND=Agg uv run --no-sync --locked --all-packages --extra atmosphere jupyter execute --inplace --timeout=3600 --kernel_name=orsia-314t notebooks/era5_hitran_instrument_responses.ipynb
     uv run --no-sync --locked --all-packages python -m notebooks.support.notebook_instrument_responses
+
+# Execute the self-contained dispersion tutorial without acquiring inputs.
+execute-dispersion:
+    uv run --no-sync --locked --all-packages python -m ipykernel install --prefix outputs/dispersion-notebook/jupyter --name orsia-dispersion-314t --display-name "Orsia CPython 3.14 free-threaded"
+    JUPYTER_PATH="$PWD/outputs/dispersion-notebook/jupyter/share/jupyter${JUPYTER_PATH:+:$JUPYTER_PATH}" MPLBACKEND=Agg OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 uv run --no-sync --locked --all-packages jupyter execute --inplace --timeout=120 --kernel_name=orsia-dispersion-314t notebooks/gaussian_puff_dispersion.ipynb
+
+# Execute the synthetic spatial-scene tutorial without acquiring inputs.
+execute-spatial-scene:
+    uv run --no-sync --locked --all-packages python -m ipykernel install --prefix outputs/spatial-scene-notebook/jupyter --name orsia-spatial-scene-314t --display-name "Orsia CPython 3.14 free-threaded"
+    JUPYTER_PATH="$PWD/outputs/spatial-scene-notebook/jupyter/share/jupyter${JUPYTER_PATH:+:$JUPYTER_PATH}" MPLBACKEND=Agg OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 uv run --no-sync --locked --all-packages jupyter execute --inplace --timeout=120 --kernel_name=orsia-spatial-scene-314t notebooks/spatial_scene.ipynb
 
 # Replay selected-read chains against the latest full notebook execution.
 replay-instrument-response:

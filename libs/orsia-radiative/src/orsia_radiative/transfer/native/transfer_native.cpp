@@ -35,6 +35,19 @@ static Real integral(Real a, Real b) {
 }
 
 template <typename Real>
+static Real beam_source_weight(Real a, Real b, Real depth, Real direction,
+                               Real solar_mu, bool upward, Real fraction) {
+    if (std::isfinite(a) && std::isfinite(b))
+        return integral(a, b) / (direction / fraction);
+    const Real amplitude = std::exp(std::fmax(a, b));
+    if (amplitude == Real{0}) return Real{0};
+    // An infinite exponent difference has an exact opaque numerator of one.
+    // Cancel the path cosine before the slant-depth quotient can overflow.
+    const Real denominator = upward ? solar_mu + direction : std::fabs(solar_mu - direction);
+    return (amplitude * (solar_mu / denominator)) / depth;
+}
+
+template <typename Real>
 static void prepare_kernel(const Real *depth, const Real *mu,
                            Real *transmission, Real *half_transmission,
                            Real *weight, Real *half_weight,
@@ -65,14 +78,20 @@ static void prepare_kernel(const Real *depth, const Real *mu,
             Real attenuation = depth[c] / direction;
             transmission[i] = std::exp(-attenuation);
             half_transmission[i] = std::exp(-attenuation / Real{2});
-            weight[i] = phi(attenuation) / direction;
-            half_weight[i] = phi(attenuation / Real{2}) / (Real{2} * direction);
+            // Use vertical depth for thick cells: the slant quotient can
+            // overflow even though the source weight remains representable.
+            weight[i] = attenuation > Real{1}
+                ? -std::expm1(-attenuation) / depth[c] : phi(attenuation) / direction;
+            half_weight[i] = attenuation > Real{1}
+                ? -std::expm1(-attenuation / Real{2}) / depth[c]
+                : phi(attenuation / Real{2}) / (Real{2} * direction);
             if (solar) {
                 Real entry = mu[d] > 0 ? bottom : top;
                 Real end = mu[d] > 0 ? top : bottom;
-                solar_weight[i] = integral(entry - attenuation, end) / direction;
-                solar_half_weight[i] = integral(entry - attenuation / Real{2}, midpoint) /
-                                       (Real{2} * direction);
+                solar_weight[i] = beam_source_weight(entry - attenuation, end,
+                    depth[c], direction, solar_mu, mu[d] > 0, Real{1});
+                solar_half_weight[i] = beam_source_weight(entry - attenuation / Real{2},
+                    midpoint, depth[c], direction, solar_mu, mu[d] > 0, Real{0.5});
             }
         }
         if (solar) above += depth[c];
@@ -516,6 +535,8 @@ static Dgemm dgemm_pointer(py::handle owner) {
 }
 
 #include "orders_native.h"
+#include "solar_tangent_native.h"
+#include "scattering_tangent_native.h"
 #include "thermal_native.h"
 
 static py::cpp_function bind_rayleigh_blas(py::object owner) {
@@ -528,9 +549,19 @@ static py::cpp_function bind_spectral_blas(py::object owner) {
     return make_spectral_orders(std::move(owner), gemm);
 }
 
+static py::cpp_function bind_scattering_tangent_blas(py::object owner) {
+    auto gemm = dgemm_pointer(owner);
+    return make_scattering_orders_tangent(std::move(owner), gemm);
+}
+
 PYBIND11_MODULE(transfer_native, module, py::mod_gil_not_used(),
                 py::multiple_interpreters::per_interpreter_gil()) {
     // Unnamed arguments retain the original positional-only native API.
+    module.attr("scattering_orders_tangent") = make_scattering_orders_tangent(py::none(), nullptr);
+    module.def("bind_scattering_tangent_blas", &bind_scattering_tangent_blas,
+               "Bind SciPy BLAS to fixed-order solar values and constituent tangents.");
+    module.def("reflected_radiance_tangent", &reflected_radiance_tangent,
+               "Compute absorption-only direct solar values and last-axis tangents.");
     module.def("prepare", &prepare,
                "Prepare transport in fresh, disjoint contiguous float/double buffers.");
     module.def("apply", &apply,
@@ -541,6 +572,8 @@ PYBIND11_MODULE(transfer_native, module, py::mod_gil_not_used(),
                "Bind SciPy BLAS to the full-spectrum detached SOS calculation.");
     module.def("bind_rayleigh_blas", &bind_rayleigh_blas,
                "Bind SciPy BLAS to a detached native Rayleigh callable.");
+    module.def("bind_thermal_tangents", &bind_thermal_tangents,
+               "Bind explicit LTE thermal tangents to SciPy exponential integrals.");
     module.def("bind_thermal_expn", &bind_thermal_expn,
                "Bind SciPy exponential integrals to serial native LTE thermal transport.");
 }

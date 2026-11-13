@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <mxfile host="Electron" version="32.6.1" type="device" compressed="false">
   <diagram id="orsia-instruments-architecture" name="Measurement chain">
-    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="300" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
+    <mxGraphModel dx="0" dy="0" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="940" math="0" shadow="0" background="#FFFFFF" adaptiveColors="none">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -14,17 +14,70 @@
         <mxCell id="charge-to-detector" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;endArrow=block;endFill=1;endSize=12;strokeWidth=3;strokeColor=#53647A;fontColor=#253750;fillColor=none;" edge="1" parent="1" source="charge" target="detector">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="scene" value="Scene radiance&#10;Local angular image&#10;or GCRS rays" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=28;fontColor=#253750;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="scene" value="Physical radiance&#10;Surface / angular&#10;or GCRS queries" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=28;fontColor=#253750;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="20" y="40" width="330" height="180" />
         </mxCell>
-        <mxCell id="optics" value="Geometry + optics&#10;Collect light" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=28;fontColor=#253750;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="optics" value="Acquisition + optics&#10;Detector geometry" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="430" y="40" width="330" height="180" />
         </mxCell>
-        <mxCell id="charge" value="Integration&#10;Mean photoelectrons" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=28;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="charge" value="Integration + pixel QE&#10;Mean photoelectrons" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="840" y="40" width="330" height="180" />
         </mxCell>
-        <mxCell id="detector" value="Detector (optional)&#10;Noisy DN" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=28;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="detector" value="Optional readout&#10;Seeded noisy DN" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry as="geometry" x="1250" y="40" width="330" height="180" />
+        </mxCell>
+        <mxCell id="joint" value="Joint response&#10;Fixed coefficients&#10;Forward / transpose" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#F2EEFA;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="20" y="390" width="400" height="180" />
+        </mxCell>
+        <mxCell id="calibration" value="Supplied calibration&#10;Frames and native&#10;uncertain observations" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="390" width="400" height="180" />
+        </mxCell>
+        <mxCell id="reconstruction" value="Ground registration&#10;BandRadianceCube" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1120" y="390" width="460" height="180" />
+        </mxCell>
+        <mxCell id="optics-joint" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="optics" target="joint">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="595" y="300" />
+              <mxPoint x="220" y="300" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="charge-calibration" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.6;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="charge" target="calibration">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1005" y="280" />
+              <mxPoint x="800" y="280" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="readout-calibration" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.85;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="detector" target="calibration">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="1415" y="320" />
+              <mxPoint x="900" y="320" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="calibration-reconstruction" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="calibration" target="reconstruction">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="native-support" value="Fixed native geometry&#10;Supplied within-band weights" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="560" y="700" width="400" height="180" />
+        </mxCell>
+        <mxCell id="observation-cube" value="ObservationCube&#10;Logical line / sample / band&#10;Native supports + covariance" style="rounded=1;absoluteArcSize=1;arcSize=18;html=0;align=center;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=26;fontColor=#253750;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="1120" y="700" width="460" height="180" />
+        </mxCell>
+        <mxCell id="support-cube" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="native-support" target="observation-cube">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="calibration-native-cube" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="calibration" target="observation-cube">
+          <mxGeometry as="geometry" relative="1">
+            <Array as="points">
+              <mxPoint x="760" y="640" />
+              <mxPoint x="1350" y="640" />
+            </Array>
+          </mxGeometry>
         </mxCell>
       </root>
     </mxGraphModel>

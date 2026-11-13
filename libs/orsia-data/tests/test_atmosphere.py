@@ -143,6 +143,54 @@ def test_bad_time_metadata(tmp_path: Path, attribute: str, value: str) -> None:
         read(path)
 
 
+@pytest.mark.parametrize("calendar", ["standard", "gregorian", "proleptic_gregorian"])
+@pytest.mark.parametrize(
+    ("units", "offset", "instant"),
+    [
+        ("seconds since 1970-01-01T00:00:00Z", 1_735_689_600, CYCLE),
+        ("minutes since 2024-12-31T23:00:00+00:00", 60, CYCLE),
+        ("hours since 2024-12-31T20:00:00-04:00", 0, CYCLE),
+        ("days since 2024-12-31T00:00:00+00:00", 1, CYCLE),
+        (
+            "seconds since 2024-12-31T23:59:59.125000+00:00",
+            1.25,
+            datetime(2025, 1, 1, 0, 0, 0, 375000, tzinfo=UTC),
+        ),
+    ],
+)
+def test_modern_calendar_time_coordinates(
+    tmp_path: Path, calendar: str, units: str, offset: float, instant: datetime
+) -> None:
+    path = tmp_path / "native.nc"
+    fixture_file(path)
+    with netcdf_file(path, "a") as ds:
+        time = ds.variables["time"]
+        time.calendar = calendar
+        time.units = units
+        scale = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}
+        time[:] = [offset, offset + 6 * 3600 / scale[units.split()[0]]]
+    before = path.read_bytes()
+    levels, fields = read(path, valid_time=instant)
+    assert_allclose(levels, [1000, 500])
+    assert_allclose(fields["t"], [104.5, 106.5])
+    assert path.read_bytes() == before
+
+
+def test_proleptic_calendar_rejects_pre_transition_and_nonfinite(tmp_path: Path) -> None:
+    path = tmp_path / "native.nc"
+    fixture_file(path)
+    with netcdf_file(path, "a") as ds:
+        ds.variables["time"].calendar = "proleptic_gregorian"
+        ds.variables["time"].units = "days since 1582-10-14"
+    with pytest.raises(ValueError, match="pre-Gregorian"):
+        read(path)
+    with netcdf_file(path, "a") as ds:
+        ds.variables["time"].units = "days since 2025-01-01"
+        ds.variables["time"][:] = [0, np.nan]
+    with pytest.raises(ValueError, match="invalid native time"):
+        read(path)
+
+
 def test_sampling_strictness() -> None:
     assert linear_axis_weights(np.array([3, 2, 1.0]), 2, periodic=False) == [(1, 1)]
     assert linear_axis_weights(np.array([1.0]), 1, periodic=False) == [(0, 1)]

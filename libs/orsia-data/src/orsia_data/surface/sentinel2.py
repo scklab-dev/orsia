@@ -6,7 +6,7 @@ from xml.etree import ElementTree as ET
 
 import numpy as np
 
-from ..geospatial import RasterBand, Window, read_raster_band
+from orsia_data.geospatial import RasterBand, Window, read_raster_band
 
 _BANDS = ("B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B10", "B11", "B12")
 

@@ -17,9 +17,9 @@ from numpy.typing import NDArray
 from orsia_radiative import (
     Absorption,
     AerosolComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SolarSource,
     SpectralIrradiance,
@@ -319,9 +319,9 @@ def test_high_moment_phase_tends_to_exact_hg_in_a_bounded_case() -> None:
     assert errors[-1] <= bound + 2e-14
 
 
-def _inputs() -> tuple[RadiativeScene, SolarSource, RayleighComponent, AerosolComponent]:
+def _inputs() -> tuple[ColumnScene, SolarSource, RayleighComponent, AerosolComponent]:
     grid = np.array([12000.0, 12001.0])
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -330,7 +330,7 @@ def _inputs() -> tuple[RadiativeScene, SolarSource, RayleighComponent, AerosolCo
         np.array([1.9e29, 1.7e29]),
         np.array([1e28, 1e28]),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(wavenumber_grid(grid), np.array([0.2, 0.3])),
         ObservationGeometry(20.0),

@@ -6,6 +6,76 @@ from types import ModuleType
 import numpy as np
 from numpy.typing import NDArray
 
+def reflected_radiance_tangent(
+    depth: Buffer,
+    depth_tangent: Buffer,
+    irradiance: Buffer,
+    reflectance: Buffer,
+    reflectance_tangent: Buffer,
+    zenith: float,
+    view_zenith: float,
+    /,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]: ...
+def scattering_orders_tangent(
+    optical: tuple[Buffer | None, ...],
+    seeds: tuple[Buffer | None, ...],
+    irradiance: Buffer,
+    reflectance: Buffer,
+    reflectance_seed: Buffer,
+    directions: Buffer,
+    weights: Buffer,
+    layers: int,
+    subdivisions: int,
+    max_order: int,
+    moments: int,
+    zenith: float,
+    view_zenith: float,
+    azimuth: float,
+    /,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]: ...
+def bind_scattering_tangent_blas(
+    owner: ModuleType,
+    /,
+) -> Callable[
+    [
+        tuple[Buffer | None, ...],
+        tuple[Buffer | None, ...],
+        Buffer,
+        Buffer,
+        Buffer,
+        Buffer,
+        Buffer,
+        int,
+        int,
+        int,
+        int,
+        float,
+        float,
+        float,
+    ],
+    tuple[NDArray[np.float64], NDArray[np.float64]],
+]: ...
+def bind_thermal_tangents(
+    owner: ModuleType,
+    second_radiation: float,
+    rayleigh_jeans: float,
+    /,
+) -> Callable[
+    [
+        Buffer,
+        Buffer,
+        Buffer,
+        Buffer | None,
+        Buffer | None,
+        Buffer,
+        Buffer,
+        float,
+        float,
+        bool,
+        tuple[Buffer, ...],
+    ],
+    tuple[NDArray[np.float64], ...],
+]: ...
 def bind_thermal_expn(
     owner: ModuleType,
     second_radiation: float,

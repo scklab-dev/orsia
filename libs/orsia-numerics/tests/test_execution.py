@@ -60,7 +60,6 @@ def test_standard_interface(native: FakeOpenBlas) -> None:
         pool.submit(int, 1)
 
 
-@requires_linux_affinity
 @pytest.mark.parametrize("relative_path", ["README.md", "docs/execution.md"])
 def test_documented_execution_example(relative_path: str) -> None:
     document = Path(__file__).resolve().parents[1] / relative_path
@@ -128,11 +127,118 @@ def test_invalid_cpus(kind: str, native: FakeOpenBlas) -> None:
         CpuThreadPoolExecutor(cpus=cpus)
 
 
-@pytest.mark.parametrize("name", ["sched_getaffinity", "sched_setaffinity"])
-def test_missing_affinity(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
-    monkeypatch.delattr(os, name, raising=False)
-    with pytest.raises(NotImplementedError, match="affinity"):
+@pytest.mark.parametrize(
+    "missing",
+    [("sched_getaffinity",), ("sched_setaffinity",), ("sched_getaffinity", "sched_setaffinity")],
+)
+def test_missing_affinity(
+    monkeypatch: pytest.MonkeyPatch,
+    missing: tuple[str, ...],
+    native: FakeOpenBlas,
+    openmp: FakeOpenMP,
+) -> None:
+    for name in ("sched_getaffinity", "sched_setaffinity"):
+        if name in missing:
+            monkeypatch.delattr(os, name, raising=False)
+        else:
+            monkeypatch.setattr(os, name, Mock(side_effect=AssertionError("affinity called")))
+    monkeypatch.setattr(os, "process_cpu_count", lambda: 1)
+    initialized = Event()
+
+    def initialize(marker: str) -> None:
+        assert marker == "ready"
+        assert native.threads == 1
+        assert openmp.counts() == (1, 0)
+        initialized.set()
+
+    with pytest.warns(RuntimeWarning, match="without CPU pinning") as warnings:
+        pool = CpuThreadPoolExecutor(1, initializer=initialize, initargs=("ready",))
+    assert len(warnings) == 1
+    assert warnings[0].filename == __file__
+    with pool:
+        assert pool.submit(openmp.counts).result(10) == (1, 0)
+        assert initialized.is_set()
+        assert list(pool.map(pow, [2, 3], [3, 2], buffersize=1)) == [8, 9]
+        with pytest.raises(ValueError):
+            pool.submit(int, "bad").result(10)
+    assert native.threads == 4
+    with pytest.raises(RuntimeError, match="shutdown"):
+        pool.submit(int)
+
+
+@pytest.mark.parametrize(
+    "process_count, system_count, expected", [(2, 4, 2), (None, 2, 2), (None, None, 1)]
+)
+def test_unpinned_cpu_count_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    native: FakeOpenBlas,
+    process_count: int | None,
+    system_count: int | None,
+    expected: int,
+) -> None:
+    monkeypatch.delattr(os, "sched_setaffinity")
+    monkeypatch.setattr(os, "process_cpu_count", lambda: process_count)
+    system = Mock(return_value=system_count)
+    monkeypatch.setattr(os, "cpu_count", system)
+    barrier = Barrier(expected)
+
+    def observe() -> int | None:
+        barrier.wait(10)
+        return current_thread().ident
+
+    with pytest.warns(RuntimeWarning, match="without CPU pinning"), CpuThreadPoolExecutor() as pool:
+        futures = [pool.submit(observe) for _ in range(expected)]
+        assert len({future.result(10) for future in futures}) == expected
+    assert system.call_count == (1 if process_count is None else 0)
+    with pytest.warns(RuntimeWarning), pytest.raises(ValueError, match="max_workers"):
+        CpuThreadPoolExecutor(expected + 1)
+
+
+@pytest.mark.parametrize("workers, expected", [(None, 2), (1, 1)])
+def test_unpinned_explicit_cpus_use_only_count(
+    monkeypatch: pytest.MonkeyPatch,
+    native: FakeOpenBlas,
+    workers: int | None,
+    expected: int,
+) -> None:
+    monkeypatch.delattr(os, "sched_getaffinity")
+    monkeypatch.setattr(os, "process_cpu_count", Mock(side_effect=AssertionError("count called")))
+    barrier = Barrier(expected)
+
+    def observe() -> int | None:
+        barrier.wait(10)
+        return current_thread().ident
+
+    with pytest.warns(RuntimeWarning, match="CPU IDs cannot be applied or verified"):
+        pool = CpuThreadPoolExecutor(workers, cpus=iter([100001, 100002]))
+    with pool:
+        futures = [pool.submit(observe) for _ in range(expected)]
+        assert len({future.result(10) for future in futures}) == expected
+
+
+@pytest.mark.parametrize(
+    "cpus, workers", [([], None), ([1, 1], None), ([-1], None), ([1], 0), ([1], 2)]
+)
+def test_unpinned_selection_validation(
+    monkeypatch: pytest.MonkeyPatch,
+    native: FakeOpenBlas,
+    cpus: list[int],
+    workers: int | None,
+) -> None:
+    monkeypatch.delattr(os, "sched_getaffinity")
+    with pytest.warns(RuntimeWarning), pytest.raises(ValueError):
+        CpuThreadPoolExecutor(workers, cpus=cpus)
+    assert native.threads == 4
+
+
+def test_constructor_affinity_failure_remains_visible(
+    monkeypatch: pytest.MonkeyPatch,
+    native: FakeOpenBlas,
+) -> None:
+    monkeypatch.setattr(os, "sched_getaffinity", Mock(side_effect=OSError("affinity denied")))
+    with pytest.raises(OSError, match="affinity denied"):
         CpuThreadPoolExecutor(1)
+    assert native.threads == 4
 
 
 @pytest.mark.parametrize("failure", ["set", "verify", "initializer"])
@@ -226,24 +332,43 @@ def test_context_exception_does_not_cancel_pending_work(native: FakeOpenBlas) ->
     assert completed.is_set()
 
 
-@requires_linux_affinity
-def test_native_numerical_calls_and_free_threaded_runtime() -> None:
+@pytest.mark.parametrize("without_affinity", [False, True])
+def test_native_numerical_calls_and_free_threaded_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    without_affinity: bool,
+) -> None:
+    if without_affinity:
+        monkeypatch.delattr(os, "sched_getaffinity", raising=False)
+        monkeypatch.delattr(os, "sched_setaffinity", raising=False)
+        monkeypatch.setattr(os, "process_cpu_count", lambda: 1)
     controllers = ThreadpoolController().lib_controllers
+    accelerate = execution._loaded_accelerate()
+    assert controllers or accelerate is not None
     before = [c.get_num_threads() for c in controllers]
+    accelerate_before = accelerate.get_threading() if accelerate is not None else None
     matrix = np.array([[4.0, 1.0], [1.0, 3.0]])
     rhs = np.array([1.0, 2.0])
     reference = solve(matrix, rhs)
 
     def compute() -> NDArray[np.float64]:
         assert all(c.get_num_threads() == 1 for c in controllers)
+        if accelerate is not None:
+            assert accelerate.get_threading() == 1
         assert not sys._is_gil_enabled()
         np.testing.assert_allclose(matrix @ matrix, [[17, 7], [7, 10]])
         return solve(matrix, rhs)
 
-    with CpuThreadPoolExecutor(min(2, len(affinity()))) as pool:
+    workers = (
+        min(2, len(affinity()))
+        if hasattr(os, "sched_getaffinity") and hasattr(os, "sched_setaffinity")
+        else 1
+    )
+    with CpuThreadPoolExecutor(workers) as pool:
         for result in pool.map(lambda _: compute(), range(8), buffersize=2):
             np.testing.assert_allclose(result, reference)
     assert [c.get_num_threads() for c in controllers] == before
+    if accelerate is not None:
+        assert accelerate.get_threading() == accelerate_before
     assert not sys._is_gil_enabled()
 
 
@@ -286,7 +411,7 @@ class FakeOpenBlas:
 @pytest.fixture
 def native(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeOpenBlas]:
     # Unit tests simulate placement only on hosts without the Linux API. Real
-    # pinning/native integration tests above remain Linux-only; the API still rejects macOS.
+    # pinning tests remain Linux-only; unpinned tests explicitly remove these APIs.
     if not hasattr(os, "sched_getaffinity") or not hasattr(os, "sched_setaffinity"):
         state = local()
         monkeypatch.setattr(
@@ -296,6 +421,7 @@ def native(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeOpenBlas]:
             os, "sched_setaffinity", lambda pid, cpus: setattr(state, "cpus", cpus), raising=False
         )
     backend = FakeOpenBlas()
+    monkeypatch.setattr(execution, "_loaded_accelerate", lambda: None)
     monkeypatch.setattr(
         execution, "ThreadpoolController", lambda: SimpleNamespace(lib_controllers=[backend])
     )

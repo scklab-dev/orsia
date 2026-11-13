@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from scipy.constants import c, h, k
 
-from orsia_radiative.atmosphere import Atmosphere
-from orsia_radiative.spectral.grid import SpectralGrid, wavenumber_grid
+from orsia_radiative.atmosphere import LayerAtmosphere
+from orsia_radiative.spectral.grid import SpectralGrid, convert_spectral_grid, wavenumber_grid
 from orsia_radiative.spectroscopy.components import AbsorptionComponent
 
 
@@ -79,8 +80,116 @@ class WaterContinuumReference:
             raise ValueError("continuum requires positive reference conditions/support")
 
 
+@dataclass(frozen=True, eq=False)
+class WaterContinuumCoefficients:
+    """Own separate water density-pair coefficients on declared layer intervals.
+
+    Attributes:
+        grid: Increasing spectral samples in nm or cm-1; coefficients are point values.
+        height_edges_m: Increasing physical interval interfaces (layer+1,), metres.
+        temperature_k: Positive evaluation temperatures (layer,), kelvin.
+        pressure_pa: Positive declared layer pressures (layer,), pascals. They identify
+            the coefficient pairing context; the MT_CKD density-pair kernel uses T.
+        self_coefficients_m5_molecule2: Nonnegative self coefficients (layer,spectral),
+            m5/molecule2, including the radiation term.
+        foreign_coefficients_m5_molecule2: Matching non-water-air coefficients and units.
+        line_wing_convention: Explicit matching local-line and continuum convention.
+            The supported MT_CKD preparation requires a 25 cm-1 Lorentz pedestal cut.
+            All numerical arrays are independent immutable float64 snapshots.
+    """
+
+    grid: SpectralGrid
+    height_edges_m: NDArray[np.float64]
+    temperature_k: NDArray[np.float64]
+    pressure_pa: NDArray[np.float64]
+    self_coefficients_m5_molecule2: NDArray[np.float64]
+    foreign_coefficients_m5_molecule2: NDArray[np.float64]
+    line_wing_convention: Literal["mt_ckd_local_25"]
+    __hash__ = None
+
+    def __post_init__(self) -> None:
+        """Validate density-pair units' numerical domains and snapshot all arrays.
+
+        Raises:
+            ValueError: Dimensions, support, conditions, convention or coefficients fail.
+        """
+        t, p, z = self.temperature_k, self.pressure_pa, self.height_edges_m
+        if (
+            t.ndim != 1
+            or not t.size
+            or p.shape != t.shape
+            or z.shape != (t.size + 1,)
+            or not all(np.isfinite(v).all() for v in (t, p, z))
+            or np.any(t <= 0)
+            or np.any(p <= 0)
+            or np.any(np.diff(z) <= 0)
+            or self.line_wing_convention != "mt_ckd_local_25"
+        ):
+            raise ValueError(
+                "valid continuum layer support, conditions and line convention required"
+            )
+        names = ("self_coefficients_m5_molecule2", "foreign_coefficients_m5_molecule2")
+        for name in names:
+            values = getattr(self, name)
+            if (
+                values.shape != (t.size, self.grid.points.size)
+                or not np.isfinite(values).all()
+                or np.any(values < 0)
+            ):
+                raise ValueError(
+                    "continuum coefficients must be finite nonnegative (layer,spectral)"
+                )
+        for name in ("height_edges_m", "temperature_k", "pressure_pa", *names):
+            values = np.asarray(getattr(self, name), dtype=np.float64)
+            owned = np.frombuffer(values.tobytes(), dtype=np.float64).reshape(values.shape)
+            object.__setattr__(self, name, owned)
+
+
+def water_continuum_coefficients(
+    grid: SpectralGrid,
+    reference: WaterContinuumReference,
+    *,
+    height_edges_m: NDArray[np.float64],
+    temperature_k: NDArray[np.float64],
+    pressure_pa: NDArray[np.float64],
+) -> WaterContinuumCoefficients:
+    """Prepare MT_CKD water coefficients for either supported spectral coordinate.
+
+    Scale temperature and radiation terms on the native reference grid before
+    four-point cubic interpolation. Reciprocal output coordinates only reorder
+    point coefficients; no spectral-density Jacobian applies. Molecular density
+    products remain independent inputs to optical-depth contraction.
+
+    Args:
+        grid: Increasing nm or cm-1 evaluation samples with complete native stencils.
+        reference: Caller-supplied MT_CKD reference coefficients and temperature envelope.
+        height_edges_m: Increasing physical layer interfaces, metres.
+        temperature_k: Explicit positive coefficient evaluation temperatures (layer,), K.
+        pressure_pa: Explicit positive layer pressure context (layer,), Pa.
+
+    Returns:
+        Immutable separate self/foreign coefficients in m5/molecule2 and their support.
+
+    Raises:
+        ValueError: Native support, temperatures, layer declarations or coefficients fail.
+    """
+    spectral = convert_spectral_grid(grid) if grid.coordinate == "wavelength_nm" else grid
+    own, foreign, scale = _coefficient_samples(temperature_k, spectral.points, reference)
+    if grid.coordinate == "wavelength_nm":
+        own, foreign = own[:, ::-1], foreign[:, ::-1]
+    return WaterContinuumCoefficients(
+        grid,
+        height_edges_m,
+        temperature_k,
+        pressure_pa,
+        own * scale,
+        foreign * scale,
+        "mt_ckd_local_25",
+    )
+
+
 def water_continuum_absorption(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     wavenumbers_cm1: NDArray[np.float64] | SpectralGrid,
     reference: WaterContinuumReference,
 ) -> AbsorptionComponent:
@@ -115,15 +224,6 @@ def water_continuum_absorption(
             temperature support, or the H2O absorber disagrees with the water column.
     """
     sampling = wavenumber_grid(wavenumbers_cm1)
-    wavenumbers_cm1 = sampling.points
-    grid = reference.wavenumbers_cm1
-    target = wavenumbers_cm1
-    if np.any(target < grid[1]) or np.any(target > grid[-2]):
-        raise ValueError("continuum spectral support requires a full four-point stencil")
-    temperature = atmosphere.temperature_k
-    lo, hi = reference.temperature_range_k
-    if np.any(temperature < lo) or np.any(temperature > hi):
-        raise ValueError("temperature outside declared continuum support")
     water = atmosphere.water_vapour_columns_molecules_m2
     absorber = next((a for a in atmosphere.absorbers if a.species == "H2O"), None)
     if absorber is None or not np.array_equal(absorber.columns_molecules_m2, water):
@@ -131,12 +231,43 @@ def water_continuum_absorption(
     thickness = np.diff(atmosphere.height_boundaries_m)
     self_product = water * (water / thickness)
     foreign_product = water * ((atmosphere.total_air_columns_molecules_m2 - water) / thickness)
+    own, foreign, scale = _coefficient_samples(atmosphere.temperature_k, sampling.points, reference)
+    # Retain the homogeneous evaluator's established arithmetic ordering.
+    with np.errstate(over="ignore", invalid="ignore"):
+        rows = scale * (self_product[:, None] * own + foreign_product[:, None] * foreign)
+    return AbsorptionComponent(
+        sampling,
+        "H2O",
+        None,
+        "continuum_excluding_lines",
+        rows,
+        line_wing_convention="mt_ckd_local_25",
+    )
+
+
+def _coefficient_samples(
+    temperature: NDArray[np.float64],
+    target: NDArray[np.float64],
+    reference: WaterContinuumReference,
+) -> tuple[NDArray[np.float64], NDArray[np.float64], float]:
+    grid = reference.wavenumbers_cm1
+    if np.any(target < grid[1]) or np.any(target > grid[-2]):
+        raise ValueError("continuum spectral support requires a full four-point stencil")
+    lo, hi = reference.temperature_range_k
+    if (
+        temperature.ndim != 1
+        or not temperature.size
+        or not np.isfinite(temperature).all()
+        or np.any(temperature < lo)
+        or np.any(temperature > hi)
+    ):
+        raise ValueError("temperature outside declared continuum support")
     reference_density_cm3 = reference.reference_pressure_pa / (
         k * reference.reference_temperature_k * 1e6
     )
-    # cm5 -> m5; ABSCO/reference_density supplies the density-pair coefficient.
     scale = 1e-10 / reference_density_cm3
-    rows = np.empty((temperature.size, target.size), dtype=np.float64)
+    own = np.empty((temperature.size, target.size), dtype=np.float64)
+    foreign = np.empty_like(own)
     left = np.clip(np.searchsorted(grid, target, side="right") - 1, 1, grid.size - 3)
     fraction = (target - grid[left]) / (grid[1] - grid[0])
     for layer, t in enumerate(temperature):
@@ -148,18 +279,9 @@ def water_continuum_absorption(
                 * radiation
             )
             foreign_values = reference.foreign_absco_ref * radiation
-            rows[layer] = scale * (
-                self_product[layer] * _cubic(self_values, left, fraction)
-                + foreign_product[layer] * _cubic(foreign_values, left, fraction)
-            )
-    return AbsorptionComponent(
-        sampling,
-        "H2O",
-        None,
-        "continuum_excluding_lines",
-        rows,
-        line_wing_convention="mt_ckd_local_25",
-    )
+            own[layer] = _cubic(self_values, left, fraction)
+            foreign[layer] = _cubic(foreign_values, left, fraction)
+    return own, foreign, scale
 
 
 def _cubic(

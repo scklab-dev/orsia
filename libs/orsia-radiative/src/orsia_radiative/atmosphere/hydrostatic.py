@@ -1,7 +1,7 @@
 """Gas-fraction conversion and hydrostatic atmospheric-column construction.
 
 Inputs are caller-owned arrays, never mutated or retained. Outputs are fresh
-writable float64 arrays, including Atmosphere's independent copies. No I/O,
+writable float64 arrays, including LayerAtmosphere's independent copies. No I/O,
 providers, interpolation policy or aerosol optics live here.
 """
 
@@ -13,11 +13,13 @@ import numpy as np
 from numpy.typing import NDArray
 
 from orsia_radiative.atmosphere.layers import (
+    Absorber,
+    AirBroadener,
+    LayerAtmosphere,
     _pressure_layer_overlap,
     validate_pressure_boundaries,
     validate_vertical_values,
 )
-from orsia_radiative.atmosphere.models import Absorber, AirBroadener, Atmosphere
 
 AVOGADRO_MOL1 = 6.02214076e23
 MOLAR_MASS_DRY_AIR_KG_MOL = 0.0289647
@@ -107,8 +109,8 @@ def hydrostatic_atmosphere(
     bottom_height_m: float,
     gas_columns_molecules_m2: Mapping[str, NDArray[np.float64]],
     air_broadener: AirBroadener,
-) -> Atmosphere:
-    """Build a radiative Atmosphere by hydrostatic remapping of source layers.
+) -> LayerAtmosphere:
+    """Build a radiative LayerAtmosphere by hydrostatic remapping of source layers.
 
     T [K] and q [kg water/kg moist air] have shape (source_layer,). Gas columns
     are already materialized on this source grid; use explicit remapping first
@@ -177,7 +179,7 @@ def hydrostatic_atmosphere(
         if np.any(columns < 0) or np.any(columns > dry):
             raise ValueError("trace-gas columns must fit within source dry-air columns")
         absorbers.append(Absorber(species, remapping @ columns, air_broadener))
-    return Atmosphere(
+    return LayerAtmosphere(
         height,
         target_pressure_boundaries_pa,
         (target_pressure_boundaries_pa[:-1] + target_pressure_boundaries_pa[1:]) / 2,

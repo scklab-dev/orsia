@@ -1,0 +1,49 @@
+<mxfile host="app.diagrams.net" version="32.6.1">
+  <diagram id="Callable terrain" name="Callable terrain">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1600" pageHeight="900" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="model_points" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;fontColor=#16324f;strokeWidth=2;exitX=0.34210526315789475;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="model" target="points">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="model_intersection" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;fontColor=#16324f;strokeWidth=2;exitX=0.881578947368421;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="model" target="intersection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="xy_points" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;fontColor=#16324f;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="xy" target="points">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="rays_intersection" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;fontColor=#16324f;strokeWidth=2;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="rays" target="intersection">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="points_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;fontColor=#16324f;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="points" target="surface">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="intersection_output" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;strokeColor=#405973;fontColor=#16324f;strokeWidth=2;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="intersection" target="hits">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="model" value="Application terrain model&#10;height(xy_m) + gradient(xy_m) in one local Cartesian metre frame" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=28;fontColor=#16324f;fillColor=#edf4fc;strokeColor=#7595b5;spacing=18;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="1520" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="xy" value="Horizontal positions&#10;&#10;xy_m (..., 2)" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=24;fontColor=#16324f;fillColor=#edf4fc;strokeColor=#7595b5;spacing=18;" vertex="1" parent="1">
+          <mxGeometry x="40" y="300" width="280" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="points" value="surface_points&#10;&#10;Evaluate height&#10;Normalize surface normal" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=24;fontColor=#16324f;fillColor=#edf7f2;strokeColor=#6e9f86;spacing=18;" vertex="1" parent="1">
+          <mxGeometry x="380" y="300" width="360" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="rays" value="Rays + search controls&#10;&#10;Origins + unit directions&#10;Horizontal bounds&#10;Distance nodes + tolerances" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=21;fontColor=#16324f;fillColor=#edf4fc;strokeColor=#7595b5;spacing=18;" vertex="1" parent="1">
+          <mxGeometry x="860" y="300" width="280" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="intersection" value="intersect_terrain&#10;&#10;Sample bounded distances&#10;Refine first detected candidate" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=22;fontColor=#16324f;fillColor=#edf7f2;strokeColor=#6e9f86;spacing=18;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="300" width="360" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="surface" value="Surface points (m)&#10;Upward unit normals&#10;&#10;Both (..., 3)" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=24;fontColor=#16324f;fillColor=#fff5e5;strokeColor=#b69b64;spacing=18;" vertex="1" parent="1">
+          <mxGeometry x="380" y="650" width="360" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="hits" value="Hit mask (...)&#10;Intersections (..., 3) in m&#10;&#10;Misses: false + NaN" style="rounded=1;whiteSpace=nowrap;html=0;fontFamily=Helvetica;fontSize=24;fontColor=#16324f;fillColor=#fff5e5;strokeColor=#b69b64;spacing=18;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="650" width="360" height="180" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

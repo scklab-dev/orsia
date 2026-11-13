@@ -10,13 +10,19 @@ htmlcov/
 *.egg-info/
 build/
 dist/
-# Interpreter/platform-specific products of the packaged transfer build.
+# Interpreter/platform-specific products of the packaged radiative build.
 /libs/orsia-radiative/src/orsia_radiative/transfer/native/transfer_native*.so
 /libs/orsia-radiative/src/orsia_radiative/transfer/native/transfer_native*.pyd
+/libs/orsia-radiative/src/orsia_radiative/optics/absorption_native*.so
+/libs/orsia-radiative/src/orsia_radiative/optics/absorption_native*.pyd
 .env
 .env.*
 !.env.example
 /outputs/
 /.artifacts/
 .ipynb_checkpoints/
+# macOS Finder metadata, at any directory depth.
 .DS_Store
+# Local contributor automation is excluded from the delivery.
+.agents/
+AGENTS.md

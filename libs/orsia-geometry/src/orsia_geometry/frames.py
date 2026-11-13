@@ -1,4 +1,4 @@
-"""Convert elapsed times and terrestrial states through the in-process SatKit backend.
+"""Declare local Cartesian frames and convert dated terrestrial coordinates.
 
 SatKit owns its normal auxiliary search, lazy public-file downloads and process-global
 caches. Callers serialize backend operations and refresh; Geometry does not claim an
@@ -6,15 +6,92 @@ absolute identity for the EOP file selected by that backend. Core ray operations
 independent of SatKit and provider access.
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
-from . import time_scales as _time_scales
+from orsia_geometry import times as _times
 
 type Frame = Literal["GCRS", "ITRF", "TEME"]
+
+
+@dataclass(frozen=True, eq=False)
+class LocalCartesianFrame:
+    """Identify Cartesian x/y/z axes and their caller-declared vertical datum.
+
+    Unanchored synthetic declarations match only by object identity. An anchored
+    chart uses ``itrf = origin_itrf_m + basis_itrf @ local_xyz_m``. Columns of the
+    basis are local unit axes expressed in ITRF. The caller establishes the
+    datum's physical meaning; this declaration performs no datum conversion.
+
+    Attributes:
+        name: Nonempty descriptive name; equal names do not establish alignment.
+        vertical_datum: Nonempty declaration of the local altitude reference.
+        origin_itrf_m: Optional finite float64 (3,) ITRF origin in metres.
+        basis_itrf: Optional finite float64 (3,3) right-handed orthonormal basis,
+            supplied together with the origin. Numerical rotation tolerance is 1e-12.
+            Both arrays are owned immutable snapshots.
+    """
+
+    name: str
+    vertical_datum: str
+    origin_itrf_m: NDArray[np.float64] | None = None
+    basis_itrf: NDArray[np.float64] | None = None
+
+    def __post_init__(self) -> None:
+        """Validate and snapshot an optional georeferenced chart.
+
+        Raises:
+            ValueError: Names, paired anchor inputs, finite axes or rotation fail.
+        """
+        if not self.name or not self.vertical_datum:
+            raise ValueError("frame name and vertical datum must be nonempty")
+        if (self.origin_itrf_m is None) != (self.basis_itrf is None):
+            raise ValueError("frame origin and basis must be supplied together")
+        if self.origin_itrf_m is not None and self.basis_itrf is not None:
+            origin, basis = self.origin_itrf_m, self.basis_itrf
+            if (
+                origin.shape != (3,)
+                or basis.shape != (3, 3)
+                or origin.dtype != np.float64
+                or basis.dtype != np.float64
+                or not np.isfinite(origin).all()
+                or not np.isfinite(basis).all()
+                or not np.allclose(basis.T @ basis, np.eye(3), rtol=0, atol=1e-12)
+                or not np.isclose(np.linalg.det(basis), 1, rtol=0, atol=1e-12)
+            ):
+                raise ValueError(
+                    "finite float64 origin and right-handed orthonormal basis required"
+                )
+            for name, values in (("origin_itrf_m", origin), ("basis_itrf", basis)):
+                owned = np.frombuffer(values.tobytes(), dtype=np.float64).reshape(values.shape)
+                object.__setattr__(self, name, owned)
+
+
+def same_local_frame(left: LocalCartesianFrame, right: LocalCartesianFrame) -> bool:
+    """Compare frame identity or exact anchored coordinates and vertical datum.
+
+    Args:
+        left: First local chart declaration.
+        right: Second local chart declaration.
+
+    Returns:
+        True for a shared declaration or exactly equal anchored origin, basis and
+        datum. Independent synthetic charts return False even with equal names.
+        No coordinate tolerance, alignment or implicit reprojection is applied.
+    """
+    if left is right:
+        return True
+    return bool(
+        left.origin_itrf_m is not None
+        and right.origin_itrf_m is not None
+        and left.vertical_datum == right.vertical_datum
+        and np.array_equal(left.origin_itrf_m, right.origin_itrf_m)
+        and np.array_equal(left.basis_itrf, right.basis_itrf)
+    )
 
 
 def require_utc_epoch(epoch: datetime) -> None:
@@ -82,7 +159,7 @@ def frame_rotations(
     """
     require_utc_epoch(epoch)
     require_time_support(times_s, validity_s)
-    instants = _time_scales.native_instants(times_s, epoch=epoch)
+    instants = _times._native_instants(times_s, epoch=epoch)
     import satkit
 
     frames = {"GCRS": satkit.frame.GCRF, "ITRF": satkit.frame.ITRF, "TEME": satkit.frame.TEME}

@@ -278,3 +278,35 @@ def test_invalid_local_document(tmp_path, document):
     path.write_text(json.dumps(document))
     with pytest.raises(ValueError):
         read_document(path)
+
+
+@pytest.mark.parametrize(
+    "base,href,expected",
+    [
+        (
+            "s3://example-bucket/catalog/item.json",
+            "./bands/B01.tif",
+            "s3://example-bucket/catalog/bands/B01.tif",
+        ),
+        ("s3://bucket/catalog/item.json", "../B01.tif", "s3://bucket/B01.tif"),
+        ("s3://bucket/catalog/item.json", "/B01.tif", "s3://bucket/B01.tif"),
+        ("gs://bucket/catalog/item.json", "//other/B01.tif", "gs://other/B01.tif"),
+        ("s3://bucket/item.json?old=1", "?version=2#band", "s3://bucket/item.json?version=2#band"),
+        ("s3://bucket/item.json?old=1", "#band", "s3://bucket/item.json?old=1#band"),
+        ("s3://bucket/item.json", "", "s3://bucket/item.json"),
+        ("s3://bucket/item.json", "https://other/B01.tif", "https://other/B01.tif"),
+        ("https://catalog.test/item.json", "s3://bucket/B01.tif", "s3://bucket/B01.tif"),
+        (
+            "https://catalog.test/items/item.json",
+            "../B%2001.tif",
+            "https://catalog.test/B%2001.tif",
+        ),
+        ("file:///catalog/item.json", "./bands/B01.tif", "file:///catalog/bands/B01.tif"),
+        ("/catalog/item.json", "./bands/B01.tif", "/catalog/bands/B01.tif"),
+        ("catalog/item.json", "./bands/B01.tif", "catalog/bands/B01.tif"),
+        ("urn:example:item", "urn:example:asset", "urn:example:asset"),
+    ],
+)
+def test_asset_href_hierarchical_uri_resolution(base, href, expected):
+    item = {"assets": {"band": {"href": href}}}
+    assert asset_href(item, "band", document_url=base) == expected

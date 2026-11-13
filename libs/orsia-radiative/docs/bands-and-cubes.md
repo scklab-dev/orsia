@@ -1,6 +1,6 @@
-# Physical spectral bands and radiance cubes
+# Physical spectral bands
 
-`orsia_radiative.bands` owns `SpectralBand`, `spectral_band` and `RadianceCube`. These numerical products are independent of instrument descriptions, acquisition schedules and file providers. Import the products from `orsia_radiative` or their owning module.
+`orsia_radiative.spectral.bands` owns `SpectralBand` and `spectral_band`. These physical spectral means are independent of instrument descriptions, acquisition schedules and file providers. Import them from `orsia_radiative` or their defining module.
 
 ## Sampled physical band means
 
@@ -12,16 +12,10 @@ When `grid.domain` is declared, `spectral_band` requires one connected interval 
 
 The product stores the response actually supplied. It performs no spectral extrapolation, inversion or conversion between energy and photon means. Callers keep arrays stable while passing bands to other computations. A frozen record fixes attributes while its array buffers remain writable.
 
-## Ground-registered cube
+## Instrument-owned registered products
 
-`RadianceCube(x_m, y_m, bands, values, coverage, valid)` stores band means with axes `(y,x,band)`. The x and y axes are finite increasing cell centres in metres. A single centre is supported. The caller declares the surface chart, terrestrial frame and datum externally; numerical coordinates alone do not identify a map projection.
-
-`values` has units W m^-2 sr^-1 per (cm^-1). Every valid value is finite and has positive coverage. Invalid elements contain NaN. `coverage` is finite and nonnegative, with meaning established by the producer. The fixed-filter reconstruction uses dimensionless accumulated normalized spatial response weight. Coverage is distinct from physical covered area.
-
-The constructor validates axes, shapes, coverage and NaN/validity consistency. It snapshots coordinate, value, coverage and validity arrays into writable storage. The band tuple retains its supplied objects; keep their buffers stable during use. Cube construction performs no resampling or scene construction.
-
-The [fixed-filter camera guide](../../orsia-instruments/docs/filter-camera.md) describes an implemented producer. Its reconstruction retains compatible achieved spectral responses and uses separately supplied estimated geometry. Missing bands remain invalid with NaN values. Calibration and reconstruction belong to Instruments; this module contains physical products that other algorithms can also consume.
+`BandRadianceCube` is owned by Instruments and imported from `orsia_instruments` or `orsia_instruments.observation.measurements`. Its registered `(y,x,band)` values, coverage and validity retain the existing product contract. See the [registered-product reference](../../orsia-instruments/docs/observation-cubes.md#ground-registered-band-products). Radiative retains `SpectralBand` because a physical spectral mean is independent of a camera.
 
 ## Validation
 
-`libs/orsia-radiative/tests/test_bands.py` checks connected-domain and unknown-domain trapezoidal means, disconnected-domain rejection, energy/photon distinctions, independent array storage, invalid inputs and cube axis/validity rules. Camera integration tests additionally exercise the producer's `(y,x,band)` convention and missing-band behavior. General map interpolation and reusable synthetic-scene builders remain outside these products.
+`libs/orsia-radiative/tests/test_bands.py` checks connected-domain and unknown-domain trapezoidal means, disconnected-domain rejection, energy/photon distinctions, independent array storage, invalid band inputs. Instruments tests own cube axis/validity checks. Camera integration tests additionally exercise the producer's `(y,x,band)` convention and missing-band behavior. General map interpolation and reusable synthetic-scene builders remain outside these products.

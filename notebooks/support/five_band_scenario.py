@@ -183,6 +183,7 @@ class FiveBandScenario(BaseModel):
 
     manifest: Path
     spectroscopy_collection: Path
+    water_continuum_manifest: Path
     inputs: FiveBandInputs
     bands: dict[str, SpectralBand]
     physics: ScenePhysics
@@ -220,6 +221,7 @@ def load_scenario(path: Path) -> tuple[FiveBandScenario, list[Path], dict[str, s
         {**settings, "manifest": manifest_path, "inputs": manifest}
     )
     scenario.spectroscopy_collection = (path.parent / scenario.spectroscopy_collection).resolve()
+    scenario.water_continuum_manifest = (path.parent / scenario.water_continuum_manifest).resolve()
     inputs = scenario.inputs
     inputs.era5 = (base / inputs.era5).resolve()
     inputs.solar_csv = (base / inputs.solar_csv).resolve()

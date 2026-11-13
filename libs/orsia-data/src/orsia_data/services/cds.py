@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
-from ..acquisition import retrieve_dataset
+from orsia_data.acquisition import retrieve_dataset
 
 Era5Product = Literal[
     "reanalysis-era5-pressure-levels", "reanalysis-era5-single-levels", "reanalysis-era5-complete"

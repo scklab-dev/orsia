@@ -7,21 +7,98 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from orsia_radiative.atmosphere import Atmosphere
+from orsia_radiative.atmosphere import LayerAtmosphere
+from orsia_radiative.atmosphere.columns import AtmosphericColumnIntegrals
+from orsia_radiative.optics.cross_sections import cross_section_optical_depth
 from orsia_radiative.solar.source import SolarSource
 from orsia_radiative.spectral.grid import SpectralGrid, require_wavenumber_grid
 from orsia_radiative.spectroscopy.components import (
     AbsorptionComponent,
     validate_absorption_freshness,
+    validate_water_continuum_pairing,
 )
+from orsia_radiative.spectroscopy.continuum import WaterContinuumCoefficients
+from orsia_radiative.spectroscopy.cross_sections import LayerCrossSections
+
+
+def column_absorption_optical_depth(
+    columns: AtmosphericColumnIntegrals,
+    cross_sections: tuple[LayerCrossSections, ...],
+    *,
+    spectral: SpectralGrid,
+    continuum: WaterContinuumCoefficients | None = None,
+) -> NDArray[np.float64]:
+    """Contract retained vertical material with explicitly supplied fixed coefficients.
+
+    The layer/species material axes and coefficient geometry are matched exactly.
+    This operation neither derives representative interval T/p from levels nor
+    establishes coefficient provenance. The caller selects fixed coefficients at
+    declared conditions; water line/continuum pairs must share those conditions.
+
+    Args:
+        columns: Retained material with (layer,species) molecular columns.
+        cross_sections: Fixed species/isotopologue tables in m2/molecule.
+        spectral: Explicit nm or cm-1 output samples, identical to every table grid.
+        continuum: Optional separate self/foreign water density-pair coefficients.
+
+    Returns:
+        Fresh (spectral,) dimensionless total gas absorption, accumulated from the
+        top layer downward. An empty contribution set produces zero on spectral.
+
+    Raises:
+        ValueError: Layers, samples, species, duplicates, water pairing or finite values fail.
+    """
+    layers = np.zeros((columns.height_edges_m.size - 1, spectral.points.size))
+    seen = set()
+    for table in cross_sections:
+        identity = (table.species, table.isotopologue, table.kind)
+        if identity in seen or table.species not in columns.species:
+            raise ValueError("duplicate cross-section contribution or undeclared species")
+        seen.add(identity)
+        if not table.grid.same_points(spectral) or not np.array_equal(
+            table.height_edges_m, columns.height_edges_m
+        ):
+            raise ValueError("cross-section spectral and layer support must match column integrals")
+        if continuum is not None and table.species == "H2O":
+            if table.kind == "continuum_excluding_lines":
+                raise ValueError("separate water continuum duplicates the supplied continuum table")
+            validate_water_continuum_pairing(
+                table.includes_water_continuum,
+                table.line_wing_convention,
+                continuum.line_wing_convention,
+            )
+            if not np.array_equal(
+                table.temperature_k, continuum.temperature_k
+            ) or not np.array_equal(table.pressure_pa, continuum.pressure_pa):
+                raise ValueError("water table and continuum conditions must match exactly")
+        index = columns.species.index(table.species)
+        layers += cross_section_optical_depth(
+            np.asarray(table.cross_sections_m2_per_molecule, dtype=np.float64),
+            columns.layer_species_column_molecules_m2[:, index],
+        )
+    if continuum is not None:
+        if not continuum.grid.same_points(spectral) or not np.array_equal(
+            continuum.height_edges_m, columns.height_edges_m
+        ):
+            raise ValueError("continuum spectral and layer support must match column integrals")
+        layers += (
+            columns.layer_water_self_density_product_molecules2_m5[:, None]
+            * continuum.self_coefficients_m5_molecule2
+            + columns.layer_water_foreign_density_product_molecules2_m5[:, None]
+            * continuum.foreign_coefficients_m5_molecule2
+        )
+    total = np.cumsum(layers[::-1], axis=0)[-1]
+    if not np.isfinite(total).all() or np.any(total < 0):
+        raise ValueError("column absorption must remain finite and nonnegative")
+    return total
 
 
 def compose_absorption(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     source: SolarSource,
     components: tuple[AbsorptionComponent, ...],
     *,
-    reference_atmospheres: tuple[Atmosphere, ...] | None = None,
+    reference_atmospheres: tuple[LayerAtmosphere, ...] | None = None,
 ) -> Absorption:
     """Validate and sum current contributions before entering radiative transfer.
 
@@ -57,11 +134,11 @@ def compose_absorption(
 
 
 def compose_absorption_on_grid(
-    atmosphere: Atmosphere,
+    atmosphere: LayerAtmosphere,
     grid: SpectralGrid,
     components: tuple[AbsorptionComponent, ...],
     *,
-    reference_atmospheres: tuple[Atmosphere, ...] | None = None,
+    reference_atmospheres: tuple[LayerAtmosphere, ...] | None = None,
 ) -> Absorption:
     """Compose absorption on explicit sampling, independently of illumination.
 
@@ -115,6 +192,14 @@ def compose_absorption_on_grid(
     ):
         raise ValueError("lines and complete cross section overlap for one species")
     for component in components:
+        if component.species == "H2O" and component.kind == "continuum_excluding_lines":
+            for other in components:
+                if other.species == "H2O" and other.kind == "cross_section":
+                    validate_water_continuum_pairing(
+                        other.includes_water_continuum,
+                        other.line_wing_convention,
+                        component.line_wing_convention,
+                    )
         if (
             component.kind == "continuum_excluding_lines"
             and component.line_wing_convention == "mt_ckd_local_25"

@@ -130,4 +130,4 @@ def test_backend_failure_is_explicit() -> None:
             validate_covariance(np.eye(2))
     with patch.object(np.linalg, "eigh", side_effect=np.linalg.LinAlgError):
         with pytest.raises(ValueError, match="factorisation failed"):
-            factor_covariance(np.eye(2), method="eigh")
+            factor_covariance(np.array([[2.0, 0.5], [0.5, 1.0]]), method="eigh")

@@ -8,15 +8,15 @@ import pytest
 from orsia_radiative import (
     EmptyLineSelection,
     Line,
-    LineDatabase,
     PartitionFunctionTable,
+    SpectralLineTable,
     line_set,
 )
 from test_optical import atmosphere
 
 
-def database() -> LineDatabase:
-    return LineDatabase((Line(1000.0, 1e-25, 0.0, 0.1, 0.2, 0.7, 0.5),), 1, 1, (900.0, 1100.0))
+def database() -> SpectralLineTable:
+    return SpectralLineTable((Line(1000.0, 1e-25, 0.0, 0.1, 0.2, 0.7, 0.5),), 1, 1, (900.0, 1100.0))
 
 
 def table() -> PartitionFunctionTable:

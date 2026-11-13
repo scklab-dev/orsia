@@ -11,9 +11,9 @@ from orsia_radiative import (
     Absorber,
     AbsorptionComponent,
     AerosolComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SpectralIrradiance,
     SurfaceState,
@@ -24,9 +24,9 @@ from orsia_radiative import (
 )
 
 
-def inputs() -> tuple[RadiativeScene, SpectralIrradiance, AerosolComponent]:
+def inputs() -> tuple[ColumnScene, SpectralIrradiance, AerosolComponent]:
     axis = np.array([1000.0, 1001.0], dtype=np.float64)
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0]),
         np.array([100000.0, 90000.0]),
         np.array([95000.0]),
@@ -36,7 +36,7 @@ def inputs() -> tuple[RadiativeScene, SpectralIrradiance, AerosolComponent]:
         np.array([1e28]),
         (Absorber("X", np.array([1e25]), "dry_air"),),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(wavenumber_grid(axis), reflectance=np.array([0.2, 0.4])),
         ObservationGeometry(10.0),

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from .acquisition import ReadSchedule
-from .charge import ExpectedElectrons
+from orsia_instruments.acquisition.schedule import ReadSchedule
+from orsia_instruments.photodetection.charge import ExpectedElectrons
 
 DETECTOR_MAP_NAMES = (
     "quantum_efficiency",

@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 from orsia_instruments import (
+    AngularRadianceSamples,
     DetectorProperties,
     GaussianPSF,
-    RadianceField,
     ReadSchedule,
     cavity_imager,
     cavity_transmission,
@@ -485,7 +485,7 @@ def test_dense_optical_charge_and_exposure_settings(kind):
         np.linspace(4900.0, 5100.0, 17),
         SpectralDomain("wavenumber_cm1", ((4900.0, 5100.0),)),
     )
-    scene = RadianceField(
+    scene = AngularRadianceSamples(
         grid,
         np.array([0.0, 0.1]),
         np.array([-0.002, 0.002]),

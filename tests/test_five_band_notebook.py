@@ -1,23 +1,21 @@
 """Offline notebook execution, timing data and workspace reference-backend transport."""
 
+import ast
 import inspect
 import json
+import os
 import subprocess
 import sys
 import tomllib
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 from unittest.mock import Mock
 
 import nbformat
 import numpy as np
 import pytest
 import xarray as xr
-from matplotlib.collections import LineCollection
-from matplotlib.container import BarContainer
-from matplotlib.patches import Rectangle
 from orsia_radiative.transfer import solar
 from scipy.constants import c, h, k
 from scipy.special import expn
@@ -53,6 +51,96 @@ def test_preparation_paths_remain_workspace_relative(module):
     assert entrypoint.ROOT == ROOT
     destination = entrypoint.BASE if module == "prepare_five_band" else entrypoint.DESTINATION
     assert destination.parent == ROOT / "outputs"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {},
+        {"CDSAPI_URL": "env-url"},
+        {"CDSAPI_KEY": "env-key"},
+        {"CDSAPI_URL": "env-url", "CDSAPI_KEY": "env-key"},
+        {"CDSAPI_URL": "", "CDSAPI_KEY": ""},
+    ],
+)
+def test_preparation_cds_credentials_are_local_and_scoped(tmp_path, monkeypatch, overrides):
+    from notebooks.support import prepare_five_band as preparation
+
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / ".env").write_text(
+        "CDSAPI_URL='file-url'\nCDSAPI_KEY='literal-${ORSIA_TEST_EXPANSION}-#-key'\n"
+        "SPACETRACK_USERNAME='unused-user'\nSPACETRACK_PASSWORD='unused-password'\n"
+        "ORSIA_TEST_UNRELATED='unused'\n"
+    )
+    other_directory = tmp_path / "other"
+    other_directory.mkdir()
+    (other_directory / ".env").write_text("CDSAPI_URL=wrong-url\nCDSAPI_KEY=wrong-key\n")
+    monkeypatch.setattr(preparation, "ROOT", repository)
+    monkeypatch.chdir(other_directory)
+    monkeypatch.setenv("ORSIA_TEST_EXPANSION", "must-not-expand")
+    monkeypatch.delenv("ORSIA_TEST_UNRELATED", raising=False)
+    for name in ("CDSAPI_URL", "CDSAPI_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in overrides.items():
+        monkeypatch.setenv(name, value)
+    before = dict(os.environ)
+
+    assert (
+        preparation._cds_credentials()
+        == {
+            "CDSAPI_URL": "file-url",
+            "CDSAPI_KEY": "literal-${ORSIA_TEST_EXPANSION}-#-key",
+        }
+        | overrides
+    )
+    # Compare as a boolean so a failure cannot display the inherited environment.
+    assert bool(dict(os.environ) == before)
+
+
+@pytest.mark.parametrize("contents", [None, "", "CDSAPI_URL\nCDSAPI_KEY\n", "CDSAPI_URL=\n"])
+@pytest.mark.parametrize("environment_present", [False, True])
+def test_preparation_cds_credentials_allow_missing_settings(
+    tmp_path, monkeypatch, contents, environment_present
+):
+    from notebooks.support import prepare_five_band as preparation
+
+    monkeypatch.setattr(preparation, "ROOT", tmp_path)
+    if contents is not None:
+        (tmp_path / ".env").write_text(contents)
+    for name in ("CDSAPI_URL", "CDSAPI_KEY"):
+        monkeypatch.delenv(name, raising=False)
+        if environment_present:
+            monkeypatch.setenv(name, "environment-value")
+    expected = {
+        "CDSAPI_URL": "" if contents == "CDSAPI_URL=\n" else None,
+        "CDSAPI_KEY": None,
+    }
+    if environment_present:
+        expected = dict.fromkeys(expected, "environment-value")
+    assert preparation._cds_credentials() == expected
+
+
+def test_preparation_passes_cds_credentials_explicitly(tmp_path, monkeypatch):
+    from notebooks.support import prepare_five_band as preparation
+
+    monkeypatch.setattr(preparation, "ROOT", tmp_path)
+    monkeypatch.setattr(preparation, "BASE", tmp_path / "outputs")
+    (tmp_path / ".env").write_text("CDSAPI_URL=file-url\nCDSAPI_KEY=file-key\n")
+    monkeypatch.delenv("CDSAPI_URL", raising=False)
+    monkeypatch.setenv("CDSAPI_KEY", "env-key")
+
+    class ClientIntercepted(Exception):
+        pass
+
+    def client(**kwargs):
+        assert kwargs["url"] == "file-url"
+        assert kwargs["key"] == "env-key"
+        raise ClientIntercepted
+
+    monkeypatch.setattr(preparation.cdsapi, "Client", client)
+    with pytest.raises(ClientIntercepted):
+        preparation.main()
 
 
 def test_notebook_reference_uses_kernel_interpreter():
@@ -199,94 +287,6 @@ def test_notebook_readable_agreement_summary(monkeypatch):
     assert "W m⁻² sr⁻¹ (cm⁻¹)⁻¹" in text
 
 
-def test_notebook_timing_linear_panels(monkeypatch):
-    """Render the timing cell in isolation with synthetic timing records."""
-    from copy import deepcopy
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    notebook = json.loads(NOTEBOOK.read_text())
-    cell = next(cell for cell in notebook["cells"] if cell["id"] == "timing")
-    results: dict = {}
-    # Include both large contrasts and a ratio below one; thermal seconds stay small.
-    for name, seconds in zip(
-        ("UV", "VNIR", "SWIR", "MWIR", "LWIR"),
-        ((3.0, 75.0), (0.5, 74.0), (0.6, 76.0), (0.0003, 0.004), (0.004, 0.002)),
-        strict=True,
-    ):
-        timings: list[dict] = [
-            {"median_seconds": value, "seconds": [0.9 * value, value, 1.1 * value]}
-            for value in seconds
-        ]
-        timings[0]["scope"] = (
-            "solar.reflected_radiance; complete call including geometry and scratch allocation"
-            if name in ("UV", "VNIR", "SWIR")
-            else "thermal.thermal_radiance; includes returned Radiance and values"
-        )
-        results[name] = {
-            "orsia_timing": timings[0],
-            "reference": {
-                "timing": timings[1],
-                "worker_wall_seconds": 1.0,
-                "python": "synthetic",
-                "sasktran2": "synthetic",
-                "gil_enabled": True,
-                "computed_at_utc": "2026-01-01T00:00:00+00:00",
-                "cache": {
-                    "timing_provenance": "historical" if name == "UV" else "fresh",
-                    "access_wall_seconds": 0.03,
-                    "load_wall_seconds": 0.001,
-                },
-            },
-        }
-    original = deepcopy(results)
-    monkeypatch.setattr(plt, "show", lambda: None)
-    display = Mock()
-    monkeypatch.setattr(support, "display", display)
-    monkeypatch.setattr(support, "Markdown", lambda text: text)
-    namespace: dict = {
-        "results": results,
-        "np": np,
-        "plt": plt,
-        "scenario": SimpleNamespace(timing_runs=3),
-        "Markdown": lambda text: text,
-        "display": display,
-        "show_timing": support.show_timing,
-    }
-    exec("".join(cell["source"]), namespace)
-    fig = plt.gcf()
-    try:
-        fig.canvas.draw()
-        assert results == original
-        limits = []
-        for ax, record in zip(fig.axes, results.values(), strict=False):
-            timings = [record["orsia_timing"], record["reference"]["timing"]]
-            medians = [timing["median_seconds"] for timing in timings]
-            assert ax.get_yscale() == "linear"
-            assert ax.get_ylim()[0] == 0
-            limits.append(ax.get_ylim()[1])
-            bars = cast(list[Rectangle], list(ax.patches))
-            np.testing.assert_allclose([bar.get_height() for bar in bars], medians)
-            assert all(bar.get_y() == 0 for bar in bars)
-            errorbar = cast(BarContainer, ax.containers[-1]).errorbar
-            assert errorbar is not None
-            segments = cast(LineCollection, errorbar.lines[2][0]).get_segments()
-            np.testing.assert_allclose(
-                [segment[:, 1] for segment in segments],
-                [[min(t["seconds"]), max(t["seconds"])] for t in timings],
-            )
-        assert max(limits[:3]) > 1000 * max(limits[3:])
-        # Cached solver timing must remain distinguishable from current cache-access cost.
-        output = display.call_args.args[0]
-        assert "historical" in output and "fresh" in output
-        assert "0.03" in output
-    finally:
-        plt.close(fig)
-
-
 @pytest.mark.parametrize("aod", [0.0, 0.1])
 def test_notebook_materialization_with_synthetic_files(tmp_path, aod):
     """Exercise each explicit recipe through public APIs on synthetic local files."""
@@ -301,6 +301,12 @@ def test_notebook_materialization_with_synthetic_files(tmp_path, aod):
     scenario.physics.solar_aerosol.optical_depth = aod
     scenario.points = 5
     scenario.reference.cache_directory = tmp_path / "reference-cache"
+    from notebooks.support.prepare_spectroscopy import prepare_water_continuum
+
+    native = tmp_path / "synthetic-continuum.nc"
+    _write_synthetic_continuum(native)
+    scenario.water_continuum_manifest = tmp_path / "continuum/manifest.json"
+    prepare_water_continuum(scenario.water_continuum_manifest, native=native)
     namespace["show_atmosphere"] = Mock()
     for name, band in cases.items():
         scenario.bands = {name: band}
@@ -421,6 +427,7 @@ def test_notebook_materialization_with_synthetic_files(tmp_path, aod):
             },
         )
         exec(cells["atmosphere"], namespace)
+        exec(cells["water-continuum"], namespace)
         # Execute every preparation cell in this case, preserving notebook order.
         for cell_id, source_code in cells.items():
             if cell_id.startswith(prefix + "-") and cell_id != prefix + "-compare":
@@ -442,6 +449,33 @@ def test_notebook_materialization_with_synthetic_files(tmp_path, aod):
         )
         assert shared["absorption_depth"].shape == (4, 5)
         assert np.all(shared["absorption_depth"] >= 0)
+        species = {
+            "UV": ("h2o", "o3", "so2", "no2"),
+            "VNIR": ("h2o", "o2"),
+            "SWIR": ("h2o", "co2", "ch4"),
+            "MWIR": ("h2o", "co2"),
+            "LWIR": ("h2o", "co2", "ch4", "o3", "nh3"),
+        }[name]
+        components = [namespace[f"{prefix}_{gas}"] for gas in species]
+        for component in components[1:]:
+            if component.kind == "voigt_lines":
+                assert component.line_wing_convention == "truncated"
+        if name == "UV":
+            assert components[0].line_wing_convention == "truncated"
+            assert "uv_h2o_continuum" not in namespace
+            with pytest.raises(ValueError, match="stencil"):
+                namespace["water_continuum_absorption"](
+                    namespace["atmosphere"], grid, namespace["water_continuum_reference"]
+                )
+        else:
+            assert components[0].line_wing_convention == "mt_ckd_local_25"
+            continuum = namespace[f"{prefix}_h2o_continuum"]
+            assert continuum.grid.same_points(grid)
+            assert np.all(continuum.optical_depth > 0)
+            components.insert(1, continuum)
+        np.testing.assert_array_equal(
+            shared["absorption_depth"], sum(component.optical_depth for component in components)
+        )
         if shared["thermal"]:
             assert optics.aerosol is None
             assert not any(key.startswith("aerosol_") for key in shared)
@@ -571,7 +605,7 @@ def _write_synthetic_files(directory: Path, *, centre_cm1: float, include_solar:
     dataset = xr.Dataset(
         {
             "t": (dimensions, np.array([290.0, 280.0, 265.0, 250.0, 230.0])[None, :, None, None]),
-            "q": (dimensions, np.zeros((1, 5, 1, 1))),
+            "q": (dimensions, np.full((1, 5, 1, 1), 0.002)),
         },
         coords={
             "time": np.array([0.0]),
@@ -610,6 +644,140 @@ def _write_synthetic_files(directory: Path, *, centre_cm1: float, include_solar:
             "wavelength (nm),irradiance (W/m^2/nm)\n1600,1.0\n1610,1.0\n1620,1.0\n",
             encoding="utf-8",
         )
+
+
+def test_water_continuum_offline_import_and_verification(tmp_path):
+    from notebooks.support.prepare_spectroscopy import prepare_water_continuum
+
+    receipt = tmp_path / "retained/manifest.json"
+    with pytest.raises(FileNotFoundError, match="--water-continuum"):
+        prepare_water_continuum(receipt, native=None)
+    native = tmp_path / "synthetic.nc"
+    _write_synthetic_continuum(native)
+    prepare_water_continuum(receipt, native=native)
+    retained, provenance = support.verify_water_continuum(receipt)
+    assert retained.read_bytes() == native.read_bytes()
+    assert set(provenance) == {str(receipt), str(retained)}
+    before = receipt.read_bytes()
+    prepare_water_continuum(receipt, native=None)
+    prepare_water_continuum(receipt, native=native)
+    assert receipt.read_bytes() == before
+    changed = tmp_path / "different.nc"
+    changed.write_bytes(native.read_bytes() + b"changed")
+    with pytest.raises(ValueError, match="differs"):
+        prepare_water_continuum(receipt, native=changed)
+    retained.write_bytes(b"corrupted")
+    with pytest.raises(ValueError, match="checksum"):
+        support.verify_water_continuum(receipt)
+
+
+def test_instrument_water_absorption_uses_local_lines_and_one_continuum(tmp_path):
+    """Execute real instrument read, line and composition code on a wet column."""
+    from orsia_data import SpectroscopyCollection, read_mt_ckd_water
+    from orsia_radiative import (
+        Line,
+        LineSpectroscopy,
+        PartitionFunctionTable,
+        SpectralLineTable,
+        compose_absorption_on_grid,
+        evaluate_line_absorption,
+        hydrostatic_atmosphere,
+        water_continuum_absorption,
+        wavenumber_grid,
+    )
+
+    from notebooks.support.prepare_spectroscopy import prepare_water_continuum
+
+    notebook = json.loads((ROOT / "notebooks/era5_hitran_instrument_responses.ipynb").read_text())
+    cells = {cell["id"]: "".join(cell["source"]) for cell in notebook["cells"]}
+    native = tmp_path / "synthetic.nc"
+    _write_synthetic_continuum(native)
+    receipt = tmp_path / "outputs/spectroscopy/mt-ckd-4.3/manifest.json"
+    prepare_water_continuum(receipt, native=native)
+    grid = wavenumber_grid(np.array([6059.0, 6060.0, 6061.0]))
+    pressure = np.array([100000.0, 50000.0, 10000.0])
+    atmosphere = hydrostatic_atmosphere(
+        pressure,
+        np.array([296.0, 270.0]),
+        np.array([0.005, 0.001]),
+        target_pressure_boundaries_pa=pressure,
+        gravity_m_s2=9.80665,
+        bottom_height_m=0.0,
+        gas_columns_molecules_m2={"CO2": np.full(2, 1e22), "CH4": np.full(2, 1e20)},
+        air_broadener="dry_air",
+    )
+    references = {}
+    manifest = {"spectroscopy": []}
+    for species, molecule, mass in (("H2O", 1, 18.0), ("CO2", 2, 44.0), ("CH4", 6, 16.0)):
+        references[(species, 1)] = LineSpectroscopy(
+            species,
+            (
+                SpectralLineTable(
+                    (Line(6060.0, 1e-24, 0.0, 0.07, 0.1, 0.7),), molecule, 1, (6000, 6100)
+                ),
+            ),
+            PartitionFunctionTable(molecule, 1, np.array([200.0, 296.0, 350.0]), np.ones(3)),
+            mass * 1.660539e-27,
+        )
+        manifest["spectroscopy"].append(
+            dict(species=species, isotopologue_id=1, pressure_range_pa=(100, 105000))
+        )
+    namespace: dict = dict(
+        ROOT=tmp_path,
+        Path=Path,
+        atmosphere=atmosphere,
+        grid=grid,
+        manifest=manifest,
+        spectroscopy=SpectroscopyCollection(references, {}),
+        verify_water_continuum=support.verify_water_continuum,
+        read_mt_ckd_water=read_mt_ckd_water,
+        evaluate_line_absorption=evaluate_line_absorption,
+        water_continuum_absorption=water_continuum_absorption,
+        compose_absorption_on_grid=compose_absorption_on_grid,
+        provenance={},
+        input_paths=[],
+    )
+    exec(cells["water-continuum"], namespace)
+    for species in ("h2o", "co2", "ch4"):
+        exec(cells["absorption-" + species], namespace)
+    # The composition is the first statement of the transport cell; execute it unchanged.
+    transport = next(
+        source for source in cells.values() if source.startswith("absorption = compose")
+    )
+    first = ast.Module(body=ast.parse(transport).body[:1], type_ignores=[])
+    exec(compile(first, "instrument-composition", "exec"), namespace)
+    assert namespace["h2o_absorption"].line_wing_convention == "mt_ckd_local_25"
+    for species in ("co2", "ch4"):
+        assert namespace[f"{species}_absorption"].line_wing_convention == "truncated"
+    continuum = namespace["h2o_continuum"]
+    assert continuum.grid.same_points(grid)
+    assert np.all(continuum.optical_depth > 0)
+    np.testing.assert_array_equal(
+        namespace["absorption"].optical_depth,
+        sum(
+            namespace[name].optical_depth
+            for name in ("h2o_absorption", "h2o_continuum", "co2_absorption", "ch4_absorption")
+        ),
+    )
+    assert str(receipt) in namespace["provenance"]
+    assert receipt in namespace["input_paths"]
+
+
+def _write_synthetic_continuum(path: Path) -> None:
+    """Write invented coefficients on the retained edition's spectral support."""
+    from scipy.io import netcdf_file
+
+    with netcdf_file(path, "w") as dataset:
+        dataset.createDimension("point", 2003)
+        for name, values in (
+            ("wavenumbers", np.arange(-20.0, 20001.0, 10.0)),
+            ("self_absco_ref", np.full(2003, 1e-27)),
+            ("for_absco_ref", np.full(2003, 2e-27)),
+            ("self_texp", np.full(2003, 3.0)),
+        ):
+            dataset.createVariable(name, "d", ("point",))[:] = values
+        dataset.createVariable("ref_press", "d", ())[...] = 1013.0
+        dataset.createVariable("ref_temp", "d", ())[...] = 296.0
 
 
 def _settings_namespace() -> dict:

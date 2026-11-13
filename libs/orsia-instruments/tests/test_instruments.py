@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 from orsia_instruments import (
     Acquisition,
+    AngularRadianceSamples,
     DetectorElectronics,
     DetectorReadings,
     ExpectedElectrons,
     GaussianPSF,
-    RadianceField,
     ReadSchedule,
     cavity_transmission,
     central_difference,
@@ -32,7 +32,7 @@ from orsia_instruments import (
     two_beam_ports,
     uniform_radiance_field,
 )
-from orsia_instruments.quadrature import interval_quadrature
+from orsia_instruments.acquisition.quadrature import interval_quadrature
 from orsia_radiative import ObservationGeometry, Radiance, SpectralDomain, SpectralGrid
 from scipy.constants import c, h
 from scipy.integrate import quad
@@ -51,13 +51,13 @@ def acquisition() -> Acquisition:
     )
 
 
-def field() -> RadianceField:
+def field() -> AngularRadianceSamples:
     grid = SpectralGrid(
         "wavenumber_cm1",
         np.linspace(1000.0, 2000.0, 33),
         SpectralDomain("wavenumber_cm1", ((1000.0, 2000.0),)),
     )
-    return RadianceField(
+    return AngularRadianceSamples(
         grid,
         np.array([0.0, 2.0]),
         np.array([-0.1, 0.1]),

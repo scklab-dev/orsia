@@ -54,6 +54,27 @@ def compose_rays(
     return origins, rays
 
 
+def validate_rays(origins: NDArray[np.float64], directions: NDArray[np.float64]) -> None:
+    """Check finite matching Cartesian origins and unit ray directions.
+
+    Args:
+        origins: Borrowed (...,3) metre positions in one caller-selected frame.
+        directions: Borrowed matching unit vectors in that frame.
+
+    Raises:
+        ValueError: Shapes, finite values or norms violate the ray contract.
+    """
+    if (
+        origins.ndim < 1
+        or origins.shape[-1] != 3
+        or directions.shape != origins.shape
+        or not np.isfinite(origins).all()
+        or not np.isfinite(directions).all()
+        or not np.allclose(np.linalg.norm(directions, axis=-1), 1, atol=1e-10, rtol=0)
+    ):
+        raise ValueError("rays need matching finite (...,3) origins and unit directions")
+
+
 def validate_rotations(rotations: NDArray[np.float64], leading: tuple[int, ...]) -> None:
     """Check proper column-vector rotations for callers composing numerical geometry.
 

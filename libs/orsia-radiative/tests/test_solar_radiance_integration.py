@@ -10,11 +10,11 @@ import radiance_terms_support as terms_support
 from orsia_radiative import (
     Absorber,
     AbsorptionComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     Line,
     LineSet,
     ObservationGeometry,
-    RadiativeScene,
     ScatteringProperties,
     SpectralIrradiance,
     SurfaceState,
@@ -32,7 +32,7 @@ def test_frozen_original_synthetic_direct_solar_replay() -> None:
         (Path(__file__).parent / "fixtures/synthetic_direct_solar_radiance.json").read_text()
     )
     spectral = np.array(fixture["spectral_axis"]["coordinates"], dtype=np.float64)
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0]),
         np.array([100000.0, 90000.0]),
         np.array([95000.0]),
@@ -42,7 +42,7 @@ def test_frozen_original_synthetic_direct_solar_replay() -> None:
         np.array([1e28]),
         (Absorber("X", np.array([1e25]), "dry_air"),),
     )
-    scene = RadiativeScene(
+    scene = ColumnScene(
         atmosphere,
         SurfaceState(
             wavenumber_grid(spectral),
@@ -80,7 +80,7 @@ def test_frozen_original_synthetic_direct_solar_replay() -> None:
 
 def test_two_layer_black_surface_matches_independent_midpoint_quadrature() -> None:
     spectral = np.array([1000.0, 1001.0], dtype=np.float64)
-    atmosphere = Atmosphere(
+    atmosphere = LayerAtmosphere(
         np.array([0.0, 1000.0, 2000.0]),
         np.array([100000.0, 90000.0, 80000.0]),
         np.array([95000.0, 85000.0]),
@@ -90,7 +90,7 @@ def test_two_layer_black_surface_matches_independent_midpoint_quadrature() -> No
         np.array([1e28, 1e28]),
         (Absorber("X", np.array([1e25, 1e25]), "dry_air"),),
     )
-    material = RadiativeScene(
+    material = ColumnScene(
         atmosphere,
         SurfaceState(wavenumber_grid(spectral), reflectance=np.zeros(2)),
         ObservationGeometry(35.0),

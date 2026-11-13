@@ -19,9 +19,9 @@ from orsia_radiative import (
     CrossSectionMeasurements,
     CrossSectionSpectrum,
     Line,
-    LineDatabase,
     LineSpectroscopy,
     PartitionFunctionTable,
+    SpectralLineTable,
 )
 
 
@@ -32,7 +32,7 @@ def references():
     line = Line(1000, 1e-23, 100, 0.07, 0.1, 0.7)
     ref = LineSpectroscopy(
         "CO2",
-        (LineDatabase((line,), 2, 1, (970, 1030)), LineDatabase((), 2, 1, (1970, 2030))),
+        (SpectralLineTable((line,), 2, 1, (970, 1030)), SpectralLineTable((), 2, 1, (1970, 2030))),
         table,
         7.3e-26,
     )

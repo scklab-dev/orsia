@@ -1,4 +1,4 @@
-"""Offline pressure-level meteorology to the existing radiative Atmosphere."""
+"""Offline pressure-level meteorology to the existing radiative LayerAtmosphere."""
 
 from collections.abc import Mapping
 from datetime import datetime
@@ -8,14 +8,10 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from orsia_radiative import (
-    Atmosphere,
-    hydrostatic_atmosphere,
-    pressure_level_layer_means,
-)
+from orsia_radiative import LayerAtmosphere, hydrostatic_atmosphere, pressure_level_layer_means
 from orsia_radiative.atmosphere import AirBroadener
 
-from .netcdf import read_netcdf_profiles
+from orsia_data.atmosphere.netcdf import read_netcdf_profiles
 
 
 def read_pressure_level_atmosphere(
@@ -37,7 +33,7 @@ def read_pressure_level_atmosphere(
     air_broadener: AirBroadener,
     backend: Literal["classic", "hdf5"] = "classic",
     periodic_longitude: bool = False,
-) -> Atmosphere:
+) -> LayerAtmosphere:
     """Decode pressure-level NetCDF meteorology and materialise selected layers.
 
     Temperature must be native K; q must be explicitly declared dimensionless
@@ -58,7 +54,7 @@ def read_pressure_level_atmosphere(
     Reconstruction is piecewise linear in pressure into layer means, followed
     by the public constant-gravity hydrostatic calculation; see those numerical
     functions for height/molar-mass approximations. No acquisition, reference gas,
-    covariance or aerosol optics. Return owned Atmosphere copies without
+    covariance or aerosol optics. Return owned LayerAtmosphere copies without
     retaining caller buffers or provider identity. Native reader resource and
     interpolation semantics are read_netcdf_profiles's.
 
@@ -82,7 +78,7 @@ def read_pressure_level_atmosphere(
         periodic_longitude: Permit a seam for established global longitude coverage.
 
     Returns:
-        Atmosphere with owned target-layer buffers derived from native pressure
+        LayerAtmosphere with owned target-layer buffers derived from native pressure
         meteorology and caller-supplied gas columns.
 
     Raises:

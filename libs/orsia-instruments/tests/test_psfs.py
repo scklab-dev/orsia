@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 from orsia_instruments import (
+    AngularRadianceSamples,
     DetectorProperties,
     GaussianPSF,
-    RadianceField,
     ReadSchedule,
     TabulatedPSF,
     cavity_imager,
@@ -358,7 +358,7 @@ def test_dense_psf_exposure_dependence():
         np.linspace(4900.0, 5100.0, 7),
         SpectralDomain("wavenumber_cm1", ((4900.0, 5100.0),)),
     )
-    scene = RadianceField(
+    scene = AngularRadianceSamples(
         grid,
         np.array([0.0, 0.1]),
         np.array([-0.002, 0.002]),

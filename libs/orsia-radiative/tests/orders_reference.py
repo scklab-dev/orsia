@@ -16,10 +16,10 @@ from math import cos, pi, radians, sin
 
 import numpy as np
 from numpy.typing import NDArray
+from orsia_radiative.columns import ColumnScene
 from orsia_radiative.optics.atmosphere import AtmosphericOptics, validate_atmospheric_optics
 from orsia_radiative.optics.phases import henyey_greenstein_phase, rayleigh_phase
 from orsia_radiative.optics.scattering import AerosolComponent, RayleighComponent
-from orsia_radiative.scene import RadiativeScene
 from orsia_radiative.solar.source import SolarSource
 from orsia_radiative.transfer.formal import (
     PropagationCoefficients,
@@ -81,7 +81,7 @@ def phase_function(cosine: NDArray[np.float64], g: float | None) -> NDArray[np.f
 
 
 def scattering_orders(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     *,
     source: SolarSource,
     optics: AtmosphericOptics,
@@ -144,7 +144,7 @@ def scattering_orders(
 
 
 def _direct_order(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     source: SolarSource,
     optics: AtmosphericOptics,
     delta_m_moments: int | None,
@@ -191,7 +191,7 @@ def _direct_order(
 
 
 def _accumulate_orders(
-    scene: RadiativeScene,
+    scene: ColumnScene,
     source: SolarSource,
     extinction: NDArray[np.float64],
     scattering: tuple[RayleighComponent | AerosolComponent, ...],

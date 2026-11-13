@@ -2,31 +2,33 @@
 
 Orsia is a work in progress. It provides reusable scientific Python libraries for remote-sensing observation modelling, instrument simulation, uncertainty propagation and retrieval. Applications can compose atmospheric radiance, observation geometry and detector response, then solve an inverse problem with their own physical model and derivatives.
 
-The repository contains seven separately packaged libraries in a non-package UV workspace, targeting CPython 3.14 free-threaded. Applications and studies own scene and dataset selection, instrument assumptions, model composition and acceptance criteria. Library guides define the implemented contracts and their scientific limits.
+The repository contains nine separately packaged libraries in a non-package UV workspace, targeting CPython 3.14 free-threaded. Applications and studies own scene and dataset selection, instrument assumptions, model composition and acceptance criteria. Library guides define the implemented contracts and their scientific limits.
 
 ## High-level design
 
-![Caller-owned application composition above Data I/O, Geometry, Radiative, Instruments and callback-based Inverse; Uncertainty and Numerics provide cross-cutting capabilities.](assets/architecture.svg)
+![Caller-owned composition selects Data, Dispersion, Scene, Geometry, Radiative, Instruments and callback-based Inverse; Uncertainty and Numerics provide shared capabilities.](assets/architecture.svg)
 
-Solid arrows show selected application calls; the dashed arrow shows Inverse evaluating caller-supplied prediction and Jacobian functions. The scientific components are independently selectable. Their grouping describes responsibilities, without prescribing an execution sequence or an all-to-all import graph. [Full-size editable SVG](assets/architecture.svg).
+The figure includes all nine libraries. Solid arrows show selected application calls; the dashed arrow shows Inverse evaluating caller-supplied prediction and Jacobian functions. [Dispersion](libs/orsia-dispersion/README.md) supplies transported excess mass fields; [Scene](libs/orsia-scene/README.md) composes supplied fields, terrain and optical inputs into direct radiance and explicit sensitivities on flat local surface queries. The scientific components are independently selectable within their declared dependencies. Their grouping describes responsibilities; arrows between library internals are omitted. [Full-size editable SVG](assets/architecture.svg).
 
 - **Application composition:** the caller connects scientific values and operations, defines the forward model, supplies coordinate conventions and controls execution. Inverse accepts prediction/Jacobian callbacks or an explicit linear matrix; it has no Instruments dependency.
 - **Resources and calculation:** Data owns explicit scientific-product acquisition, local readers and geospatial preparation. Pure numerical kernels consume materialised values. Geometry also has lazy SatKit orbital/frame adapters that can acquire public auxiliary files and use process-global caches; their resource contract applies when selected.
-- **Shared capabilities:** Uncertainty supplies array-based error algebra to callers and consuming libraries. Numerics offers optional application-owned CPU scheduling on supported Linux systems. Scientific calls remain sequential unless the application schedules them.
+- **Shared capabilities:** Uncertainty supplies dense and source-projected covariance algebra to callers and consuming libraries. Numerics provides explicit tangent arithmetic, dense Jacobian assembly, general forward/transpose operator adapters and shared native headers, plus optional application-owned CPU scheduling with controlled native threads. CPU affinity is used when available; its absence produces a warning and execution without pinning. Supported controls include Apple Accelerate BLAS/LAPACK on macOS 15 and later; see the [executor contract](libs/orsia-numerics/docs/execution.md). Scientific calls remain sequential unless the application schedules them.
 
 ## Library guides
 
-Each guide introduces its library with an example and links to detailed numerical contracts, ownership rules and evidence limits.
+Each guide introduces its library with an example and links to detailed numerical contracts, ownership rules and evidence limits. The [consolidated refactor migration](docs/refactor-migration.md) records the implemented ownership, breaking API changes and validation scope.
 
 | Library | Responsibility |
 | --- | --- |
+| [Dispersion](libs/orsia-dispersion/README.md) | Stationary plumes, Gaussian/compact puffs and bounded particles, with shared sampling and supported point/cell/path mass integrals. |
+| [Scene](libs/orsia-scene/README.md) | Physical gas/terrain/optical composition, frozen cell scenes, path-resolved radiance and explicit sensitivities. |
 | [Data](libs/orsia-data/README.md) | Explicit acquisition, local atmosphere/solar/spectroscopy/orbit/product readers and geospatial preparation. |
-| [Geometry](libs/orsia-geometry/README.md) | Trajectories, independent attitude laws, ray composition, frame transformations and analytic surface intersections. |
-| [Radiative](libs/orsia-radiative/README.md) | Atmospheric state and spectroscopy, optical composition, reflected-solar and non-scattering thermal radiance, physical bands and cubes. |
-| [Instruments](libs/orsia-instruments/README.md) | Acquisition, optical response, expected electrons, detector readout, supplied calibration and native-band image reconstruction. |
+| [Geometry](libs/orsia-geometry/README.md) | Explicit frames and point/cell support, trajectories, attitudes, ray composition and analytic/callable terrain with bounded intersection searches. |
+| [Radiative](libs/orsia-radiative/README.md) | Atmospheric state and spectroscopy, optical composition, reflected-solar and non-scattering LTE radiance with explicit tangents, physical spectral means. |
+| [Instruments](libs/orsia-instruments/README.md) | Acquisition, optics, detector readout, uncertain calibration, native observation cubes and separate ground-grid reconstruction. |
 | [Inverse](libs/orsia-inverse/README.md) | Fixed-covariance nonlinear Gaussian estimation, rank-aware linear inversion and local retrieval diagnostics. |
-| [Uncertainty](libs/orsia-uncertainty/README.md) | Covariance factors and transport, signed bias, source cross-covariances and explicit-RNG ensembles. |
-| [Numerics](libs/orsia-numerics/README.md) | Caller-owned CPU thread pools with verified Linux affinity and explicit native thread limits. |
+| [Uncertainty](libs/orsia-uncertainty/README.md) | Dense/source-projected covariance and transport, low-rank solves, signed bias, cross-covariances and explicit-RNG ensembles. |
+| [Numerics](libs/orsia-numerics/README.md) | Explicit tangents and dense Jacobians, general linear operators, shared native headers and optional CPU execution with native thread controls and available affinity. |
 
 The timed [instrument line-of-sight contract](libs/orsia-instruments/docs/line-of-sight.md#time-frames-support-and-ownership) uses elapsed SI seconds from a timezone-aware UTC epoch and positions, velocities and rays in the geocentric celestial reference system (GCRS). Terrestrial inputs require explicit dated frame conversion. Detailed units, shapes, support and mutation rules belong to the linked library references.
 
@@ -38,9 +40,12 @@ Choose a guide for the calculation you need, then run its Python blocks in order
 | --- | --- | --- |
 | [Radiative solar example](libs/orsia-radiative/README.md#minimal-solar-example) | A transparent atmosphere and Lambertian reflection. | Synthetic in-memory values. |
 | [Instrument image example](libs/orsia-instruments/README.md#minimal-image-example) | A uniform radiance field, optical filter, detector and seeded noisy reads. | Synthetic in-memory values. |
+| [Native observation cube](libs/orsia-instruments/docs/observation-cubes.md) | Actual DN calibration, shifted band supports, fixed accumulation, masks and common gain uncertainty, with dense/projected agreement. | Synthetic in-memory inputs; optional saved support/covariance figure. |
+| [Numerics tangent example](libs/orsia-numerics/README.md#minimal-tangent-example) | A dense Jacobian and a directional derivative from one explicit callback. | Synthetic in-memory values; no executor required. |
 | [Inverse fit](libs/orsia-inverse/README.md#minimal-example) | Caller-defined prediction/Jacobian functions and local posterior diagnostics. | Synthetic observations and covariance. |
 | [Geometry ground trace](libs/orsia-geometry/README.md#construct-a-leo-trajectory-and-ground-trace) | A designed orbit, independent attitudes and WGS84 intersections. | SatKit with dated orbital auxiliaries; the guide gives an offline-fixture recipe. |
-| [Maintained notebooks](notebooks/README.md) | Five-band radiative comparison and six instrument-response chains. | Prepared local inputs; acquisition and execution are separate documented operations. |
+| [Spatial atmosphere and plume acquisition](docs/spatial-scenes.md) | Terrain-adjusted columns, independent solar/view paths, native camera images and signed electron Jacobians. | Configurable synthetic in-memory fields; offline execution. |
+| [Maintained notebooks](notebooks/README.md) | Dispersion and spatial-scene tutorials, five-band radiative comparison and six instrument-response chains. | Self-contained synthetic tutorials or prepared atmospheric inputs; acquisition and execution are separate operations. |
 
 The Data, Uncertainty and Numerics guides provide additional focused examples. The [guide tests](tests/test_library_guides.py) execute dependency-light examples with sockets blocked; the orbital example has a separate native-fixture check. See [documentation checks](DEVELOPMENT.md#documentation-checks) for the commands.
 

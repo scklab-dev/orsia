@@ -13,9 +13,9 @@ from orsia_radiative import (
     Absorber,
     AbsorptionComponent,
     AerosolOptics,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     ScatteringProperties,
     SpectralIrradiance,
     SurfaceState,
@@ -31,7 +31,7 @@ from scipy.integrate import quad
 
 def _case() -> tuple[
     dict[str, Any],
-    RadiativeScene,
+    ColumnScene,
     SpectralIrradiance,
     AbsorptionComponent,
     ScatteringProperties,
@@ -43,8 +43,8 @@ def _case() -> tuple[
     axis = fixture["axis"]
     assert axis["kind"] == "wavenumber" and axis["unit"] == "cm-1"
     spectral = np.array(axis["coordinates"], dtype=np.float64)
-    material = RadiativeScene(
-        Atmosphere(
+    material = ColumnScene(
+        LayerAtmosphere(
             np.array([0.0, 1000.0, 2000.0]),
             np.array([100000.0, 90000.0, 80000.0]),
             np.array([95000.0, 85000.0]),
@@ -211,7 +211,7 @@ def test_aerosol_scattering_homogeneous_layer_split_does_not_change_radiance() -
     )
     one_layer = replace(
         scene,
-        atmosphere=Atmosphere(
+        atmosphere=LayerAtmosphere(
             np.array([0.0, 2000.0]),
             np.array([100000.0, 80000.0]),
             np.array([90000.0]),

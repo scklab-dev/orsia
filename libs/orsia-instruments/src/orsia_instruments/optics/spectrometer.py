@@ -2,7 +2,8 @@
 
 The rectangular slit is an ideal hard field stop in the forward focal plane.
 A unit-magnification polynomial map sends accepted entrance coordinates to a
-post-slit Gaussian image on the detector. Spatial scanning belongs to geometry.
+post-slit image on the detector using a Gaussian, tabulated or callable spatial
+model. Spatial scanning belongs to geometry.
 """
 
 from dataclasses import dataclass
@@ -10,11 +11,11 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from ..acquisition import Acquisition
-from ..detector import DetectorProperties
-from .dispersion import dispersive_imager
-from .psfs import SpatialDensity
-from .response import ImagingOptics, SpectralParameter
+from orsia_instruments.acquisition.quadrature import Acquisition
+from orsia_instruments.detector import DetectorProperties
+from orsia_instruments.optics.dispersion import dispersive_imager
+from orsia_instruments.optics.psfs import SpatialDensity
+from orsia_instruments.optics.response import ImagingOptics, SpectralParameter
 
 
 @dataclass(frozen=True, eq=False)
@@ -31,7 +32,7 @@ class DispersiveSpectrometer:
             Columns usually resolve wavelength; rows resolve position along the slit.
         slit_bounds_m: (4,) entrance xmin,xmax,ymin,ymax rectangle in focal-plane metres.
             Its finite x width couples wavelength and across-slit position.
-        optics: Unit-magnification polynomial dispersion, full Gaussian finite-pixel
+        optics: Unit-magnification polynomial dispersion, supplied-model finite-pixel
             acceptance and incident pupil cosine; area and throughput apply downstream.
         pixel_bands: Unique achieved-channel identities in row-major pixel order.
             Identities describe native responses, rather than monochromatic wavelengths.
@@ -67,9 +68,11 @@ def dispersive_spectrometer(
 
     For entrance (x,y) and d=wavelength-reference, the detector centroid is
     (x+dispersion*d+quadratic_per_m*d**2+smile*y, y+keystone*d).
-    The finite slit transmits all admitted entrance rays. The post-slit PSF is
-    integrated analytically over each active detector rectangle, including its
-    full tails. Detector losses remain losses; responses are never renormalized.
+    The finite slit transmits all admitted entrance rays. The post-slit spatial
+    model is integrated over each active detector rectangle. GaussianPSF models
+    use analytic integration. Tabulated and callable densities use the default
+    pixel quadrature of dispersive_imager. Missing table mass and detector-truncated
+    tails remain lost; responses are never renormalized.
     The pupil-projection cosine multiplies each entrance solid angle once.
     Pre-slit blur, anamorphic magnification, diffraction orders and stray light
     are excluded. Transmission can encode a supplied order-sorting passband.

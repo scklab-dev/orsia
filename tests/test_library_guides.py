@@ -7,12 +7,26 @@ from unittest.mock import patch
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-LIBRARIES = ("geometry", "numerics", "uncertainty", "radiative", "data", "instruments", "inverse")
+LIBRARIES = (
+    "geometry",
+    "numerics",
+    "uncertainty",
+    "radiative",
+    "data",
+    "instruments",
+    "inverse",
+    "dispersion",
+    "scene",
+)
 EXAMPLES = (
-    # Geometry's README requires native auxiliary fixtures in test-orbital.
+    # Geometry's orbital example requires native auxiliary fixtures in test-orbital.
+    ("libs/orsia-geometry/README.md", "Intersect a ray with interpolated terrain"),
     *((f"libs/orsia-{library}/README.md", None) for library in LIBRARIES if library != "geometry"),
     ("libs/orsia-numerics/docs/execution.md", "Keep task inputs independent"),
     ("libs/orsia-uncertainty/docs/covariance.md", "Explicit preparation for repeated use"),
+    ("libs/orsia-uncertainty/docs/source-projection.md", None),
+    ("libs/orsia-instruments/docs/observation-cubes.md", "Run the two-band example"),
+    ("libs/orsia-instruments/docs/observation-cubes.md", "Geometry-independent radiometry"),
     (
         "libs/orsia-radiative/docs/state-and-spectra.md",
         "Convert coordinates and densities together",
@@ -23,11 +37,14 @@ EXAMPLES = (
     ("libs/orsia-instruments/docs/line-of-sight.md", None),
     ("libs/orsia-instruments/docs/slit-spectrometer.md", None),
     ("libs/orsia-instruments/docs/spectral-imagers.md", None),
+    ("libs/orsia-instruments/docs/wavelength-response.md", None),
     ("libs/orsia-inverse/docs/estimation.md", "Check a derivative in fitted coordinates"),
+    ("libs/orsia-dispersion/docs/transport-and-evaluation.md", None),
 )
 DOCUMENTS = (
     ROOT / "README.md",
     ROOT / "DEVELOPMENT.md",
+    ROOT / "docs/spatial-scenes.md",
     *(ROOT / f"libs/orsia-{library}/README.md" for library in LIBRARIES),
     *(
         path
@@ -38,7 +55,9 @@ DOCUMENTS = (
 
 
 @pytest.mark.parametrize(("relative_path", "section"), EXAMPLES)
-def test_guide_examples(relative_path: str, section: str | None) -> None:
+def test_guide_examples(
+    relative_path: str, section: str | None, capsys: pytest.CaptureFixture[str]
+) -> None:
     path = ROOT / relative_path
     text = path.read_text()
     if section is not None:
@@ -55,6 +74,10 @@ def test_guide_examples(relative_path: str, section: str | None) -> None:
             # in coverage reports; calls into real library modules stay measured.
             compiled = compile(code, f"<{path}:example-{number}>", "exec")
             exec(compiled, namespace)
+    if relative_path == "libs/orsia-geometry/README.md":
+        expected_output = re.search(r"^```text\n(.*?)^```", text, re.M | re.S)
+        assert expected_output is not None, "Terrain example must show its expected output"
+        assert capsys.readouterr().out.strip() == expected_output[1].strip()
 
 
 @pytest.mark.parametrize("library", LIBRARIES)

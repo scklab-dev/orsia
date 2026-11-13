@@ -11,10 +11,9 @@ from typing import overload
 import numpy as np
 from numpy.typing import NDArray
 
-from ..acquisition import Acquisition
-from ..quadrature import validate_quadrature_order
-from .pixels import pixel_acceptance
-from .psfs import SpatialDensity
+from orsia_instruments.acquisition.quadrature import Acquisition, validate_quadrature_order
+from orsia_instruments.optics.pixels import pixel_acceptance
+from orsia_instruments.optics.psfs import SpatialDensity
 
 type OpticalResponse = Callable[[int, NDArray[np.float64], Acquisition], NDArray[np.float64]]
 

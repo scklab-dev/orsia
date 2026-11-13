@@ -12,9 +12,9 @@ import radiance_terms_support as terms_support
 from numpy.typing import NDArray
 from orsia_radiative import (
     AerosolComponent,
-    Atmosphere,
+    ColumnScene,
+    LayerAtmosphere,
     ObservationGeometry,
-    RadiativeScene,
     RayleighComponent,
     SpectralIrradiance,
     SurfaceState,
@@ -47,7 +47,7 @@ def test_every_component_matches_full_recomputation(
     if repeat_layers:
         scene = replace(
             scene,
-            atmosphere=Atmosphere(
+            atmosphere=LayerAtmosphere(
                 np.arange(5, dtype=np.float64) * 1000,
                 np.linspace(100000, 80000, 5),
                 np.linspace(97500, 82500, 4),
@@ -348,7 +348,7 @@ def test_reference_calls_reuse_rayleigh_but_never_share_geometry_or_storage() ->
     scene, sun, molecular, _ = _inputs()
     scene = replace(
         scene,
-        atmosphere=Atmosphere(
+        atmosphere=LayerAtmosphere(
             np.arange(5, dtype=np.float64) * 1000,
             np.linspace(100000, 80000, 5),
             np.linspace(97500, 82500, 4),
@@ -462,10 +462,10 @@ def test_inactive_orders_skip_angular_allocation_and_match_public_radiance(
     assert len(result.components) == max_order + 1
 
 
-def _inputs() -> tuple[RadiativeScene, SpectralIrradiance, RayleighComponent, AerosolComponent]:
+def _inputs() -> tuple[ColumnScene, SpectralIrradiance, RayleighComponent, AerosolComponent]:
     axis = np.array([12000.0, 12001.0], dtype=np.float64)
-    scene = RadiativeScene(
-        Atmosphere(
+    scene = ColumnScene(
+        LayerAtmosphere(
             np.array([0.0, 1000.0, 2000.0]),
             np.array([100000.0, 90000.0, 80000.0]),
             np.array([95000.0, 85000.0]),

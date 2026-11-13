@@ -78,7 +78,7 @@ def show_product(label, cube, expectation_cube, reference, points, target=(-25.0
 
     Args:
         label: Instrument family name.
-        cube: Noisy registered RadianceCube on the notebook's 50 m grid.
+        cube: Noisy registered BandRadianceCube on the notebook's 50 m grid.
         expectation_cube: Separately labelled noiseless cube on the same grid.
         reference: Achieved-band point references with the cube's (y,x,band) shape.
         points: Band integration wavenumbers in cm^-1.

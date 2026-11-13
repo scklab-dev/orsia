@@ -8,23 +8,26 @@ import orsia_radiative as radiative
 import pytest
 
 OWNERS = {
-    "atmosphere.models": "Absorber Atmosphere",
-    "atmosphere.layers": ("geometric_height pressure_level_layer_means remap_layer_columns"),
+    "atmosphere.layers": (
+        "Absorber LayerAtmosphere geometric_height pressure_level_layer_means remap_layer_columns"
+    ),
     "atmosphere.hydrostatic": (
         "gas_columns_from_fraction hydrostatic_atmosphere specific_humidity"
     ),
     "profiles": "LayerProfileBasis evaluate_profile",
     "surface": "SurfaceState",
     "geometry": "ObservationGeometry",
-    "scene": "RadiativeScene",
+    "columns": "ColumnScene",
     "spectral.grid": "SpectralDomain SpectralGrid convert_spectral_grid wavenumber_grid",
     "spectral.conversions": "density_per_nm_to_per_cm1 reverse_spectral_points",
     "spectral.interpolation": "interpolate_point_density",
     "solar.source": "SolarSource solar_source solar_irradiance",
     "solar.spectrum": "SolarIrradianceSpectrum",
     "spectroscopy.lines": "Line LineSet line_absorption",
-    "spectroscopy.line_tables": "LineDatabase PartitionFunctionTable line_set",
-    "spectroscopy.cross_sections": "CrossSectionField PreparedCrossSections table_absorption",
+    "spectroscopy.line_tables": "SpectralLineTable PartitionFunctionTable line_set",
+    "spectroscopy.cross_sections": (
+        "LayerCrossSections resample_layer_cross_sections table_absorption"
+    ),
     "spectroscopy.continuum": "WaterContinuumReference water_continuum_absorption",
     "spectroscopy.components": "AbsorptionComponent",
     "optics.absorption": "Absorption compose_absorption compose_absorption_on_grid",
@@ -55,10 +58,10 @@ def test_namespace_packages_keep_implementations_in_defining_modules(package: st
 
 def test_atmosphere_package_preserves_record_imports() -> None:
     from orsia_radiative import atmosphere
-    from orsia_radiative.atmosphere import models
+    from orsia_radiative.atmosphere import layers
 
-    for name in ("Absorber", "AirBroadener", "Atmosphere"):
-        assert getattr(atmosphere, name) is getattr(models, name)
+    for name in ("Absorber", "AirBroadener", "LayerAtmosphere"):
+        assert getattr(atmosphere, name) is getattr(layers, name)
         assert name in atmosphere.__all__
 
 
@@ -73,10 +76,8 @@ def test_column_remapping_public_surface() -> None:
 def test_atmosphere_dependencies_follow_construction_order() -> None:
     root = Path(radiative.__file__).parent / "atmosphere"
     allowed = {
-        "models": {"orsia_radiative.profiles"},
-        "layers": set(),
+        "layers": {"orsia_radiative.profiles"},
         "hydrostatic": {
-            "orsia_radiative.atmosphere.models",
             "orsia_radiative.atmosphere.layers",
         },
     }

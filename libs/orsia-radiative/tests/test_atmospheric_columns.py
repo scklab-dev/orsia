@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 from orsia_radiative import (
-    Atmosphere,
+    LayerAtmosphere,
     gas_columns_from_fraction,
     geometric_height,
     hydrostatic_atmosphere,
@@ -21,10 +21,7 @@ from orsia_radiative.atmosphere.hydrostatic import (
     MOLAR_MASS_DRY_AIR_KG_MOL,
     MOLAR_MASS_WATER_KG_MOL,
 )
-from orsia_radiative.atmosphere.layers import (
-    validate_pressure_boundaries,
-    validate_vertical_values,
-)
+from orsia_radiative.atmosphere.layers import validate_pressure_boundaries, validate_vertical_values
 
 P = np.array([100000.0, 60000.0, 20000.0])
 Q = np.array([0.01, 0.02])
@@ -75,7 +72,7 @@ def test_documented_atmosphere_example() -> None:
     namespace: dict[str, Any] = {}
     exec(compile(snippet, str(document), "exec"), namespace)
     atmosphere = namespace["atmosphere"]
-    assert isinstance(atmosphere, Atmosphere)
+    assert isinstance(atmosphere, LayerAtmosphere)
     assert_allclose(atmosphere.absorbers[1].columns_molecules_m2.sum(), namespace["ch4"].sum())
 
 

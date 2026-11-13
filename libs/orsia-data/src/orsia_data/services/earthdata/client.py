@@ -4,9 +4,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ...http import JsonSession
-from .auth import EarthdataAuth
-from .cmr import EarthdataProduct, download_earthdata, search_earthdata
+from orsia_data.http import JsonSession
+from orsia_data.services.earthdata.auth import EarthdataAuth
+from orsia_data.services.earthdata.cmr import EarthdataProduct, download_earthdata, search_earthdata
 
 
 class EarthdataClient:
