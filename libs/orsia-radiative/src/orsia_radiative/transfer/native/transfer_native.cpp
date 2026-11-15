@@ -48,7 +48,7 @@ static Real beam_source_weight(Real a, Real b, Real depth, Real direction,
 }
 
 template <typename Real>
-static void prepare_kernel(const Real *depth, const Real *mu,
+static void prepare_transfer(const Real *depth, const Real *mu,
                            Real *transmission, Real *half_transmission,
                            Real *weight, Real *half_weight,
                            Real *solar_weight, Real *solar_half_weight,
@@ -99,7 +99,7 @@ static void prepare_kernel(const Real *depth, const Real *mu,
 }
 
 template <typename Real>
-static void original_apply_kernel(const Real *mu, const Real *source,
+static void propagate_general(const Real *mu, const Real *source,
                          const Real *transmission, const Real *weight,
                          const Real *half_transmission, const Real *half_weight,
                          Real *field, Real *exits, Real bottom,
@@ -131,7 +131,7 @@ static void original_apply_kernel(const Real *mu, const Real *source,
 #define ORSIA_RESTRICT __restrict__
 #endif
 template <typename Real, bool Centres>
-static void range_apply_kernel(const Real *source, const Real *transmission,
+static void propagate_ranges(const Real *source, const Real *transmission,
                                const Real *weight, const Real *half_transmission,
                                const Real *half_weight, Real *ORSIA_RESTRICT field,
                                Real *ORSIA_RESTRICT exits, Real bottom,
@@ -165,7 +165,7 @@ static bool overlaps(const void *a, std::size_t an, const void *b, std::size_t b
 }
 
 template <typename Real>
-static void apply_kernel(const Real *mu, const Real *source,
+static void propagate(const Real *mu, const Real *source,
                          const Real *transmission, const Real *weight,
                          const Real *half_transmission, const Real *half_weight,
                          Real *field, Real *exits, Real bottom,
@@ -192,13 +192,13 @@ static void apply_kernel(const Real *mu, const Real *source,
                       && !overlaps(exits, vector_bytes, inputs[i], bytes);
     }
     if (!valid) {
-        original_apply_kernel(mu, source, transmission, weight, half_transmission,
+        propagate_general(mu, source, transmission, weight, half_transmission,
                               half_weight, field, exits, bottom, cells, directions);
     } else if (field) {
-        range_apply_kernel<Real, true>(source, transmission, weight, half_transmission,
+        propagate_ranges<Real, true>(source, transmission, weight, half_transmission,
             half_weight, field, exits, bottom, cells, directions, nb, ne, pb, pe);
     } else {
-        range_apply_kernel<Real, false>(source, transmission, weight, half_transmission,
+        propagate_ranges<Real, false>(source, transmission, weight, half_transmission,
             half_weight, field, exits, bottom, cells, directions, nb, ne, pb, pe);
     }
 }
@@ -257,7 +257,7 @@ static void prepare_buffers(std::array<py::buffer_info, 8> &buffers,
     }
     // Exports outlive this guard; releases and Python refcounts run attached.
     py::gil_scoped_release release;
-    prepare_kernel(static_cast<const Real *>(buffers[0].ptr), mu,
+    prepare_transfer(static_cast<const Real *>(buffers[0].ptr), mu,
                    static_cast<Real *>(buffers[2].ptr), static_cast<Real *>(buffers[3].ptr),
                    static_cast<Real *>(buffers[4].ptr), static_cast<Real *>(buffers[5].ptr),
                    static_cast<Real *>(buffers[6].ptr), static_cast<Real *>(buffers[7].ptr),
@@ -300,7 +300,7 @@ static void prepare(py::object depth, py::object mu, py::object solar_cosine,
 template <typename Real>
 static void apply_buffers(std::array<py::buffer_info, 8> &buffers, double bottom) {
     py::gil_scoped_release release;
-    apply_kernel(static_cast<const Real *>(buffers[0].ptr),
+    propagate(static_cast<const Real *>(buffers[0].ptr),
                  static_cast<const Real *>(buffers[1].ptr),
                  static_cast<const Real *>(buffers[2].ptr),
                  static_cast<const Real *>(buffers[3].ptr),
@@ -407,7 +407,7 @@ static void rayleigh_order_kernel(
         double *source, double *exits, double *beam_centres, double *beam_exits,
         double *flux, double *values, double *moments, Dgemm gemm) {
     const auto count = cells * directions;
-    apply_kernel(mu, beam, transmission, solar_weight, half_transmission,
+    propagate(mu, beam, transmission, solar_weight, half_transmission,
                  solar_half_weight, beam_centres, beam_exits, 0.0, cells, directions);
     for (std::ptrdiff_t i = 0; i < count; ++i)
         field[i] = boundary_centres[i] * direct_boundary;
@@ -419,7 +419,7 @@ static void rayleigh_order_kernel(
         else
             rayleigh_redistribute(field, incoming, outgoing, depth, source, cells, directions);
         const bool centres = order + 1 < max_order;
-        apply_kernel(mu, source, transmission, weight, half_transmission, half_weight,
+        propagate(mu, source, transmission, weight, half_transmission, half_weight,
                      centres ? field : nullptr, exits, 0.0, cells, directions);
         if (order == 0) {
             for (std::ptrdiff_t d = 0; d < directions; ++d) exits[d] += beam_exits[d];

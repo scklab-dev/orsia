@@ -11,7 +11,7 @@ from orsia_radiative import (
     SpectralGrid,
     WaterContinuumCoefficients,
     column_absorption_optical_depth,
-    integrate_log_linear_columns,
+    integrate_atmospheric_columns,
 )
 
 type FloatArray = NDArray[np.float64]
@@ -92,7 +92,7 @@ class SpatialOpticalDepth:
         self._support, self._spectral, self._atmosphere = support, spectral, atmosphere
         self._tables, self._continuum = tuple(cross_sections), continuum
         self._mask = np.frombuffer(mask.tobytes(), dtype=np.bool_).reshape(shape)
-        base = integrate_log_linear_columns(
+        base = integrate_atmospheric_columns(
             atmosphere, surface_altitude_m=float(support.height_edges_m[0])
         )
         # Validate matching samples, geometry, identities and water pairing once.
@@ -136,7 +136,7 @@ class SpatialOpticalDepth:
 
         def prepare(start: int) -> None:
             for pixel in range(start, min(start + batch_size, heights.size)):
-                columns = integrate_log_linear_columns(
+                columns = integrate_atmospheric_columns(
                     atmosphere, surface_altitude_m=float(heights[pixel])
                 )
                 flat[pixel, :material_terms] = np.concatenate(

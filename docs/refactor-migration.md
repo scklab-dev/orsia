@@ -32,7 +32,7 @@ Related implementation files are grouped within a responsibility home. Instrumen
 - `acquisition.schedule` owns immutable read/raster identities, local scan timing and its constant-trajectory descriptor. `acquisition.quadrature` owns sampled acquisitions and coordinate-measure rules. `acquisition.images`, `surface` and `los` retain the separate image, projected-surface and GCRS boundaries.
 - `photodetection.charge`, `coefficients`, `images` and `frames` separate physical charge records, coefficient arithmetic and the two numerical illumination interfaces. `frame_photoelectrons` supplies the shared surface expectation/characterization boundary used by `simulation.simulate_frames`.
 - `calibration.radiometry` and `calibration.frames` retain generic and native-frame supplied-calibration contracts. `observation.native` owns native logical products; `observation.measurements` owns measurement rasters and `BandRadianceCube`.
-- `response` owns spectral, point-grid, spatial, Fourier, joint and achieved-band representations. `sampling` owns angular and surface radiance samples. `registration` owns estimation, signed resampling, reconstruction and covariance projection.
+- `response` owns spectral, point-grid, spatial, joint and achieved-band representations, with Fourier image formation in `response.spatial`. `sampling` owns angular and surface radiance samples. `registration` owns estimation, signed resampling, reconstruction and covariance projection.
 - `simulation` composes photon integration and image readout. `detector` retains physical detector properties, noise and electronics. The former broad `imaging` source family is removed.
 - Radiative's `columns`, `spectral.bands` and `optics.aerosol_mixture` own their named concepts. Scene's `gas`, `optical_depth`, `projection`, `surface` and `radiance` own physical composition. Numerics uses separate `tangents` and `operators` modules.
 
@@ -115,3 +115,43 @@ devbox run -- just --justfile tests/justfile test-orbital
 ```
 
 Standard-suite skips cover optional backend fixtures and platform-specific execution/resource checks. The offline orbital recipe separately covers its opt-in cases. Native FINUFFT, Linux affinity/resource protocols and authenticated provider operations were not qualified by this macOS execution. Archive outputs are retained under `outputs/scene-validation/distribution` and `outputs/tangent-distribution`; diagram review copies are under `outputs/refactor-layout/diagram-qa`. Exact numerical cases, tolerances and seeds remain in the cited tests and scripts.
+
+
+## Role-based function names
+
+The subsequent `orsia-names.md` implementation replaces the names below without aliases. Callable signatures are unchanged; the subsequent module consolidation below updates the owning paths. Update application imports and calls together when changing the Orsia dependency revision. Maintained Orsia consumers are migrated; independently installed applications require a separate dependency update and verification.
+
+| Owning module | Previous name | Current name |
+| --- | --- | --- |
+| `orsia_instruments.tolerances` | `monte_carlo_native` | `electron_error_statistics` |
+| `orsia_instruments.tolerances` | `monte_carlo_dn` | `sample_uncertain_readout` |
+| `orsia_instruments.channels` | `exchange_channels` | `refine_channels` |
+| `orsia_instruments.response.spatial` | `sample_fourier_exposures` | `form_detector_images` |
+| `orsia_instruments.response.spatial` | `sample_fourier_exposure_tangents` | `form_detector_images_with_tangents` |
+| `orsia_radiative.atmosphere.levels` | `integrate_log_linear_columns` | `integrate_atmospheric_columns` |
+| `orsia_dispersion.puffs.population` | `puff_eigenvectors` | `puff_principal_axes` |
+| `orsia_instruments.optics.response` | `constant_or_default` | `validation_scalar` |
+| `notebooks.support.notebook_ground_pixel` | `physical_kernel` | `scene_to_electron_response` |
+
+Existing root exports for the tolerance and atmospheric-column functions follow the new names. Fourier image formation retains Gaussian blur, optional rectangular pixel averaging, supplied displacements, and input-dependent units; noise and temporal integration remain separate. Atmospheric column integration retains its log-linear gas-density law and distinct linear-endpoint water-product laws. Channel refinement remains a local search. Puff principal variances use m2, with the reflecting boundary's horizontal axes before its vertical axis.
+
+The notebook-only `make_callbacks` helper is removed. Construct `SyntheticRadianceModel` and pass its `radiance` and `radiance_tangent` methods directly. `frame_response` and `frame_photoelectrons` now own their traversals, share response marginal assembly, and use the existing coefficient iterator; the photon path obtains counts and response in one traversal. Parameter ensemble preparation is shared, with the original nominal evaluation and RNG order retained. The Fourier mean and tangent paths share call-local preparation and process directions sequentially.
+
+General CSR covariance projection remains supported because its band-mixing contract is broader than compact registration maps; its helpers are now `_gain_projection` and `_matrix_detector_covariance`. The native recurrence retains the general and contiguous-range variants as `propagate_general` and `propagate_ranges`, selected by `propagate`, while `prepare_transfer` prepares coefficients independently. Aliased buffers and arbitrary direction layouts retain the general path. A bounded single-thread comparison of the existing C++ kernels supported retaining the range specialization; it does not establish application-scale performance.
+
+`schwarzschild_terms`, `schwarzschild_terms_tangent`, `stack_frame_electrons`, `sample_fourier_surface_electrons`, `gaussian_pixel_transfer`, `log_linear_density_integral`, `solve_diagonal_low_rank`, `sparse_row_product`, `_prepare_numpy` and `_apply_numpy` remain unchanged. The electron statistics retain `np.cov`: substituting `empirical_covariance` would introduce different overflow, finite-value validation and arithmetic behavior. Historical notebook outputs remain preserved.
+
+## Module responsibility consolidation
+
+Update direct imports according to this table. The removed modules have no compatibility aliases; dictionary fields, callable signatures and numerical policies remain unchanged.
+
+| Previous module and definitions | Current owner |
+| --- | --- |
+| `orsia_instruments.response.fourier`: image formation and tangent operations | `orsia_instruments.response.spatial` |
+| `orsia_inverse.design`: `linear_target_uncertainty`, `LinearTargetUncertainty` | `orsia_inverse.diagnostics` |
+| `orsia_inverse.design`: `refine_channels`, `ChannelSearchResult` | `orsia_instruments.channels` |
+| `orsia_dispersion.forcing`: shared flow contracts and tensor validation | `orsia_dispersion.transport` |
+
+Replicated-edge filtering and zero-extended detector image formation retain distinct support and negative-value rules in `response.spatial`. Channel selection accepts an external objective, so Instruments and Inverse remain independent. Application code composes channel selection with target uncertainty when needed.
+
+`simulate_puffs` keeps its public generator signature. A private `_PuffEvolution` owns each iterator's active population, release cursor, counters and maxima. The event loop advances transport, inserts releases, resolves spatial probes and yields an independent snapshot with mass diagnostics. Spatial trial failures still subdivide the accepted population and reduce the trial duration; event-time forcing is checked after release insertion. Empty populations retain their budget-free advances.

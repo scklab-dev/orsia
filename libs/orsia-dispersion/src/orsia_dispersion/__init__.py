@@ -7,7 +7,6 @@ from orsia_dispersion.evaluation import (
     path_columns,
     pixel_layer_moments,
 )
-from orsia_dispersion.forcing import Diffusivity, Wind
 from orsia_dispersion.particles import (
     BoundedParticleDispersion,
     MassParticles,
@@ -37,6 +36,7 @@ from orsia_dispersion.puffs.simulation import (
 from orsia_dispersion.puffs.transport import advance_puffs
 from orsia_dispersion.sampling import DispersionModel, MassField, sample_fields
 from orsia_dispersion.stationary import StationaryGaussianPlume
+from orsia_dispersion.transport import Diffusivity, Wind
 
 __all__ = [
     "BoundedParticleDispersion",

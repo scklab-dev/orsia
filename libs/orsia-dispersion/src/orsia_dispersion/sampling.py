@@ -4,7 +4,6 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from orsia_dispersion.forcing import FloatArray
 from orsia_dispersion.particles import (
     BoundedParticleDispersion,
     ParticleMassField,
@@ -16,6 +15,7 @@ from orsia_dispersion.puffs.simulation import (
     simulate_puffs,
 )
 from orsia_dispersion.stationary import StationaryGaussianPlume
+from orsia_dispersion.transport import FloatArray
 
 type MassField = StationaryGaussianPlume | GaussianPuffField | ParticleMassField
 type DispersionModel = StationaryGaussianPlume | GaussianPuffDispersion | BoundedParticleDispersion

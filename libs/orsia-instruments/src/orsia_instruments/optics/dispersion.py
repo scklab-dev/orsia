@@ -12,8 +12,8 @@ from orsia_instruments.optics.psfs import GaussianPSF, SpatialDensity
 from orsia_instruments.optics.response import (
     ImagingOptics,
     SpectralParameter,
-    constant_or_default,
     spectral_value,
+    validation_scalar,
 )
 
 
@@ -187,7 +187,7 @@ def dispersive_imager(
         ValueError: PSF/map selection, geometry, quadrature or transmission is invalid.
     """
     validate_quadrature_order(pixel_order)
-    constant_transmission = constant_or_default(transmission, 1)
+    constant_transmission = validation_scalar(transmission, 1)
     if not np.isfinite(constant_transmission) or not 0 <= constant_transmission <= 1:
         raise ValueError("transmission must be finite and in [0, 1]")
     settings = {}

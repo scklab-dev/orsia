@@ -4,7 +4,7 @@ Compare first-order native-electron budgets with Monte Carlo charge or DN
 simulations using the caller's parameter law and explicit random generator.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 
 import numpy as np
@@ -236,7 +236,7 @@ def native_tolerance_budget(
     )
 
 
-def monte_carlo_native(
+def electron_error_statistics(
     evaluate: Callable[[Mapping[str, float]], ExpectedElectrons],
     parameters: Mapping[str, float],
     parameter_bias: NDArray[np.float64],
@@ -268,24 +268,12 @@ def monte_carlo_native(
         ValueError: Count or parameter axes are invalid, covariance fails
             validation, or physical read/source identities change during evaluation.
     """
-    if (
-        count < 2
-        or parameter_bias.shape != (len(parameters),)
-        or not np.isfinite(parameter_bias).all()
-        or parameter_covariance.shape
-        not in ((len(parameters),), (len(parameters), len(parameters)))
-    ):
-        raise ValueError("Monte Carlo needs >=2 draws and matching parameter dimensions")
-    nominal = evaluate(parameters)
-    draws = (
-        sample_gaussian(factor_covariance(parameter_covariance, method="eigh"), rng, count)
-        + parameter_bias
+    nominal, draws = _sample_parameters(
+        evaluate, parameters, parameter_bias, parameter_covariance, rng, count, minimum_count=2
     )
-    keys = tuple(parameters)
-    values = np.array(tuple(parameters.values()), dtype=np.float64)
     outputs = np.empty((count, len(nominal.reads.sample_ids)))
     for i, draw in enumerate(draws):
-        trial = evaluate(dict(zip(keys, values + draw, strict=True)))
+        trial = evaluate(draw)
         outputs[i] = native_difference(nominal, trial)
     return outputs.mean(axis=0), np.atleast_2d(np.cov(outputs, rowvar=False))
 
@@ -300,7 +288,7 @@ def analogue_dn_budget(
     Reject clipping at the nominal operating point and nonlinear detector maps.
     Quantisation, stochastic excursions across limits, biased nonlinear moments,
     and ADC/full-well saturation are NOT covered by the returned linear budget;
-    use ``monte_carlo_dn`` to study them. Dark means remain fixed in this map.
+    use ``sample_uncertain_readout`` to study them. Dark means remain fixed in this map.
 
     Args:
         electron_budget: Native first-order budget in electrons for nominal reads.
@@ -342,7 +330,7 @@ def analogue_dn_budget(
     )
 
 
-def monte_carlo_dn(
+def sample_uncertain_readout(
     evaluate: Callable[[Mapping[str, float]], ExpectedElectrons],
     parameters: Mapping[str, float],
     parameter_bias: NDArray[np.float64],
@@ -378,14 +366,55 @@ def monte_carlo_dn(
         ValueError: Parameter dimensions or count are invalid, covariance fails
             validation, or sampled charge changes nominal read identity or timing.
     """
+    nominal, draws = _sample_parameters(
+        evaluate, parameters, parameter_bias, parameter_covariance, rng, count, minimum_count=1
+    )
+    shape = (count, len(nominal.reads.sample_ids))
+    dn = np.empty(shape, dtype=np.int64)
+    well = np.empty(shape, dtype=np.bool_)
+    adc = np.empty(shape, dtype=np.bool_)
+    for i, draw in enumerate(draws):
+        trial = evaluate(draw)
+        native_difference(nominal, trial)
+        if not np.array_equal(nominal.reads.exposure_bounds_s, trial.reads.exposure_bounds_s):
+            raise ValueError("physical exposure intervals must match for DN sampling")
+        result = sample_readout(trial, electronics, rng)
+        dn[i], well[i], adc[i] = result.dn[0], result.full_well_saturated[0], result.adc_clipped[0]
+    return DetectorReadings(nominal.reads, dn, well, adc)
+
+
+def _sample_parameters(
+    evaluate: Callable[[Mapping[str, float]], ExpectedElectrons],
+    parameters: Mapping[str, float],
+    parameter_bias: NDArray[np.float64],
+    parameter_covariance: NDArray[np.float64],
+    rng: np.random.Generator,
+    count: int,
+    *,
+    minimum_count: int,
+) -> tuple[ExpectedElectrons, Iterator[dict[str, float]]]:
+    """Evaluate nominal charge, then draw all offsets before trials or readout noise.
+
+    Returns:
+        Nominal charge and an iterator of parameter mappings in insertion order.
+        All random offsets are drawn before this function returns.
+
+    Raises:
+        ValueError: Count, bias dimensions or covariance are invalid.
+    """
     if (
-        count < 1
+        count < minimum_count
         or parameter_bias.shape != (len(parameters),)
         or not np.isfinite(parameter_bias).all()
         or parameter_covariance.shape
         not in ((len(parameters),), (len(parameters), len(parameters)))
     ):
-        raise ValueError("DN sampling needs draws and matching parameter dimensions")
+        message = (
+            "Monte Carlo needs >=2 draws and matching parameter dimensions"
+            if minimum_count == 2
+            else "DN sampling needs draws and matching parameter dimensions"
+        )
+        raise ValueError(message)
     nominal = evaluate(parameters)
     draws = (
         sample_gaussian(factor_covariance(parameter_covariance, method="eigh"), rng, count)
@@ -393,15 +422,4 @@ def monte_carlo_dn(
     )
     keys = tuple(parameters)
     values = np.array(tuple(parameters.values()), dtype=np.float64)
-    shape = (count, len(nominal.reads.sample_ids))
-    dn = np.empty(shape, dtype=np.int64)
-    well = np.empty(shape, dtype=np.bool_)
-    adc = np.empty(shape, dtype=np.bool_)
-    for i, draw in enumerate(draws):
-        trial = evaluate(dict(zip(keys, values + draw, strict=True)))
-        native_difference(nominal, trial)
-        if not np.array_equal(nominal.reads.exposure_bounds_s, trial.reads.exposure_bounds_s):
-            raise ValueError("physical exposure intervals must match for DN sampling")
-        result = sample_readout(trial, electronics, rng)
-        dn[i], well[i], adc[i] = result.dn[0], result.full_well_saturated[0], result.adc_clipped[0]
-    return DetectorReadings(nominal.reads, dn, well, adc)
+    return nominal, (dict(zip(keys, values + draw, strict=True)) for draw in draws)

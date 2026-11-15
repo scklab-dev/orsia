@@ -17,7 +17,7 @@ from orsia_radiative import (
     SpectralGrid,
     WaterContinuumCoefficients,
     column_absorption_optical_depth,
-    integrate_log_linear_columns,
+    integrate_atmospheric_columns,
 )
 from orsia_scene import GasLayerColumns, gas_layer_columns
 from orsia_scene.optical_depth import SpatialOpticalDepth
@@ -106,7 +106,7 @@ def optical_preparation(atmosphere, arrays, **options):
 def preparation(atmosphere: LevelAtmosphere, a: dict[str, Any]) -> ReferenceLogTangentRenderer:
     optical_depth = optical_preparation(atmosphere, a)
     spectral, tables, continuum = coefficients(atmosphere, a)
-    base = integrate_log_linear_columns(
+    base = integrate_atmospheric_columns(
         atmosphere, surface_altitude_m=float(atmosphere.level_altitude_m[0])
     )
     reference = column_absorption_optical_depth(
@@ -202,7 +202,7 @@ def test_expansion_cube_equivalence_and_parallel_rows() -> None:
     baseline = expansion.column_mixing_ratio("CO2") * 1e6
     sigma_co2 = expansion.species_cross_sections("CO2")
     for pixel in [(0, 0), (8, 9), (15, 16)]:
-        path = integrate_log_linear_columns(
+        path = integrate_atmospheric_columns(
             atmosphere, surface_altitude_m=float(a["terrain"][pixel])
         )
         aerosol = (

@@ -87,10 +87,14 @@ class LevelAtmosphere:
         object.__setattr__(self, "species", tuple(self.species))
 
 
-def integrate_log_linear_columns(
+def integrate_atmospheric_columns(
     atmosphere: LevelAtmosphere, *, surface_altitude_m: float
 ) -> AtmosphericColumnIntegrals:
-    """Integrate the selected gas and water-density laws above a supplied surface.
+    """Integrate atmospheric material above a surface, including partial layers.
+
+    Gas and dry-air columns use log-linear density reconstruction with the
+    near-equal/zero-endpoint rule in ``log_linear_density_integral``. Water
+    self/foreign products integrate linear endpoint densities instead.
 
     Args:
         atmosphere: Immutable bottom-to-top levels and (level,species) dry-air ratios.
@@ -142,18 +146,8 @@ def integrate_log_linear_columns(
     upper_total, upper_dry, upper_water = moist_air_number_densities(p[1:], t[1:], q[1:])
     dry = log_linear_density_integral(lower_dry, upper_dry, thickness)
     species = log_linear_density_integral(lower_dry * lower_vmr, upper_dry * vmr[:, 1:], thickness)
-    self_product = thickness * (lower_water**2 + lower_water * upper_water + upper_water**2) / 3
-    lower_foreign = np.maximum(lower_total - lower_water, 0)
-    upper_foreign = np.maximum(upper_total - upper_water, 0)
-    foreign_product = (
-        thickness
-        * (
-            2 * lower_water * lower_foreign
-            + lower_water * upper_foreign
-            + upper_water * lower_foreign
-            + 2 * upper_water * upper_foreign
-        )
-        / 6
+    self_product, foreign_product = _water_density_products(
+        lower_total, upper_total, lower_water, upper_water, thickness
     )
     start = first if partial is None else partial
     dry[:start] = 0
@@ -241,3 +235,31 @@ def log_linear_density_integral(
         where=~trapezoid,
     )
     return result
+
+
+def _water_density_products(
+    lower_total: FloatArray,
+    upper_total: FloatArray,
+    lower_water: FloatArray,
+    upper_water: FloatArray,
+    thickness: FloatArray,
+) -> tuple[FloatArray, FloatArray]:
+    """Integrate self/foreign water products from linear endpoint densities.
+
+    Returns:
+        Fresh self and foreign product integrals in molecules2/m5 on layer axes.
+    """
+    self_product = thickness * (lower_water**2 + lower_water * upper_water + upper_water**2) / 3
+    lower_foreign = np.maximum(lower_total - lower_water, 0)
+    upper_foreign = np.maximum(upper_total - upper_water, 0)
+    foreign_product = (
+        thickness
+        * (
+            2 * lower_water * lower_foreign
+            + lower_water * upper_foreign
+            + upper_water * lower_foreign
+            + 2 * upper_water * upper_foreign
+        )
+        / 6
+    )
+    return self_product, foreign_product

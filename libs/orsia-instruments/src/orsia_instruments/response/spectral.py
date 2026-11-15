@@ -21,6 +21,7 @@ from orsia_instruments.photodetection.coefficients import (
     efficiency_samples,
     photon_conversion_weights,
 )
+from orsia_instruments.photodetection.photoelectrons import integrate_photoelectrons
 
 type FloatArray = NDArray[np.float64]
 type Vector = Sequence[float] | NDArray[np.floating | np.integer]
@@ -86,7 +87,12 @@ def spectral_electrons(
     ):
         raise ValueError("radiance must be finite nonnegative on the response samples")
     return ExpectedElectrons(
-        response.reads, {source_name: np.sum(response.coefficients * radiance, axis=1)}
+        response.reads,
+        {
+            source_name: integrate_photoelectrons(
+                response.coefficients, np.broadcast_to(radiance, shape)
+            )
+        },
     )
 
 

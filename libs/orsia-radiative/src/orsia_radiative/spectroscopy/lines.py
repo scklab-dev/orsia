@@ -55,6 +55,45 @@ def line_absorption(
         ValueError: Species or broadener is incompatible, layer conditions leave
             declared support, or evaluated line strengths/widths overflow.
     """
+    cross_sections = line_cross_sections(atmosphere, wavenumbers_cm1, inputs)
+    amounts, _ = _gas(atmosphere, inputs.species)
+    return AbsorptionComponent(
+        wavenumber_grid(wavenumbers_cm1),
+        inputs.species,
+        inputs.isotopologue,
+        "lorentz_lines" if inputs.molecular_mass_kg is None else "voigt_lines",
+        cross_sections * amounts[:, None],
+        line_wing_convention=(
+            "mt_ckd_local_25"
+            if inputs.subtract_lorentz_pedestal
+            else "unbounded"
+            if inputs.wing_cutoff_cm1 is None
+            else "truncated"
+        ),
+    )
+
+
+def line_cross_sections(
+    atmosphere: LayerAtmosphere,
+    wavenumbers_cm1: NDArray[np.float64] | SpectralGrid,
+    inputs: LineSet,
+) -> NDArray[np.float64]:
+    """Evaluate line cross sections directly at the declared broadening conditions.
+
+    Args:
+        atmosphere: Layer T/p and actual gas/air columns defining self and foreign
+            fractions. A declared absorber may have zero column; no division by
+            its abundance is performed. Total air remains strictly positive.
+        wavenumbers_cm1: Increasing wavenumber samples or grid in cm-1.
+        inputs: Materialised isotope lines, partition ratios and wing conventions.
+
+    Returns:
+        Fresh writable float64 (layer,spectral) cross sections in m2/molecule.
+        Broadening follows line_absorption, including its dry/total-air choice.
+
+    Raises:
+        ValueError: Conditions, support, broadening pools or evaluated profiles fail.
+    """
     sampling = wavenumber_grid(wavenumbers_cm1)
     wavenumbers_cm1 = sampling.points
     grid = wavenumbers_cm1
@@ -121,8 +160,8 @@ def line_absorption(
                 line.centre_cm1
                 + line.pressure_shift_ref_cm1 * pressure / inputs.reference_pressure_pa
             )
-            # cm/molecule * cm * 1e-4 m2/cm2 * molecule/m2 => dimensionless.
-            amplitude = amount * 1e-4 * strength
+            # cm/molecule * cm * 1e-4 m2/cm2 => m2/molecule.
+            amplitude = 1e-4 * strength
             sigma = None
             if inputs.molecular_mass_kg is not None:
                 sigma = (
@@ -161,20 +200,9 @@ def line_absorption(
                         )
                     np.maximum(block, 0.0, out=block)
                 values[start:stop] += block
-    return AbsorptionComponent(
-        sampling,
-        inputs.species,
-        inputs.isotopologue,
-        "lorentz_lines" if inputs.molecular_mass_kg is None else "voigt_lines",
-        rows,
-        line_wing_convention=(
-            "mt_ckd_local_25"
-            if inputs.subtract_lorentz_pedestal
-            else "unbounded"
-            if inputs.wing_cutoff_cm1 is None
-            else "truncated"
-        ),
-    )
+    if not np.isfinite(rows).all():
+        raise ValueError("line cross sections exceed finite numerical domain")
+    return rows
 
 
 @dataclass(frozen=True)

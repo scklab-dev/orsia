@@ -267,15 +267,15 @@ static py::array_t<double> spectral_orders(
             output[point] = direct;
             if (!max_order || !active) continue;
             if (!cells) throw std::invalid_argument("scattering orders requires angular directions");
-            prepare_kernel(depth.data(), mu.data(), t.data(), ht.data(), w.data(), hw.data(), sw.data(), shw.data(), previous.data(), true, mu0, cells, directions);
-            apply_kernel(mu.data(), zero.data(), t.data(), w.data(), ht.data(), hw.data(), bc.data(), be.data(), 1.0, cells, directions);
+            prepare_transfer(depth.data(), mu.data(), t.data(), ht.data(), w.data(), hw.data(), sw.data(), shw.data(), previous.data(), true, mu0, cells, directions);
+            propagate(mu.data(), zero.data(), t.data(), w.data(), ht.data(), hw.data(), bc.data(), be.data(), 1.0, cells, directions);
             bool reuse = true;
             for (py::ssize_t d = 0; d < directions; ++d)
                 if (mu[d] > 0 && be[d] < std::numeric_limits<double>::min()) reuse = false;
             const double boundary0 = amplitude * std::exp(-rayleigh_flux_sum(depth.data(), depth.size()) / mu0);
             if (reuse)
                 for (py::ssize_t i = 0; i < count; ++i) field[i] = bc[i] * boundary0;
-            else apply_kernel(mu.data(), zero.data(), t.data(), w.data(), ht.data(), hw.data(), field.data(), exits.data(), boundary0, cells, directions);
+            else propagate(mu.data(), zero.data(), t.data(), w.data(), ht.data(), hw.data(), field.data(), exits.data(), boundary0, cells, directions);
             for (py::ssize_t layer = 0; layer < layers; ++layer) {
                 const double r = irradiance[point] / (4.0 * pi) * strided_value(b[1], layer, point) / subdivisions;
                 const double a = irradiance[point] / (4.0 * pi) * strided_value(b[3], layer, point) *
@@ -287,7 +287,7 @@ static py::array_t<double> spectral_orders(
                     for (py::ssize_t sub = 0; sub < subdivisions; ++sub) beam[(layer * subdivisions + sub) * directions + d] = value;
                 }
             }
-            apply_kernel(mu.data(), beam.data(), t.data(), sw.data(), ht.data(), shw.data(), max_order > 1 ? beam_centres.data() : nullptr, beam_exits.data(), 0.0, cells, directions);
+            propagate(mu.data(), beam.data(), t.data(), sw.data(), ht.data(), shw.data(), max_order > 1 ? beam_centres.data() : nullptr, beam_exits.data(), 0.0, cells, directions);
             for (py::ssize_t order = 1; order <= max_order; ++order) {
                 std::fill(source.begin(), source.end(), 0.0);
                 if (b[1].ptr && layers > 2) {
@@ -307,7 +307,7 @@ static py::array_t<double> spectral_orders(
                     }
                 }
                 const bool retain = order < max_order;
-                apply_kernel(mu.data(), source.data(), t.data(), w.data(), ht.data(), hw.data(), retain ? field.data() : nullptr, exits.data(), 0.0, cells, directions);
+                propagate(mu.data(), source.data(), t.data(), w.data(), ht.data(), hw.data(), retain ? field.data() : nullptr, exits.data(), 0.0, cells, directions);
                 if (order == 1) {
                     for (py::ssize_t d = 0; d < directions; ++d) exits[d] += beam_exits[d];
                     if (retain) for (py::ssize_t i = 0; i < count; ++i) field[i] += beam_centres[i];
@@ -319,7 +319,7 @@ static py::array_t<double> spectral_orders(
                         for (py::ssize_t d = 0; d < directions; ++d) exits[d] += be[d] * boundary;
                         if (retain) for (py::ssize_t i = 0; i < count; ++i) field[i] += bc[i] * boundary;
                     } else {
-                        apply_kernel(mu.data(), zero.data(), t.data(), w.data(), ht.data(), hw.data(), retain ? temp.data() : nullptr, temp_exits.data(), boundary, cells, directions);
+                        propagate(mu.data(), zero.data(), t.data(), w.data(), ht.data(), hw.data(), retain ? temp.data() : nullptr, temp_exits.data(), boundary, cells, directions);
                         for (py::ssize_t d = 0; d < directions; ++d) exits[d] += temp_exits[d];
                         if (retain) for (py::ssize_t i = 0; i < count; ++i) field[i] += temp[i];
                     }

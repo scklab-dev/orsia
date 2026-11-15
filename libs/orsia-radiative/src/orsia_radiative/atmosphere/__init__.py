@@ -2,7 +2,7 @@
 
 from orsia_radiative.atmosphere.columns import AtmosphericColumnIntegrals
 from orsia_radiative.atmosphere.layers import Absorber, AirBroadener, LayerAtmosphere
-from orsia_radiative.atmosphere.levels import LevelAtmosphere, integrate_log_linear_columns
+from orsia_radiative.atmosphere.levels import LevelAtmosphere, integrate_atmospheric_columns
 
 __all__ = [
     "Absorber",
@@ -10,5 +10,5 @@ __all__ = [
     "LayerAtmosphere",
     "LevelAtmosphere",
     "AtmosphericColumnIntegrals",
-    "integrate_log_linear_columns",
+    "integrate_atmospheric_columns",
 ]

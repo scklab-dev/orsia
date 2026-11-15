@@ -21,6 +21,10 @@ from orsia_instruments.photodetection.coefficients import (
     weighted_photoelectron_response,
 )
 from orsia_instruments.photodetection.images import ImagePhotoelectrons
+from orsia_instruments.photodetection.photoelectrons import (
+    integrate_photoelectron_tangents,
+    integrate_photoelectrons,
+)
 from orsia_instruments.response.bands import NativeBandResponse
 
 type SurfaceRadiance = Callable[
@@ -69,10 +73,21 @@ def frame_response(
         ValueError: Instrument, detector, quadrature or spectral support is invalid.
     """
     require_wavenumber_grid(spectral_grid)
-    _, response = _frame_integrals(
-        camera, acquisition_grid, spectral_grid, None, read_batch_size, spectral_block_size
-    )
-    return response
+    grid = acquisition_grid
+    n, q = grid.rays.acquisition.times_s.shape
+    spectral_coefficients = np.empty((n, len(spectral_grid.points)))
+    marginal = np.zeros((n, q))
+    for selected, samples, coefficients in frame_response_coefficients(
+        camera,
+        grid,
+        spectral_grid,
+        batch_size=read_batch_size,
+        spectral_block_size=spectral_block_size,
+    ):
+        spectral_part, spatial_part = _response_marginals(coefficients)
+        spectral_coefficients[selected, samples] = spectral_part
+        marginal[selected] += spatial_part
+    return _band_response(grid, spectral_grid, spectral_coefficients, marginal)
 
 
 def frame_photoelectrons(
@@ -105,9 +120,35 @@ def frame_photoelectrons(
     """
     require_wavenumber_grid(spectral_grid)
     _require_coverage(acquisition_grid, spectral_grid, coverage)
-    counts, response = _frame_integrals(
-        camera, acquisition_grid, spectral_grid, radiance, read_batch_size, spectral_block_size
-    )
+    grid = acquisition_grid
+    acquisition = grid.rays.acquisition
+    n, q = acquisition.times_s.shape
+    counts = np.zeros(n)
+    spectral_coefficients = np.empty((n, len(spectral_grid.points)))
+    marginal = np.zeros((n, q))
+    for selected, samples, coefficients in frame_response_coefficients(
+        camera,
+        grid,
+        spectral_grid,
+        batch_size=read_batch_size,
+        spectral_block_size=spectral_block_size,
+    ):
+        spectral_part, spatial_part = _response_marginals(coefficients)
+        spectral_coefficients[selected, samples] = spectral_part
+        marginal[selected] += spatial_part
+        values = radiance(
+            grid.xy_m[selected].reshape(-1, 2),
+            grid.view_local[selected].reshape(-1, 3),
+            acquisition.times_s[selected].reshape(-1),
+            SpectralGrid(
+                spectral_grid.coordinate, spectral_grid.points[samples], spectral_grid.domain
+            ),
+        )
+        _require_radiance(values, (coefficients.shape[0] * q, coefficients.shape[2]))
+        counts[selected] += integrate_photoelectrons(
+            coefficients, values.reshape(coefficients.shape)
+        )
+    response = _band_response(grid, spectral_grid, spectral_coefficients, marginal)
     signal = ExpectedElectrons(response.reads, {"scene": counts})
     charge = ImagePhotoelectrons(signal, acquisition_grid.schedule, camera.optics.settings)
     return charge, response
@@ -185,18 +226,15 @@ def frame_electron_tangents(
         if seeds.shape[-1] != derivatives.shape[1]:
             raise ValueError("tangent direction count must remain constant across blocks")
         values = values.reshape(coefficients.shape)
-        counts[selected] += np.einsum("rqk,rqk->r", coefficients, values)
-        derivatives[selected] += np.einsum(
-            "rqk,rqkp->rp", coefficients, seeds.reshape((*coefficients.shape, seeds.shape[-1]))
+        response_seed = None if response_tangent is None else response_tangent(selected, samples)
+        value, delta = integrate_photoelectron_tangents(
+            coefficients,
+            values,
+            seeds.reshape((*coefficients.shape, seeds.shape[-1])),
+            response_seed,
         )
-        if response_tangent is not None:
-            response_seed = response_tangent(selected, samples)
-            if (
-                response_seed.shape != (*coefficients.shape, seeds.shape[-1])
-                or not np.isfinite(response_seed).all()
-            ):
-                raise ValueError("response tangents must match read/node/spectral/direction axes")
-            derivatives[selected] += np.einsum("rqkp,rqk->rp", response_seed, values)
+        counts[selected] += value
+        derivatives[selected] += delta
     if derivatives is None or not np.isfinite(derivatives).all():
         raise ValueError("nonempty finite electron tangent result required")
     return ExpectedElectrons(grid.schedule.reads, {source_name: counts}), derivatives
@@ -321,38 +359,25 @@ def frame_response_coefficients(
             yield selected, spectral_slice, coefficients
 
 
-def _frame_integrals(
-    camera: FilterCamera | FocalPlaneImager | DispersiveSpectrometer,
-    grid: SurfaceAcquisitionGrid,
-    spectral: SpectralGrid,
-    radiance: SurfaceRadiance | None,
-    batch_size: int,
-    spectral_block_size: int | None,
-) -> tuple[NDArray[np.float64], NativeBandResponse]:
+def _response_marginals(coefficients):
+    """Sum joint photon coefficients over nodes and spectral samples separately.
+
+    Returns:
+        Fresh (read,spectral) and (read,node) marginal coefficients.
+    """
+    return coefficients.sum(axis=1), coefficients.sum(axis=2)
+
+
+def _band_response(grid, spectral, spectral_coefficients, marginal) -> NativeBandResponse:
+    """Attach native identities and normalize the flat-spectrum spatial marginal.
+
+    Returns:
+        Owned native response with zero weights on zero-response reads.
+    """
     acquisition = grid.rays.acquisition
-    n, q = acquisition.times_s.shape
-    counts = np.zeros(n)
-    spectral_coefficients = np.empty((n, len(spectral.points)))
-    marginal = np.zeros((n, q))
-    for selected, spectral_slice, coefficients in frame_response_coefficients(
-        camera, grid, spectral, batch_size=batch_size, spectral_block_size=spectral_block_size
-    ):
-        spectral_coefficients[selected, spectral_slice] = coefficients.sum(axis=1)
-        marginal[selected] += coefficients.sum(axis=2)
-        if radiance is not None:
-            values = radiance(
-                grid.xy_m[selected].reshape(-1, 2),
-                grid.view_local[selected].reshape(-1, 3),
-                acquisition.times_s[selected].reshape(-1),
-                SpectralGrid(spectral.coordinate, spectral.points[spectral_slice], spectral.domain),
-            )
-            _require_radiance(values, (coefficients.shape[0] * q, coefficients.shape[2]))
-            counts[selected] += np.einsum(
-                "nqk,nqk->n", values.reshape(coefficients.shape), coefficients
-            )
     mass = marginal.sum(axis=1, keepdims=True)
     spatial_weights = np.divide(marginal, mass, out=np.zeros_like(marginal), where=mass > 0)
-    return counts, NativeBandResponse(
+    return NativeBandResponse(
         grid.schedule,
         spectral,
         grid.read_bands,

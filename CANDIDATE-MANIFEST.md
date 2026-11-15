@@ -2,7 +2,7 @@
 
 ## Source and selection
 
-This delivery selects tracked files from Orsia development commit `48bcb3fc06c51b23bcc6cc47fc70333fc3fa88a0` plus the accompanying contributor-documentation and ignore-rule corrections. It updates public commit `c63f38428bb130d31107d0be5210a0205818c601` on the existing public branch. Development Git history remains outside the delivery.
+This delivery selects tracked files from Orsia development commit `b6bbf52500b8bc5ea038ed63e9af216578acdbbf`. It updates public commit `c2ef820a22293ae37e741f0c1d1d6e6fef94825f` on the existing public branch, retaining the public licensing, provenance and documentation adaptations. Development Git history remains outside the delivery.
 
 - The nine complete library trees are Geometry, Numerics, Uncertainty, Radiative, Data, Instruments, Inverse, Dispersion and Scene. Each tree contains its metadata, source, tests, fixtures and maintained guides. Native C++ sources and shared headers are included.
 - Workspace configuration and dependency locks, root tests, examples, validation scripts, architecture assets, four executed notebooks, notebook support modules, recipes and scenario JSON files are included. Locks retain their source bytes; delivery preparation does not resolve dependencies.

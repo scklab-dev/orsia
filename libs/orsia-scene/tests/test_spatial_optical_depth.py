@@ -16,7 +16,7 @@ from orsia_radiative import (
     SpectralGrid,
     WaterContinuumCoefficients,
     column_absorption_optical_depth,
-    integrate_log_linear_columns,
+    integrate_atmospheric_columns,
 )
 from orsia_scene import SpatialOpticalDepth
 
@@ -70,7 +70,7 @@ def test_no_co2_material_and_optional_water_contribution():
     assert prepared.support is cells and prepared.atmosphere is atmosphere
     assert prepared.spectral is spectral and prepared.continuum is continuum
     for pixel in np.ndindex(cells.horizontal.shape):
-        columns = integrate_log_linear_columns(
+        columns = integrate_atmospheric_columns(
             atmosphere, surface_altitude_m=float(cells.surface_altitude_m[pixel])
         )
         expected = column_absorption_optical_depth(
@@ -191,7 +191,7 @@ def test_parallel_failure_settles_submitted_work(monkeypatch):
     import orsia_scene.optical_depth as owner
 
     atmosphere, spectral, table, cells = inputs()
-    original = owner.integrate_log_linear_columns
+    original = owner.integrate_atmospheric_columns
     started = Event()
 
     def controlled(atmosphere, *, surface_altitude_m):
@@ -203,7 +203,7 @@ def test_parallel_failure_settles_submitted_work(monkeypatch):
             raise ValueError("selected failed column")
         return original(atmosphere, surface_altitude_m=surface_altitude_m)
 
-    monkeypatch.setattr(owner, "integrate_log_linear_columns", controlled)
+    monkeypatch.setattr(owner, "integrate_atmospheric_columns", controlled)
     with ThreadPoolExecutor(max_workers=2) as pool:
         submitted = []
         submit = pool.submit

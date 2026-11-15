@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from orsia_dispersion.forcing import FloatArray
+from orsia_dispersion.transport import FloatArray
 
 
 @dataclass(frozen=True, kw_only=True)

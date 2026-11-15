@@ -2,16 +2,16 @@
 
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose, assert_array_equal
+from numpy.testing import assert_allclose
 from numpy.typing import NDArray
 from orsia_inverse import TrialDomainError, prior_from_precision, solve_damped_gaussian
-from orsia_inverse.design import exchange_channels, linear_target_uncertainty
+from orsia_inverse.contrast import estimate_shared_contrast_offset
 from orsia_inverse.detection import (
     aperture_scorer,
     calibrate_null_threshold,
     scan_compensated_apertures,
 )
-from orsia_inverse.shared_offset import estimate_shared_contrast_offset
+from orsia_inverse.diagnostics import linear_target_uncertainty
 from orsia_inverse.spatial import masked_second_difference_operator, solve_correlated_field
 from orsia_uncertainty import factor_covariance
 from orsia_uncertainty.spatial import covariance_from_marginals
@@ -125,7 +125,7 @@ def test_correlated_field_matches_dense_masked_map() -> None:
         solve_correlated_field(observation, lambda v: -v, diagonal, d, curvature_rms=0.05)
 
 
-def test_information_and_deterministic_discrete_search() -> None:
+def test_linear_target_information() -> None:
     matrix = np.array([[1.0, 0.0], [1.0, 1.0], [0.0, 2.0]])
     variance = np.array([1.0, 2.0, 3.0])
     result = linear_target_uncertainty(
@@ -138,20 +138,9 @@ def test_information_and_deterministic_discrete_search() -> None:
     assert_allclose(result["covariance"], expected, atol=1e-15)
     assert_allclose(result["target_weights"], (expected @ matrix.T / variance)[0], atol=1e-15)
 
-    def evaluate(selection: list[NDArray[np.float64]]) -> tuple[float, list[NDArray[np.float64]]]:
-        return float(1 + np.sum((selection[0] - np.array([1.0, 4.0])) ** 2)), selection
-
-    search = exchange_channels([np.arange(6.0)], [2.0], [np.array([0.0, 5.0])], evaluate)
-    assert search["converged"] and search["iterations"] > 0
-    assert_array_equal(search["optimized"][0], [1.0, 4.0])
-    assert_array_equal(search["initial"][0], [0.0, 5.0])
     with pytest.raises(ValueError):
         linear_target_uncertainty(
             matrix, factor_covariance(-variance, method="cholesky"), np.array([1.0, 0.0])
-        )
-    with pytest.raises(ValueError):
-        exchange_channels(
-            [np.arange(6.0)], [2.0], [np.array([0.0, 5.0])], evaluate, maximum_iterations=0
         )
 
 

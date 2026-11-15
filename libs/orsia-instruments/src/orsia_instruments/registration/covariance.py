@@ -30,10 +30,11 @@ def project_detector_covariance(
     states. Returns sparse G R diag(V) R.T G.T on selected C-order states and their
     cell indices. Compact maps use bounded local row products, with no global R,
     GR or radiance covariance. Actual source-row overlap determines candidate
-    states even for large or non-monotone shifts. Legacy CSR inputs remain readable.
+    states even for large or non-monotone shifts. General CSR inputs additionally
+    support band mixing, beyond the band-preserving compact-map contract.
 
     Args:
-        registration: Compact signed map or archived CSR over C-order cube cells.
+        registration: Compact signed map or general CSR over C-order cube cells.
         source_variance: Borrowed (row,column,band) independent source variances.
         local_gain: Matching scalar-state derivatives per measured radiance unit.
         state_support: Boolean (row,column) mask selecting scalar states.
@@ -61,10 +62,10 @@ def project_detector_covariance(
         raise ValueError("registration operator axes differ from cube")
     if not np.isfinite(gain[mask]).all():
         raise ValueError("supported local gain must be finite")
-    return _legacy_detector_covariance(registration, variance, gain, indices), indices
+    return _matrix_detector_covariance(registration, variance, gain, indices), indices
 
 
-def _legacy_gain_projection(
+def _gain_projection(
     registration: csr_matrix, gain: FloatArray, pixels: NDArray[np.int64]
 ) -> csr_matrix:
     bands = gain.shape[-1]
@@ -78,22 +79,22 @@ def _legacy_gain_projection(
     return projection
 
 
-def _legacy_detector_covariance(
+def _matrix_detector_covariance(
     registration: csr_matrix, variance: FloatArray, gain: FloatArray, indices: NDArray[np.int64]
 ) -> csr_matrix:
-    # Arbitrary archived CSR maps can mix bands. Bounded pairwise products retain
+    # General CSR maps can mix bands. Bounded pairwise products retain
     # that contract without a global GR; compact maps use geometric pruning below.
     count = max(1, STENCIL_BLOCK_CELLS // gain.shape[-1])
     blocks = []
     for start in range(0, len(indices), count):
-        left = _legacy_gain_projection(registration, gain, indices[start : start + count])
+        left = _gain_projection(registration, gain, indices[start : start + count])
         used = variance.flat[left.indices]
         if not np.isfinite(used).all() or np.any(used < 0):
             raise ValueError("used source variance must be finite and nonnegative")
         left.data *= used
         block = csr_matrix((left.shape[0], len(indices)))
         for offset in range(0, len(indices), count):
-            right = _legacy_gain_projection(registration, gain, indices[offset : offset + count])
+            right = _gain_projection(registration, gain, indices[offset : offset + count])
             local = registration_row_product(left, right)
             block += csr_matrix(
                 (local.data, local.indices + offset, local.indptr), shape=block.shape

@@ -8,7 +8,6 @@ from orsia_geometry import LayeredCells
 from scipy.integrate import quad_vec
 from scipy.linalg import solve_triangular
 
-from orsia_dispersion.forcing import FloatArray
 from orsia_dispersion.particles import ParticleMassField
 from orsia_dispersion.puffs.evaluation import (
     normal_interval_log_probability,
@@ -20,6 +19,7 @@ from orsia_dispersion.puffs.population import validate_boundary
 from orsia_dispersion.puffs.simulation import GaussianPuffField
 from orsia_dispersion.sampling import MassField
 from orsia_dispersion.stationary import StationaryGaussianPlume, stationary_profile
+from orsia_dispersion.transport import FloatArray
 
 _MOMENT_NODES, _MOMENT_WEIGHTS = np.polynomial.legendre.leggauss(8)
 _MOMENT_NODES.setflags(write=False)

@@ -1,6 +1,6 @@
 # Orsia Uncertainty
 
-`orsia-uncertainty` provides covariance algebra, signed-bias transport, explicit source cross-covariances and Gaussian ensembles. Dense arrays and source-projection records carry the values; callers define coordinates, units, physical error laws and random streams.
+`orsia-uncertainty` provides covariance algebra, signed-bias transport, explicit source cross-covariances and explicit perturbation ensembles. Dense arrays and source-projection records carry the values; callers define coordinates, units, physical error laws and random streams.
 
 ## Architecture
 
@@ -54,3 +54,10 @@ Run `devbox run -- just --justfile tests/justfile pytest libs/orsia-uncertainty/
 [`sparse_row_product`](src/orsia_uncertainty/sparse.py) compacts the used source-column domain before multiplying local sparse rows. Sparse covariance validation uses bounded dense work for at most 64 coordinates and sparse extreme-eigenvalue checks for larger non-diagonally-dominant matrices. [`covariance_from_marginals`](src/orsia_uncertainty/spatial.py) combines sparse detector covariance, common modes and the remaining independent marginal variance without double counting.
 
 [`sample_linear_process`](src/orsia_uncertainty/temporal.py) receives transition and covariance roots explicitly. It advances a caller-owned generator in chronological order, preserving the selected factorization and draw dimensions. [`statistics`](src/orsia_uncertainty/statistics.py) provides projected Gaussian sample summaries, Wilson binomial intervals, first half-probability crossing brackets and finite-interval metric sensitivities. Acceptance thresholds, physical error laws and campaign decisions remain caller responsibilities.
+
+
+## Standardized perturbations
+
+[`distributions.standardized_draw`](src/orsia_uncertainty/distributions.py) supplies zero-mean, unit-variance Gaussian, uniform, Student and contaminated-Gaussian draws. Student degrees of freedom must exceed two. The `shared` option uses one Student scale for the entire requested array; independent draws use one scale per component. Contamination parameters select the mixture before variance normalization. All draws use a caller-owned RNG.
+
+`sample_linear_process` accepts separate optional `initial_draw` and `innovation_draw` callbacks. Each callback returns a vector in standardized coordinates. Zero mean and identity covariance preserve the covariance implied by the supplied roots. Both defaults retain the original chronological Gaussian draw order. Selecting a non-Gaussian innovation law leaves the initial law Gaussian unless explicitly changed; covariance stationarity does not establish stationary higher moments.

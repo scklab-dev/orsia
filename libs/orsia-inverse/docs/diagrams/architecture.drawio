@@ -5,71 +5,61 @@
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="application" value="&lt;b&gt;Application&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Separate or fused prediction/Jacobian, or explicit matrix; observations, covariance and prior&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="80" y="60" width="1440" height="90" />
+        <mxCell id="package" value="orsia_inverse" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=23;fontColor=#52647A;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;verticalAlign=top;spacingTop=16;fontStyle=1;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="130" width="1520" height="640" />
         </mxCell>
-        <mxCell id="package" value="orsia_inverse" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=0;align=left;verticalAlign=top;spacingLeft=24;spacingTop=16;fontFamily=Helvetica;fontSize=23;fontStyle=1;fontColor=#52647A;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;container=1;collapsible=0;recursiveResize=0;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="250" width="1520" height="440" />
-        </mxCell>
-        <mxCell id="estimation" value="&lt;b&gt;nonlinear/&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;solve_map&lt;br&gt;solve_damped_gaussian&lt;br&gt;GaussianEstimate&lt;br&gt;FitTermination&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="package">
-          <mxGeometry as="geometry" x="40" y="100" width="400" height="240" />
-        </mxCell>
-        <mxCell id="diagnostics" value="&lt;b&gt;diagnostics.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;retrieval_diagnostics&lt;br&gt;Rank, posterior, gain&lt;br&gt;Averaging kernel&lt;br&gt;Separate availability check&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="package">
-          <mxGeometry as="geometry" x="600" y="100" width="420" height="240" />
-        </mxCell>
-        <mxCell id="choice" value="" style="ellipse;html=0;fillColor=#52647A;strokeColor=#52647A;fontColor=#52647A;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="796" y="196" width="8" height="8" />
-        </mxCell>
-        <mxCell id="application-choice" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=none;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="application" target="choice">
+        <mxCell id="application-package" value="" edge="1" parent="1" source="application" target="package" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;exitX=0.1;exitY=1;entryX=0.1;entryY=0;">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="call-estimation" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="estimation">
+        <mxCell id="package-dependencies" value="" edge="1" parent="1" source="package" target="dependencies" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry as="geometry" relative="1" />
+        </mxCell>
+        <mxCell id="estimation-prior" value="" edge="1" parent="package" source="estimation" target="priors" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;exitX=1;exitY=0.18;entryX=0;entryY=0.5;">
           <mxGeometry as="geometry" relative="1">
             <Array as="points">
-              <mxPoint x="280" y="200" />
+              <mxPoint x="490" y="180" />
+              <mxPoint x="490" y="60" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="call-diagnostics" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="diagnostics">
-          <mxGeometry as="geometry" relative="1">
-            <Array as="points">
-              <mxPoint x="850" y="200" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="estimate-value" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=1;exitY=0.5;entryX=0;entryY=0.5;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=1;" edge="1" parent="package" source="estimation" target="diagnostics">
+        <mxCell id="diagnostics-prior" value="" edge="1" parent="package" source="diagnostics" target="priors" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;exitX=0.5;exitY=0;entryX=0.5;entryY=1;">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="value-label" value="Estimate" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="485" y="395" width="140" height="30" />
-        </mxCell>
-        <mxCell id="value-label2" value="by the caller" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="485" y="430" width="140" height="26" />
-        </mxCell>
-        <mxCell id="dependencies" value="&lt;b&gt;Numerical dependencies&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;Uncertainty: factors and whitening | NumPy: SVD | SciPy: nonlinear least squares&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="80" y="760" width="1440" height="90" />
-        </mxCell>
-        <mxCell id="estimation-deps" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.1388888888888889;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="estimation" target="dependencies">
+        <mxCell id="estimate-value" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=1;exitX=1;exitY=0.55;entryX=0;entryY=0.55;" edge="1" parent="package" source="estimation" target="diagnostics">
           <mxGeometry as="geometry" relative="1" />
         </mxCell>
-        <mxCell id="diagnostics-deps" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5347222222222222;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="diagnostics" target="dependencies">
-          <mxGeometry as="geometry" relative="1" />
+        <mxCell id="application" value="&lt;b&gt;Application&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;Predictions and derivatives, observations, covariance models, coordinates, masks and criteria&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#FFFFFF;fillColor=#243B58;strokeColor=#243B58;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="20" width="1520" height="80" />
         </mxCell>
-        <mxCell id="key" value="Solid arrows: calls / dependencies. Dashed arrow: estimate passed by the caller." style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="65" y="860" width="1460" height="30" />
+        <mxCell id="dependencies" value="&lt;b&gt;Numerical dependencies&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;Orsia Uncertainty: covariance operations  |  NumPy: arrays and SVD  |  SciPy: solvers, sparse arrays and convolution&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#3F4F65;fillColor=#FFFFFF;strokeColor=#9BAABD;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry as="geometry" x="40" y="810" width="1520" height="75" />
         </mxCell>
-        <mxCell id="linear" value="&lt;b&gt;linear.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:22px&quot;&gt;solve_linear&lt;br&gt;Weighted minimum-norm fit&lt;br&gt;LinearEstimate&lt;br&gt;Rank + resolution diagnostics&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=22;fontFamily=Helvetica;fontSize=26;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="package">
-          <mxGeometry as="geometry" x="1080" y="100" width="400" height="240" />
+        <mxCell id="priors" value="&lt;b&gt;priors.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;QuadraticPrior: mean and precision root&lt;/span&gt;" vertex="1" parent="package" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#6D5523;fillColor=#FFF6E5;strokeColor=#C6A566;strokeWidth=1.5;">
+          <mxGeometry as="geometry" x="580" y="20" width="480" height="80" />
         </mxCell>
-        <mxCell id="call-linear" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.5;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="choice" target="linear">
-          <mxGeometry as="geometry" relative="1">
-            <Array as="points">
-              <mxPoint x="1320" y="200" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="estimation" value="&lt;b&gt;nonlinear/&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;solve_map&lt;br&gt;solve_damped_gaussian&lt;br&gt;GaussianEstimate + FitTermination&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="40" y="140" width="380" height="220" />
         </mxCell>
-        <mxCell id="linear-deps" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;exitX=0.5;exitY=1;entryX=0.8611111111111112;entryY=0;endArrow=block;endFill=1;endSize=9;strokeWidth=2;strokeColor=#52647A;fontColor=#52647A;fillColor=none;dashed=0;" edge="1" parent="1" source="linear" target="dependencies">
-          <mxGeometry as="geometry" relative="1" />
+        <mxCell id="diagnostics" value="&lt;b&gt;diagnostics.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;retrieval_diagnostics&lt;br&gt;local_gaussian_information&lt;br&gt;linear_target_uncertainty&lt;br&gt;Ranks, posterior, gain and averaging kernel&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="580" y="140" width="480" height="220" />
+        </mxCell>
+        <mxCell id="linear" value="&lt;b&gt;linear.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;solve_linear&lt;br&gt;Minimum-norm state&lt;br&gt;Sampling covariance&lt;br&gt;Rank and resolution&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#473564;fillColor=#F2EEFA;strokeColor=#A490C4;strokeWidth=1.5;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="1140" y="140" width="340" height="220" />
+        </mxCell>
+        <mxCell id="contrast" value="&lt;b&gt;contrast.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;helmert_basis and normalized_contrast&lt;br&gt;Derivative and covariance transport&lt;br&gt;estimate_shared_contrast_offset&lt;br&gt;Shared correction and common covariance&lt;/span&gt;" vertex="1" parent="package" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#205547;fillColor=#EAF5F0;strokeColor=#79AB99;strokeWidth=1.5;">
+          <mxGeometry as="geometry" x="40" y="430" width="740" height="180" />
+        </mxCell>
+        <mxCell id="spatial" value="&lt;b&gt;spatial.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;solve_correlated_field&lt;br&gt;Sparse regularization&lt;br&gt;Nested solve diagnostics&lt;/span&gt;" vertex="1" parent="package" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;">
+          <mxGeometry as="geometry" x="820" y="430" width="300" height="180" />
+        </mxCell>
+        <mxCell id="detection" value="&lt;b&gt;detection.py&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:21px&quot;&gt;scan_compensated_apertures&lt;br&gt;Score and uncertainty maps&lt;br&gt;Null-threshold calibration&lt;/span&gt;" vertex="1" parent="package" style="rounded=1;absoluteArcSize=1;arcSize=16;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=20;fontFamily=Helvetica;fontSize=24;fontColor=#203D62;fillColor=#EAF1FC;strokeColor=#789AC4;strokeWidth=1.5;">
+          <mxGeometry as="geometry" x="1160" y="430" width="320" height="180" />
+        </mxCell>
+        <mxCell id="value-label" value="Estimate" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="438" y="190" width="135" height="26" />
+        </mxCell>
+        <mxCell id="value-label2" value="by the caller" style="text;html=0;align=left;verticalAlign=middle;fontFamily=Helvetica;fontSize=20;fontStyle=0;fontColor=#52647A;fillColor=none;strokeColor=none;" vertex="1" parent="package">
+          <mxGeometry as="geometry" x="438" y="217" width="135" height="26" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -9,8 +9,8 @@ from collections.abc import Iterator
 import numpy as np
 from scipy.special import erf, gammainc, gammaincc, ndtr
 
-from orsia_dispersion.forcing import Boundary, FloatArray
 from orsia_dispersion.puffs.population import GaussianPuffs
+from orsia_dispersion.transport import Boundary, FloatArray
 
 
 def compact_kernel_parameters(radius: float | None) -> tuple[float, float]:

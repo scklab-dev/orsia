@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from orsia_dispersion.emissions import release_intervals
-from orsia_dispersion.forcing import Boundary, FloatArray, Wind, validate_tensors
+from orsia_dispersion.transport import Boundary, FloatArray, Wind, validate_tensors
 
 
 @dataclass(frozen=True)

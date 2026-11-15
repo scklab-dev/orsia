@@ -2,10 +2,10 @@
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from functools import partial
 
 import numpy as np
 
-from orsia_dispersion.forcing import Boundary, Diffusivity, FloatArray, Wind
 from orsia_dispersion.puffs.kernels import (
     compact_kernel_parameters,
     kernel_axis_cdf,
@@ -14,7 +14,7 @@ from orsia_dispersion.puffs.kernels import (
 from orsia_dispersion.puffs.population import (
     GaussianPuffs,
     PuffReleases,
-    puff_eigenvectors,
+    puff_principal_axes,
     split_puffs,
     validate_boundary,
 )
@@ -24,6 +24,7 @@ from orsia_dispersion.puffs.transport import (
     transport_step,
     validate_integration,
 )
+from orsia_dispersion.transport import Boundary, Diffusivity, FloatArray, Wind
 
 
 @dataclass(frozen=True)
@@ -215,9 +216,27 @@ def simulate_puffs(
     """
     multiplier, _ = compact_kernel_parameters(kernel_cutoff_radius)
     tail = kernel_envelope_tail(envelope_sigma, kernel_cutoff_radius)
-    releases = PuffReleases(
-        releases.release_times_s, releases.masses_kg, releases.centres_m, releases.covariances_m2
+    model = GaussianPuffDispersion(
+        releases=releases,
+        wind=wind,
+        diffusivity=diffusivity,
+        boundary=boundary,
+        rtol=rtol,
+        atol_position_m=atol_position_m,
+        atol_covariance_m2=atol_covariance_m2,
+        min_step_s=min_step_s,
+        max_step_s=max_step_s,
+        max_steps=max_steps,
+        envelope_sigma=envelope_sigma,
+        wind_tolerance_m_s=wind_tolerance_m_s,
+        diffusivity_tolerance_m2_s=diffusivity_tolerance_m2_s,
+        split_fraction=split_fraction,
+        max_puffs=max_puffs,
+        max_split_rounds=max_split_rounds,
+        discontinuities_s=discontinuities_s,
+        kernel_cutoff_radius=kernel_cutoff_radius,
     )
+    releases = model.releases
     times = np.array(output_times_s, dtype=np.float64, copy=True)
     breaks = np.asarray(discontinuities_s, dtype=np.float64)
     for name, values in (("outputs", times), ("discontinuities", breaks)):
@@ -242,141 +261,25 @@ def simulate_puffs(
         return
     events = np.unique(np.concatenate((times, releases.release_times_s, breaks)))
     events = events[(events >= start) & (events <= times[-1])]
-    attempts = splits = rounds = inserted = 0
-    max_error = max_variation = released_mass = 0.0
-
-    def check_spatial(state: GaussianPuffs) -> float:
-        nonlocal max_variation
-        if not len(state.masses_kg):
-            return 0.0
-        _, _, _, residual, variation = sample_forcing(
-            state, wind, diffusivity, boundary, envelope_sigma
-        )
-        ratios = np.maximum(residual / wind_tolerance_m_s, variation / diffusivity_tolerance_m2_s)
-        ratio = float(np.max(ratios, initial=0))
-        max_variation = max(max_variation, ratio)
-        bad = np.flatnonzero(np.max(ratios, axis=1) > 1)
-        if len(bad):
-            axes = np.argmax(ratios[bad], axis=1).astype(np.int64)
-            if boundary == "reflecting" and np.any(axes == 2):
-                raise ValueError("reflecting forcing has unresolved vertical variation")
-            _, vectors = puff_eigenvectors(state, boundary)
-            raise SpatialResolutionError(bad, vectors[bad, :, axes].copy(), ratio)
-        return ratio
-
-    def subdivide(failure: SpatialResolutionError) -> GaussianPuffs:
-        nonlocal rounds, splits
-        rounds += 1
-        if rounds > max_split_rounds or len(current.masses_kg) + len(failure.indices) > max_puffs:
-            raise RuntimeError(
-                f"split budget exhausted at event/last accepted time={current.time_s}; "
-                f"unresolved sampled ratio={failure.ratio}"
-            ) from failure
-        splits += len(failure.indices)
-        # Trial and accepted eigenvalue order can differ. Select the current
-        # eigenvector with greatest physical overlap with the failed probe.
-        _, vectors = puff_eigenvectors(current, boundary)
-        overlap = np.abs(np.einsum("pij,pi->pj", vectors[failure.indices], failure.directions))
-        axes = np.argmax(overlap[:, :2] if boundary == "reflecting" else overlap, axis=1)
-        return split_puffs(
-            current,
-            failure.indices,
-            axes,
-            np.full(len(failure.indices), split_fraction),
-            boundary=boundary,
-        )
-
+    evolution = _PuffEvolution(model, current)
     for event in events:
-        trial_step_s = max_step_s
-
-        def check_trial(state: GaussianPuffs, event_time: float = float(event)) -> float:
-            # The event's right-hand forcing belongs to the accepted event state,
-            # after insertion. It must not subdivide an upstream trial population.
-            return check_spatial(state) if state.time_s < event_time else 0.0
-
-        while current.time_s < event:
-            try:
-                check_spatial(current)
-                if len(current.masses_kg) and attempts >= max_steps:
-                    raise RuntimeError(
-                        f"step budget exhausted; last accepted time={current.time_s}"
-                    )
-                next_state, error, used = transport_step(
-                    current,
-                    float(event),
-                    wind,
-                    diffusivity,
-                    boundary=boundary,
-                    rtol=rtol,
-                    atol_position_m=atol_position_m,
-                    atol_covariance_m2=atol_covariance_m2,
-                    min_step_s=min_step_s,
-                    max_step_s=trial_step_s,
-                    max_steps=max_steps - attempts,
-                    envelope_sigma=envelope_sigma,
-                    spatial_check=check_trial,
-                )
-            except SpatialResolutionError as failure:
-                attempts += failure.attempts
-                current = subdivide(failure)
-                if failure.step_s:
-                    # Splitting creates current-state spatial headroom; shortening
-                    # the trial bounds growth from diffusion before the next check.
-                    # Neither operation alone guarantees progress at a size threshold.
-                    trial_step_s = max(min_step_s, failure.step_s / 2)
-                continue
-            current = next_state
-            attempts += used
-            max_error = max(max_error, error)
-            rounds = 0
-            trial_step_s = max_step_s
-        end = int(np.searchsorted(releases.release_times_s, event, side="right"))
-        if end > inserted:
-            if len(current.masses_kg) + end - inserted > max_puffs:
-                raise RuntimeError(f"release exceeds max_puffs at event time={event}")
-            current = GaussianPuffs(
-                float(event),
-                np.concatenate((current.release_times_s, releases.release_times_s[inserted:end])),
-                np.concatenate((current.masses_kg, releases.masses_kg[inserted:end])),
-                np.concatenate((current.centres_m, releases.centres_m[inserted:end])),
-                np.concatenate((current.covariances_m2, releases.covariances_m2[inserted:end])),
-            )
-            released_mass = float(np.sum(releases.masses_kg[:end]))
-            inserted = end
-        while True:
-            try:
-                ratio = check_spatial(current)
-                break
-            except SpatialResolutionError as failure:
-                current = subdivide(failure)
+        evolution.advance_to(float(event))
+        evolution.insert_releases(float(event))
+        ratio = evolution.resolve_spatial()
         if np.any(times == event):
-            mass = float(np.sum(current.masses_kg))
-            below = (
-                0.0
-                if boundary == "reflecting"
-                else float(
-                    np.sum(
-                        current.masses_kg
-                        * kernel_axis_cdf(
-                            -current.centres_m[:, 2]
-                            / (np.sqrt(current.covariances_m2[:, 2, 2]) * multiplier),
-                            kernel_cutoff_radius,
-                        )
-                    )
-                )
-            )
-            diagnostic = PuffDiagnostics(
-                0.0,
-                released_mass,
-                mass,
-                mass - released_mass,
-                below,
-                tail,
-                max_error,
-                ratio,
-                max_variation,
-                attempts,
-                splits,
+            current = evolution.current
+            diagnostic = _puff_diagnostics(
+                current,
+                boundary=boundary,
+                kernel_cutoff_radius=kernel_cutoff_radius,
+                multiplier=multiplier,
+                tail=tail,
+                released_mass=evolution.released_mass,
+                max_error=evolution.max_error,
+                ratio=ratio,
+                max_variation=evolution.max_variation,
+                attempts=evolution.attempts,
+                splits=evolution.splits,
             )
             yield (
                 GaussianPuffs(
@@ -388,3 +291,230 @@ def simulate_puffs(
                 ),
                 diagnostic,
             )
+
+
+class _PuffEvolution:
+    """Own one iterator's active population, release cursor and cumulative diagnostics.
+
+    The model belongs to the iterator and owns its release-history copy. Current
+    states are replaced after transport, release insertion or subdivision. Yielded
+    snapshots copy those buffers; evolution objects are never shared between calls.
+    """
+
+    def __init__(self, model: GaussianPuffDispersion, current: GaussianPuffs) -> None:
+        """Retain validated transport policy and an owned empty initial population."""
+        self.model = model
+        self.current = current
+        self.attempts = self.splits = self.rounds = self.inserted = 0
+        self.max_error = self.max_variation = self.released_mass = 0.0
+
+    def advance_to(self, event: float) -> None:
+        """Advance to an event, coordinating spatial splitting and trial duration.
+
+        Args:
+            event: Next release, output or forcing-break time in seconds.
+
+        Raises:
+            RuntimeError: Attempt, integration or subdivision budgets are exhausted.
+            ValueError: Sampled forcing violates its physical contract.
+        """
+        trial_step_s = self.model.max_step_s
+        check_trial = partial(self.check_trial, event_time=event)
+        while self.current.time_s < event:
+            try:
+                self.check_spatial(self.current)
+                if len(self.current.masses_kg) and self.attempts >= self.model.max_steps:
+                    raise RuntimeError(
+                        f"step budget exhausted; last accepted time={self.current.time_s}"
+                    )
+                next_state, error, used = transport_step(
+                    self.current,
+                    float(event),
+                    self.model.wind,
+                    self.model.diffusivity,
+                    boundary=self.model.boundary,
+                    rtol=self.model.rtol,
+                    atol_position_m=self.model.atol_position_m,
+                    atol_covariance_m2=self.model.atol_covariance_m2,
+                    min_step_s=self.model.min_step_s,
+                    max_step_s=trial_step_s,
+                    max_steps=self.model.max_steps - self.attempts,
+                    envelope_sigma=self.model.envelope_sigma,
+                    spatial_check=check_trial,
+                )
+            except SpatialResolutionError as failure:
+                self.attempts += failure.attempts
+                self.subdivide(failure)
+                if failure.step_s:
+                    # Splitting creates current-state spatial headroom; shortening
+                    # the trial bounds growth from diffusion before the next check.
+                    # Neither operation alone guarantees progress at a size threshold.
+                    trial_step_s = max(self.model.min_step_s, failure.step_s / 2)
+                continue
+            self.current = next_state
+            self.attempts += used
+            self.max_error = max(self.max_error, error)
+            self.rounds = 0
+            trial_step_s = self.model.max_step_s
+
+    def insert_releases(self, event: float) -> None:
+        """Insert all scheduled releases through the accepted event time.
+
+        Args:
+            event: Accepted event time in seconds, inclusive for release insertion.
+
+        Raises:
+            RuntimeError: Required releases exceed the population budget.
+        """
+        releases = self.model.releases
+        end = int(np.searchsorted(releases.release_times_s, event, side="right"))
+        if end > self.inserted:
+            if len(self.current.masses_kg) + end - self.inserted > self.model.max_puffs:
+                raise RuntimeError(f"release exceeds max_puffs at event time={event}")
+            self.current = GaussianPuffs(
+                float(event),
+                np.concatenate(
+                    (self.current.release_times_s, releases.release_times_s[self.inserted : end])
+                ),
+                np.concatenate((self.current.masses_kg, releases.masses_kg[self.inserted : end])),
+                np.concatenate((self.current.centres_m, releases.centres_m[self.inserted : end])),
+                np.concatenate(
+                    (self.current.covariances_m2, releases.covariances_m2[self.inserted : end])
+                ),
+            )
+            self.released_mass = float(np.sum(releases.masses_kg[:end]))
+            self.inserted = end
+
+    def resolve_spatial(self) -> float:
+        """Subdivide the event population until its sampled forcing is resolved.
+
+        Returns:
+            Largest normalized spatial residual for the resolved event state.
+        """
+        while True:
+            try:
+                return self.check_spatial(self.current)
+            except SpatialResolutionError as failure:
+                self.subdivide(failure)
+
+    def check_trial(self, state: GaussianPuffs, *, event_time: float) -> float:
+        """Check upstream trials; event forcing is checked after release insertion.
+
+        Returns:
+            Sampled residual ratio, or zero at and beyond the next event.
+        """
+        return self.check_spatial(state) if state.time_s < event_time else 0.0
+
+    def check_spatial(self, state: GaussianPuffs) -> float:
+        """Measure spatial resolution and retain the maximum trial/event residual.
+
+        Returns:
+            Largest normalized sampled residual, zero for an empty population.
+
+        Raises:
+            ValueError: Reflecting forcing has unresolved vertical variation.
+            SpatialResolutionError: A probe exceeds its spatial tolerance.
+        """
+        if not len(state.masses_kg):
+            return 0.0
+        _, _, _, residual, variation = sample_forcing(
+            state,
+            self.model.wind,
+            self.model.diffusivity,
+            self.model.boundary,
+            self.model.envelope_sigma,
+        )
+        ratios = np.maximum(
+            residual / self.model.wind_tolerance_m_s,
+            variation / self.model.diffusivity_tolerance_m2_s,
+        )
+        ratio = float(np.max(ratios, initial=0))
+        self.max_variation = max(self.max_variation, ratio)
+        bad = np.flatnonzero(np.max(ratios, axis=1) > 1)
+        if len(bad):
+            axes = np.argmax(ratios[bad], axis=1).astype(np.int64)
+            if self.model.boundary == "reflecting" and np.any(axes == 2):
+                raise ValueError("reflecting forcing has unresolved vertical variation")
+            _, vectors = puff_principal_axes(state, self.model.boundary)
+            raise SpatialResolutionError(bad, vectors[bad, :, axes].copy(), ratio)
+        return ratio
+
+    def subdivide(self, failure: SpatialResolutionError) -> None:
+        """Replace failing parents along the current axes matching failed probes.
+
+        Raises:
+            RuntimeError: Consecutive subdivision or population budget is exhausted.
+        """
+        self.rounds += 1
+        if (
+            self.rounds > self.model.max_split_rounds
+            or len(self.current.masses_kg) + len(failure.indices) > self.model.max_puffs
+        ):
+            raise RuntimeError(
+                f"split budget exhausted at event/last accepted time={self.current.time_s}; "
+                f"unresolved sampled ratio={failure.ratio}"
+            ) from failure
+        self.splits += len(failure.indices)
+        # Trial and accepted eigenvalue order can differ. Select the current
+        # eigenvector with greatest physical overlap with the failed probe.
+        _, vectors = puff_principal_axes(self.current, self.model.boundary)
+        overlap = np.abs(np.einsum("pij,pi->pj", vectors[failure.indices], failure.directions))
+        axes = np.argmax(overlap[:, :2] if self.model.boundary == "reflecting" else overlap, axis=1)
+        self.current = split_puffs(
+            self.current,
+            failure.indices,
+            axes,
+            np.full(len(failure.indices), self.model.split_fraction),
+            boundary=self.model.boundary,
+        )
+
+
+def _puff_diagnostics(
+    state: GaussianPuffs,
+    *,
+    boundary: Boundary,
+    kernel_cutoff_radius: float | None,
+    multiplier: float,
+    tail: float,
+    released_mass: float,
+    max_error: float,
+    ratio: float,
+    max_variation: float,
+    attempts: int,
+    splits: int,
+) -> PuffDiagnostics:
+    """Combine mass accounting with supplied scalar evolution diagnostics.
+
+    State buffers are borrowed without mutation. The kernel multiplier and tail
+    probability come from the same cutoff and forcing envelope as the simulation.
+
+    Returns:
+        Immutable scalar diagnostics at the supplied state's time.
+    """
+    mass = float(np.sum(state.masses_kg))
+    below = (
+        0.0
+        if boundary == "reflecting"
+        else float(
+            np.sum(
+                state.masses_kg
+                * kernel_axis_cdf(
+                    -state.centres_m[:, 2] / (np.sqrt(state.covariances_m2[:, 2, 2]) * multiplier),
+                    kernel_cutoff_radius,
+                )
+            )
+        )
+    )
+    return PuffDiagnostics(
+        0.0,
+        released_mass,
+        mass,
+        mass - released_mass,
+        below,
+        tail,
+        max_error,
+        ratio,
+        max_variation,
+        attempts,
+        splits,
+    )

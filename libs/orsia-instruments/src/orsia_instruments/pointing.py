@@ -8,6 +8,9 @@ from collections.abc import Sequence
 
 import numpy as np
 from numpy.typing import NDArray
+from orsia_uncertainty.covariance import factor_covariance
+from orsia_uncertainty.distributions import standardized_draw
+from scipy.signal import lfilter
 
 type FloatArray = NDArray[np.float64]
 type BoolArray = NDArray[np.bool_]
@@ -144,6 +147,71 @@ def smooth_pointing_state_space(
     innovation = stationary - transition @ stationary @ transition.T
 
     return stationary, transition, innovation
+
+
+def smooth_pointing_process(
+    rate: float,
+    angular: ArrayInput,
+    period: float,
+    count: int,
+    rng: np.random.Generator,
+    *,
+    distribution: str = "gaussian",
+    degrees: float = 5.0,
+) -> FloatArray:
+    """Draw stationary Matérn-3/2 state-space pointing, radians (time,axis).
+
+    Args:
+        rate: Positive decay rate, 1/s.
+        angular: Two-axis stationary covariance (2,2), rad2.
+        period: Constant positive sample period, seconds.
+        count: Positive number of samples including the initial position.
+        rng: Borrowed explicit random generator.
+        distribution: Standardized Gaussian, uniform or Student innovation law.
+        degrees: Student degrees of freedom greater than two.
+
+    Returns:
+        Owned float64 (time,axis) angles in radians. Initial state and each Student
+        innovation use independent shared scales. The initial draw precedes count
+        innovation vectors; the first innovation is consumed but replaced by the
+        initial state, preserving the established seeded sequence. Innovation
+        Gaussian entries precede their per-row Student scales. The covariance is
+        stationary; non-Gaussian higher moments need not be stationary.
+
+    Raises:
+        ValueError: Timing, sample count, covariance or innovation law is invalid.
+    """
+    if (
+        rate <= 0
+        or period <= 0
+        or not np.isfinite(rate + period)
+        or type(count) is not int
+        or count < 1
+    ):
+        raise ValueError("positive pointing timing and sample count required")
+    angular = np.asarray(angular, float)
+    if angular.shape != (2, 2):
+        raise ValueError("two-axis stationary covariance required")
+    stationary, _, innovation = smooth_pointing_state_space(rate, angular, period)
+    a = np.exp(-rate * period)
+    stationary_factor = factor_covariance(stationary, method="eigh")
+    stationary_root = np.sqrt(stationary_factor.scale) * stationary_factor.root
+    initial = stationary_root @ standardized_draw(rng, 4, distribution, degrees, shared=True)
+    # Each row has its own shared Student-t scale, independently of other innovations.
+    if distribution == "student_t":
+        standard = (
+            rng.standard_normal((count, 4))
+            * np.sqrt((degrees - 2) / rng.chisquare(degrees, count))[:, None]
+        )
+    else:
+        standard = standardized_draw(rng, (count, 4), distribution, degrees)
+    innovation_factor = factor_covariance(innovation, method="eigh")
+    innovation_root = np.sqrt(innovation_factor.scale) * innovation_factor.root
+    draws = standard @ innovation_root.T
+    draws[0] = initial
+    forcing = draws[:, :2].copy()
+    forcing[1:] += a * period * draws[:-1, 2:] + a * (rate * period - 1) * draws[:-1, :2]
+    return lfilter([1.0], [1.0, -2 * a, a * a], forcing, axis=0)
 
 
 def _rpe_fraction(x: float) -> float:

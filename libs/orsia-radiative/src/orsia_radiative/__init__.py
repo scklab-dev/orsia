@@ -5,7 +5,7 @@ from orsia_radiative.atmosphere import (
     AtmosphericColumnIntegrals,
     LayerAtmosphere,
     LevelAtmosphere,
-    integrate_log_linear_columns,
+    integrate_atmospheric_columns,
 )
 from orsia_radiative.atmosphere.hydrostatic import (
     gas_columns_from_fraction,
@@ -101,7 +101,11 @@ from orsia_radiative.spectroscopy.measurements import (
     interpolate_cross_section_measurements,
     measurement_absorption,
 )
-from orsia_radiative.spectroscopy.references import LineSpectroscopy, evaluate_line_absorption
+from orsia_radiative.spectroscopy.references import (
+    LineSpectroscopy,
+    evaluate_line_absorption,
+    evaluate_line_cross_sections,
+)
 from orsia_radiative.surface import SurfaceState
 
 from . import transfer
@@ -109,7 +113,7 @@ from . import transfer
 __all__ = [
     "LevelAtmosphere",
     "AtmosphericColumnIntegrals",
-    "integrate_log_linear_columns",
+    "integrate_atmospheric_columns",
     "column_absorption_optical_depth",
     "WaterContinuumCoefficients",
     "water_continuum_coefficients",
@@ -119,6 +123,7 @@ __all__ = [
     "integrate_path_optical_depth_tangent",
     "LineSpectroscopy",
     "evaluate_line_absorption",
+    "evaluate_line_cross_sections",
     "CrossSectionSpectrum",
     "CrossSectionMeasurements",
     "CrossSectionTemperatures",

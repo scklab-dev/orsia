@@ -7,14 +7,15 @@ from typing import Literal
 import numpy as np
 
 from orsia_radiative.atmosphere import LayerAtmosphere
-from orsia_radiative.spectral.grid import SpectralGrid
+from orsia_radiative.spectral.grid import SpectralGrid, convert_spectral_grid
 from orsia_radiative.spectroscopy.components import AbsorptionComponent
+from orsia_radiative.spectroscopy.cross_sections import LayerCrossSections
 from orsia_radiative.spectroscopy.line_tables import (
     PartitionFunctionTable,
     SpectralLineTable,
     line_set,
 )
-from orsia_radiative.spectroscopy.lines import line_absorption
+from orsia_radiative.spectroscopy.lines import LineSet, line_absorption, line_cross_sections
 
 
 @dataclass(frozen=True, eq=False)
@@ -101,6 +102,86 @@ def evaluate_line_absorption(
         EmptyLineSelection: A covered selection has no transitions.
         ValueError: Grid, wing margin, identity, temperatures, pressures or profile are invalid.
     """
+    inputs = _reference_lines(
+        atmosphere,
+        grid,
+        reference,
+        profile,
+        pressure_range_pa,
+        wing_cutoff_cm1,
+        subtract_lorentz_pedestal,
+    )
+    return line_absorption(atmosphere, grid, inputs)
+
+
+def evaluate_line_cross_sections(
+    atmosphere: LayerAtmosphere,
+    grid: SpectralGrid,
+    reference: LineSpectroscopy,
+    *,
+    profile: Literal["voigt", "lorentz"],
+    pressure_range_pa: tuple[float, float],
+    wing_cutoff_cm1: float,
+    subtract_lorentz_pedestal: bool,
+) -> LayerCrossSections[np.float64]:
+    """Prepare reusable cross sections without dividing by absorber abundance.
+
+    Args:
+        atmosphere: Explicit layer temperatures, pressures, height interfaces and
+            actual gas/air columns defining self and foreign broadening fractions.
+            Zero target columns are allowed with valid broadening conditions.
+        grid: Increasing target samples in nm or cm-1, with declared support.
+        reference: Isotope transitions, partition sums, mass and complete intervals.
+        profile: Explicit Voigt or Lorentz profile.
+        pressure_range_pa: Inclusive pressure validity in Pa.
+        wing_cutoff_cm1: Positive finite wing radius, cm-1.
+        subtract_lorentz_pedestal: Select local H2O 25 cm-1 pedestal subtraction.
+
+    Returns:
+        Immutable layer cross sections in m2/molecule, with exact T/p and heights.
+        Coefficients apply at the supplied composition; reuse at another broadening
+        composition requires reevaluation. No water continuum is included.
+
+    Raises:
+        EmptyLineSelection: A complete covered interval contains no selected lines.
+        ValueError: Physical conditions, reference support or profile choices fail.
+    """
+    spectral = grid if grid.coordinate == "wavenumber_cm1" else convert_spectral_grid(grid)
+    inputs = _reference_lines(
+        atmosphere,
+        spectral,
+        reference,
+        profile,
+        pressure_range_pa,
+        wing_cutoff_cm1,
+        subtract_lorentz_pedestal,
+    )
+    values = line_cross_sections(atmosphere, spectral, inputs)
+    if grid.coordinate == "wavelength_nm":
+        values = values[:, ::-1]
+    return LayerCrossSections(
+        reference.species,
+        inputs.isotopologue,
+        "cross_section",
+        grid,
+        atmosphere.temperature_k,
+        atmosphere.pressure_pa,
+        values,
+        height_edges_m=atmosphere.height_boundaries_m,
+        line_wing_convention="mt_ckd_local_25" if subtract_lorentz_pedestal else "truncated",
+        includes_water_continuum=False,
+    )
+
+
+def _reference_lines(
+    atmosphere: LayerAtmosphere,
+    grid: SpectralGrid,
+    reference: LineSpectroscopy,
+    profile: Literal["voigt", "lorentz"],
+    pressure_range_pa: tuple[float, float],
+    wing_cutoff_cm1: float,
+    subtract_lorentz_pedestal: bool,
+) -> LineSet:
     if profile not in ("voigt", "lorentz"):
         raise ValueError("profile must be voigt or lorentz")
     # Try only intervals that can contain the requested grid; propagate physical
@@ -125,5 +206,5 @@ def evaluate_line_absorption(
             )
             if profile == "lorentz":
                 inputs = replace(inputs, molecular_mass_kg=None)
-            return line_absorption(atmosphere, grid, inputs)
+            return inputs
     raise ValueError("requested grid outside declared complete line intervals")

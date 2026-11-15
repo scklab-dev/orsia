@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from orsia_dispersion.emissions import release_intervals
-from orsia_dispersion.forcing import Boundary, FloatArray, validate_tensors
+from orsia_dispersion.transport import Boundary, FloatArray, validate_tensors
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ def split_puffs(
         raise ValueError("fractions must be finite and match indices")
     if np.any((fractions <= 0) | (fractions >= 1)):
         raise ValueError("split fractions must lie strictly between zero and one")
-    values, vectors = puff_eigenvectors(state, boundary)
+    values, vectors = puff_principal_axes(state, boundary)
     direction = vectors[indices, :, axes]
     variance = fractions * values[indices, axes]
     offset = np.sqrt(variance)[:, None] * direction
@@ -193,7 +193,7 @@ def validate_boundary(state: GaussianPuffs, boundary: Boundary) -> None:
             raise ValueError("reflecting covariance must be vertically separable")
 
 
-def puff_eigenvectors(state: GaussianPuffs, boundary: Boundary) -> tuple[FloatArray, FloatArray]:
+def puff_principal_axes(state: GaussianPuffs, boundary: Boundary) -> tuple[FloatArray, FloatArray]:
     """Return principal variances and directions for splitting and envelope probes.
 
     Args:
@@ -201,7 +201,10 @@ def puff_eigenvectors(state: GaussianPuffs, boundary: Boundary) -> tuple[FloatAr
         boundary: Reflecting mode orders horizontal eigenvectors before vertical.
 
     Returns:
-        Variances (p,3) and orthonormal column eigenvectors (p,3,3), fresh arrays.
+        Principal variances (p,3) in m2 and dimensionless orthonormal column
+        directions (p,3,3), as fresh writable arrays. Free-space variances are
+        ascending. Reflecting mode orders the two ascending horizontal variances
+        first and the vertical variance last; the full triplet need not be sorted.
     """
     if boundary == "free":
         return np.linalg.eigh(state.covariances_m2)

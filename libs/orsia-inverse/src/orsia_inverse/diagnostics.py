@@ -1,6 +1,7 @@
 """Local Gauss-Newton information, separate from optimisation and scientific qualification."""
 
 from dataclasses import dataclass
+from typing import TypedDict
 
 import numpy as np
 from numpy.typing import NDArray
@@ -8,6 +9,20 @@ from orsia_uncertainty import CovarianceFactor, whiten
 
 from orsia_inverse.nonlinear.estimation import GaussianEstimate
 from orsia_inverse.priors import QuadraticPrior
+
+
+class LinearTargetUncertainty(TypedDict):
+    """Conditional Gaussian posterior and target measurement weights.
+
+    Attributes:
+        covariance: Owned (parameter,parameter) posterior in squared state units.
+        target_weights: Owned (measurement,) gain for the supplied linear target.
+        target_sigma: Target standard uncertainty in its caller-defined unit.
+    """
+
+    covariance: NDArray[np.float64]
+    target_weights: NDArray[np.float64]
+    target_sigma: float
 
 
 @dataclass(frozen=True, eq=False)
@@ -138,6 +153,64 @@ def local_gaussian_information(
         rank_rtol,
         max_bytes,
         None,
+    )
+
+
+def linear_target_uncertainty(
+    design: NDArray[np.float64],
+    observation_factor: CovarianceFactor,
+    target: NDArray[np.float64],
+    *,
+    prior: QuadraticPrior | None = None,
+    rank_rtol: float = 1e-12,
+    max_bytes: int = 256 * 1024 * 1024,
+) -> LinearTargetUncertainty:
+    """Compute local uncertainty and measurement gain for an explicit linear target.
+
+    For target coefficients a, the target is a.T @ state. Rank handling and
+    covariance arithmetic are shared with retrieval diagnostics. A coordinate
+    target uses its unit basis vector. Numerical damping contributes no information.
+
+    Args:
+        design: Float64 response derivatives (measurement,state), in matching units.
+        observation_factor: Conditioned covariance factor in measurement order.
+        target: Finite float64 (state,) coefficients in target-unit/state-unit.
+        prior: Optional quadratic penalty in the same fitted coordinates.
+        rank_rtol: Relative singular-value threshold for augmented rank.
+        max_bytes: Estimated dense array storage budget, excluding native SVD scratch.
+
+    Returns:
+        Owned posterior covariance, target measurement weights and standard uncertainty.
+
+    Raises:
+        ValueError: Dimensions, values or numerical controls are invalid.
+        MemoryError: Estimated dense storage exceeds the supplied budget.
+        numpy.linalg.LinAlgError: Augmented information is rank deficient.
+    """
+    if (
+        design.ndim != 2
+        or target.shape != (design.shape[1],)
+        or target.dtype != np.float64
+        or not np.isfinite(target).all()
+    ):
+        raise ValueError("target must be a finite float64 vector in design state order")
+    information = local_gaussian_information(
+        design,
+        observation_factor,
+        prior=prior,
+        include_gain=True,
+        rank_rtol=rank_rtol,
+        max_bytes=max_bytes,
+    )
+    if not information.available:
+        raise np.linalg.LinAlgError(information.reason)
+    posterior, gain = information.posterior_covariance, information.gain
+    assert posterior is not None and gain is not None
+    variance = float(target @ posterior @ target)
+    if not np.isfinite(variance) or variance < 0:
+        raise ValueError("target variance must be finite and nonnegative")
+    return dict(
+        covariance=posterior, target_weights=target @ gain, target_sigma=float(np.sqrt(variance))
     )
 
 

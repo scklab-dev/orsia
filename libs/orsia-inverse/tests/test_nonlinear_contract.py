@@ -17,8 +17,8 @@ from orsia_inverse import (
     solve_damped_gaussian,
     solve_map,
 )
-from orsia_inverse.design import linear_target_uncertainty
 from orsia_inverse.detection import scan_compensated_apertures
+from orsia_inverse.diagnostics import linear_target_uncertainty
 from orsia_uncertainty import factor_covariance
 
 

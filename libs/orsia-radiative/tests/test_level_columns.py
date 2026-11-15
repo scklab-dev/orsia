@@ -10,7 +10,7 @@ from orsia_radiative import (
     SpectralGrid,
     WaterContinuumCoefficients,
     column_absorption_optical_depth,
-    integrate_log_linear_columns,
+    integrate_atmospheric_columns,
 )
 from orsia_radiative.atmosphere.levels import (
     log_linear_density_integral,
@@ -34,7 +34,7 @@ def column() -> LevelAtmosphere:
 def test_isothermal_exponential_column_and_indexing(column: LevelAtmosphere) -> None:
     expected = 8000 * 1e5 / (1.380649e-23 * 280) * (np.exp(-50 / 8000) - np.exp(-300 / 8000))
     saved = replace(column)
-    path = integrate_log_linear_columns(column, surface_altitude_m=50.0)
+    path = integrate_atmospheric_columns(column, surface_altitude_m=50.0)
     np.testing.assert_allclose(path.layer_dry_air_column_molecules_m2.sum(), expected, rtol=2e-12)
     np.testing.assert_allclose(
         path.layer_species_column_molecules_m2[:, 0].sum(), expected * 0.0004, rtol=2e-12
@@ -45,7 +45,7 @@ def test_isothermal_exponential_column_and_indexing(column: LevelAtmosphere) -> 
     assert path.first_complete_layer_index == 1
     np.testing.assert_allclose(path.surface_pressure_pa, 1e5 * np.exp(-50 / 8000), rtol=1e-15)
     for i, altitude in enumerate(column.level_altitude_m[:-1]):
-        exact = integrate_log_linear_columns(column, surface_altitude_m=float(altitude) + 0.5e-6)
+        exact = integrate_atmospheric_columns(column, surface_altitude_m=float(altitude) + 0.5e-6)
         assert exact.surface_altitude_m == altitude
         assert exact.first_complete_layer_index == i
         assert exact.partial_layer_index is None
@@ -56,7 +56,7 @@ def test_isothermal_exponential_column_and_indexing(column: LevelAtmosphere) -> 
     with ThreadPoolExecutor(max_workers=2) as pool:
         outputs = list(
             pool.map(
-                lambda _: integrate_log_linear_columns(column, surface_altitude_m=50.0), range(3)
+                lambda _: integrate_atmospheric_columns(column, surface_altitude_m=50.0), range(3)
             )
         )
     for output in outputs:
@@ -70,7 +70,7 @@ def test_isothermal_exponential_column_and_indexing(column: LevelAtmosphere) -> 
 
 def test_endpoint_water_products_and_depth(column: LevelAtmosphere) -> None:
     column = replace(column, level_specific_humidity_kg_kg=np.full(4, 0.01))
-    path = integrate_log_linear_columns(column, surface_altitude_m=150.0)
+    path = integrate_atmospheric_columns(column, surface_altitude_m=150.0)
     pressure = np.r_[1e5 * np.exp(-150 / 8000), column.level_pressure_pa[2:]]
     total = pressure / (1.380649e-23 * 280)
     water_fraction = (0.01 / 0.01801528) / (0.01 / 0.01801528 + 0.99 / 0.0289647)
@@ -138,7 +138,7 @@ def test_density_integral_limits_and_broadcast() -> None:
 @pytest.mark.parametrize("altitude", [-2e-6, 300.0, 299.9999995, np.nan])
 def test_invalid_terrain(column: LevelAtmosphere, altitude: float) -> None:
     with pytest.raises(ValueError, match="surface"):
-        integrate_log_linear_columns(column, surface_altitude_m=altitude)
+        integrate_atmospheric_columns(column, surface_altitude_m=altitude)
 
 
 @pytest.mark.parametrize(
@@ -156,7 +156,7 @@ def test_invalid_terrain(column: LevelAtmosphere, altitude: float) -> None:
 )
 def test_invalid_columns(column: LevelAtmosphere, change: dict) -> None:
     with pytest.raises(ValueError):
-        integrate_log_linear_columns(
+        integrate_atmospheric_columns(
             replace(column, **cast(dict[str, Any], change)), surface_altitude_m=0.0
         )
 
@@ -181,7 +181,7 @@ def test_invalid_density_integral(bad: float) -> None:
     "change", ["sections_shape", "self_shape", "foreign_shape", "negative", "nonfinite"]
 )
 def test_invalid_optical_depth(column: LevelAtmosphere, change: str) -> None:
-    path = integrate_log_linear_columns(column, surface_altitude_m=0.0)
+    path = integrate_atmospheric_columns(column, surface_altitude_m=0.0)
     sections, own, foreign = np.ones((2, 3, 5)), np.ones((3, 5)), np.ones((3, 5))
     if change == "sections_shape":
         sections = sections[:, :-1]
@@ -227,17 +227,17 @@ def coefficient_inputs(column, sections, own, foreign):
 
 
 def test_optional_zero_based_indices_and_species_permutation(column):
-    top = integrate_log_linear_columns(column, surface_altitude_m=250.0)
+    top = integrate_atmospheric_columns(column, surface_altitude_m=250.0)
     assert top.partial_layer_index == 2 and top.first_complete_layer_index is None
     permuted = replace(
         column, species=column.species[::-1], species_vmr=column.species_vmr[:, ::-1]
     )
-    other = integrate_log_linear_columns(permuted, surface_altitude_m=250.0)
+    other = integrate_atmospheric_columns(permuted, surface_altitude_m=250.0)
     np.testing.assert_array_equal(
         top.layer_species_column_molecules_m2[:, ::-1], other.layer_species_column_molecules_m2
     )
     empty = replace(column, species=(), species_vmr=np.empty((4, 0)))
-    air = integrate_log_linear_columns(empty, surface_altitude_m=0.0)
+    air = integrate_atmospheric_columns(empty, surface_altitude_m=0.0)
     assert air.layer_species_column_molecules_m2.shape == (3, 0)
     for array in (column.species_vmr, top.layer_species_column_molecules_m2, top.height_edges_m):
         with pytest.raises(ValueError):

@@ -91,8 +91,8 @@ ROOT_EXPORTS = {
     "optics.cavities": ("cavity_transmission cavity_imager"),
     "sampling.angular": ("AngularRadianceSamples sample_radiance uniform_radiance_field"),
     "tolerances": (
-        "NativeSignalBudget analogue_dn_budget central_difference monte_carlo_dn "
-        "monte_carlo_native native_difference native_sensitivities "
+        "NativeSignalBudget analogue_dn_budget central_difference sample_uncertain_readout "
+        "electron_error_statistics native_difference native_sensitivities "
         "native_tolerance_budget"
     ),
 }

@@ -10,12 +10,12 @@ from orsia_instruments.optics.psfs import SpatialDensity
 from orsia_instruments.optics.response import (
     ImagingOptics,
     SpectralParameter,
-    constant_or_default,
     exposure_setting,
     imaging_optics,
     setting_at_exposure,
     spatial_offset,
     spectral_value,
+    validation_scalar,
 )
 
 
@@ -137,9 +137,9 @@ def interferometric_imager(
     two_beam_ports(
         1.0,
         opd,
-        phase_rad=constant_or_default(phase_rad, 0),
-        visibility=constant_or_default(visibility, 1),
-        transmission=constant_or_default(transmission, 1),
+        phase_rad=validation_scalar(phase_rad, 0),
+        visibility=validation_scalar(visibility, 1),
+        transmission=validation_scalar(transmission, 1),
     )
 
     def law(exposure: int, x: float, y: float, wave: NDArray[np.float64]) -> NDArray[np.float64]:

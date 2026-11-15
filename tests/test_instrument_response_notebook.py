@@ -27,8 +27,8 @@ from notebooks.support.notebook_ground_pixel import (
     detector_channels,
     direct_scene_read,
     image_channels,
-    physical_kernel,
     reconstruction,
+    scene_to_electron_response,
     synthetic_scene,
 )
 from notebooks.support.notebook_instrument_responses import extract_figures
@@ -63,7 +63,7 @@ def test_kernel_requires_declared_entrance_band(settings, radiance):
         radiance.geometry,
     )
     with pytest.raises(ValueError, match="entrance-band endpoints"):
-        physical_kernel(architecture("Uniform filter", settings), broader, settings)
+        scene_to_electron_response(architecture("Uniform filter", settings), broader, settings)
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -93,7 +93,7 @@ def test_complete_edge_exposures_and_mapping(family, settings):
 @pytest.mark.parametrize("family", FAMILIES)
 def test_physical_stencil_against_direct_public_acquisition(family, settings, radiance):
     layout = architecture(family, settings)
-    kernel = physical_kernel(layout, radiance, settings)
+    kernel = scene_to_electron_response(layout, radiance, settings)
     assert kernel.shape == (layout.read_count, 5, 5, 101)
     assert np.all(kernel >= 0)
     # Asymmetric spatial and spectral structure exercises signed channel mixing,
@@ -119,7 +119,7 @@ def test_physical_stencil_against_direct_public_acquisition(family, settings, ra
 
 def test_ports_sum_to_relay_and_exposure_scaling(settings, radiance):
     layout = architecture("Two-beam interferometer", settings)
-    kernel = physical_kernel(layout, radiance, settings)
+    kernel = scene_to_electron_response(layout, radiance, settings)
     relay_layout = architecture("Uniform filter", settings)
     # Identical Gaussian geometry makes complementary port sum independent of OPD.
     total = kernel[:32] + kernel[32:]
@@ -127,9 +127,9 @@ def test_ports_sum_to_relay_and_exposure_scaling(settings, radiance):
         total, np.broadcast_to(total[:1], total.shape), rtol=2e-12, atol=1e-14
     )
     changed = replace(settings, throughput=settings.throughput / 2)
-    half = physical_kernel(relay_layout, radiance, changed)
+    half = scene_to_electron_response(relay_layout, radiance, changed)
     np.testing.assert_allclose(
-        2 * half, physical_kernel(relay_layout, radiance, settings), rtol=1e-13
+        2 * half, scene_to_electron_response(relay_layout, radiance, settings), rtol=1e-13
     )
 
 
@@ -142,7 +142,7 @@ def test_separable_quadrature_and_photon_conversion(family, settings, radiance):
         settings = replace(settings, pixel_order=16)
     layout = architecture(family, settings)
     order = 4
-    kernel = physical_kernel(layout, radiance, settings, angular_order=order)
+    kernel = scene_to_electron_response(layout, radiance, settings, angular_order=order)
     nodes, weights = np.polynomial.legendre.leggauss(order)
 
     def interval(edges, current_nodes=nodes, current_weights=weights):
@@ -300,7 +300,7 @@ def test_native_detector_identities_groups_draws_and_covariance(settings):
 
 def test_scene_edges_and_detector_combination(settings, radiance):
     layout = architecture("Two-beam interferometer", settings)
-    kernel = physical_kernel(layout, radiance, settings)
+    kernel = scene_to_electron_response(layout, radiance, settings)
     weights, _, _ = reconstruction(layout, kernel, radiance)
     maps, spectra = synthetic_scene(radiance)
     native, channels = image_channels(
@@ -326,7 +326,7 @@ def test_scene_edges_and_detector_combination(settings, radiance):
 
 def test_signed_reconstructed_response_against_all_direct_ports(settings, radiance):
     layout = architecture("Two-beam interferometer", settings)
-    kernel = physical_kernel(layout, radiance, settings)
+    kernel = scene_to_electron_response(layout, radiance, settings)
     weights, effective, _ = reconstruction(layout, kernel, radiance)
     spectrum = radiance.values * (1 + 0.25 * np.sin(np.arange(101) * 0.37))
     # Deliberately outside the eight-bin basis: test the high-resolution response.

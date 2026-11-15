@@ -341,3 +341,91 @@ def test_numerical_projected_cross_rejection_and_masked_support():
         accumulate_observations(replace(result, indices=np.array([0])), csr_array([[0.0, 1.0]]))
     with pytest.raises(ValueError):
         normalized_accumulation_weights(csr_array([[0.2, 0.2]]), 2)
+
+
+def test_compact_coaddition_quotient_derivative_and_shared_blocks():
+    from orsia_instruments.calibration.radiometry import coadd_readings
+
+    q = np.array([[5.0, 12.0, 4.0], [9.0, 10.0, 8.0], [np.nan, np.nan, np.nan]])
+    norm = np.array([1.0, 3.0, 2.0])
+    valid = np.array([[True, True, False], [True, True, True], [False, False, False]])
+    weights = np.array([[1.0, 2.0, 1.0], [2.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
+    gain = np.linspace(0.1, 0.9, 9)[:, None]
+    offset = np.full((9, 1), 0.2)
+    ds = np.linspace(0.2, 1.0, 9)[:, None]
+    maps = RadiometricParameterMaps(("calibration",), ("1",), gain, offset, ds)
+    result = coadd_readings(
+        q,
+        sensitivity=norm,
+        read_variance=np.ones(q.shape),
+        read_valid=valid,
+        weights=weights,
+        parameters=maps,
+        parameter_covariance=np.array([0.04]),
+        read_parameter_cross_covariance="zero",
+        read_bias=np.full(q.shape, -0.3),
+        parameter_bias=np.array([0.1]),
+    )
+    a = np.where(valid, weights, 0)
+    charge = np.nan_to_num(q)
+    denominator = np.sum(a * norm, axis=1)[:2]
+    expected = np.sum(a * charge, axis=1)[:2] / denominator
+    np.testing.assert_allclose(result.values[:2], expected)
+    assert np.isnan(result.values[2])
+    epsilon = 1e-5
+
+    def perturbed(sign):
+        d = sign * epsilon
+        return (
+            np.sum(
+                a * (charge * (1 + d * gain.reshape(q.shape)) - d * offset.reshape(q.shape)), axis=1
+            )[:2]
+            / np.sum(a * (norm + d * ds.reshape(q.shape)), axis=1)[:2]
+        )
+
+    finite = (perturbed(1) - perturbed(-1)) / (2 * epsilon)
+    np.testing.assert_allclose(result.parameter_sensitivity[:, 0], finite, rtol=2e-9)
+    independent = np.sum(a * a, axis=1)[:2] / denominator**2
+    np.testing.assert_allclose(
+        dense(result.covariance), np.diag(independent) + 0.04 * np.outer(finite, finite), rtol=2e-9
+    )
+    assert result.bias is not None
+    np.testing.assert_allclose(
+        result.bias, -0.3 * np.sum(a, axis=1)[:2] / denominator + 0.1 * finite, rtol=2e-9
+    )
+    assert isinstance(result.covariance, ProjectedCovariance)
+    assert result.covariance.source_covariances[0].size == 3  # groups, never reads
+    columns = []
+    for index in range(2):
+        block_maps = RadiometricParameterMaps(
+            maps.names,
+            maps.units,
+            gain[index * 3 : index * 3 + 3],
+            offset[index * 3 : index * 3 + 3],
+            ds[index * 3 : index * 3 + 3],
+        )
+        block = coadd_readings(
+            q[index : index + 1],
+            sensitivity=norm,
+            read_variance=np.ones((1, 3)),
+            read_valid=valid[index : index + 1],
+            weights=weights[index : index + 1],
+            parameters=block_maps,
+            parameter_covariance=np.array([0.04]),
+            read_parameter_cross_covariance="zero",
+        )
+        columns.append(block.parameter_sensitivity)
+    joined = np.concatenate(columns)
+    np.testing.assert_allclose(joined, result.parameter_sensitivity)
+    assert (joined @ np.array([[0.04]]) @ joined.T)[0, 1] != 0
+    with pytest.raises(ValueError, match="cross"):
+        coadd_readings(
+            q,
+            sensitivity=norm,
+            read_variance=np.ones(q.shape),
+            read_valid=valid,
+            parameters=maps,
+            parameter_covariance=np.array([0.04]),
+        )
+    with pytest.raises(ValueError):
+        coadd_readings(q, sensitivity=-norm, read_variance=np.ones(q.shape), read_valid=valid)

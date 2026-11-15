@@ -18,6 +18,7 @@ from orsia_instruments import (
     combine_image_source_paths,
     dispersive_imager,
     electron_covariance,
+    electron_error_statistics,
     exposure_sequence,
     filter_imager,
     gaussian_filter,
@@ -25,7 +26,6 @@ from orsia_instruments import (
     image_readout,
     interferometric_imager,
     lvf_imager,
-    monte_carlo_native,
     native_sensitivities,
     native_tolerance_budget,
     regular_pixel_bounds,
@@ -455,7 +455,7 @@ def test_composed_image_parameter_bias_covariance_against_monte_carlo():
         covariance,
         electron_covariance(nominal, DetectorElectronics(read_noise_electrons=3)),
     )
-    mc_bias, mc_covariance = monte_carlo_native(
+    mc_bias, mc_covariance = electron_error_statistics(
         evaluate_parameters, parameters, bias, covariance, np.random.default_rng(921), 1600
     )
     # Six standard errors for two declared outputs; covariance relative norm

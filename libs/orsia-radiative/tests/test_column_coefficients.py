@@ -16,7 +16,7 @@ from orsia_radiative import (
     compose_absorption_on_grid,
     convert_spectral_grid,
     evaluate_table_absorption,
-    integrate_log_linear_columns,
+    integrate_atmospheric_columns,
     water_continuum_absorption,
     water_continuum_coefficients,
     wavenumber_grid,
@@ -164,7 +164,7 @@ def test_column_contraction_requires_actual_declared_axes_and_pairing():
         ("H2O",),
         np.full((3, 1), 0.01),
     )
-    columns = integrate_log_linear_columns(levels, surface_altitude_m=500.0)
+    columns = integrate_atmospheric_columns(levels, surface_altitude_m=500.0)
     table = LayerCrossSections(
         "H2O",
         "all",
@@ -223,7 +223,7 @@ def test_material_integral_snapshot_invariants():
         ("CH4",),
         np.full((3, 1), 1e-6),
     )
-    material = integrate_log_linear_columns(levels, surface_altitude_m=100.0)
+    material = integrate_atmospheric_columns(levels, surface_altitude_m=100.0)
     assert material.partial_layer_index is None and material.first_complete_layer_index == 1
     changes: dict[str, Any]
     for changes in (

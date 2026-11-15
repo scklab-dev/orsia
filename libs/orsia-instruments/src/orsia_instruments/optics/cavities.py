@@ -10,12 +10,12 @@ from orsia_instruments.optics.psfs import SpatialDensity
 from orsia_instruments.optics.response import (
     ImagingOptics,
     SpectralParameter,
-    constant_or_default,
     exposure_setting,
     imaging_optics,
     setting_at_exposure,
     spatial_offset,
     spectral_value,
+    validation_scalar,
 )
 
 
@@ -180,12 +180,12 @@ def cavity_imager(
     cavity_transmission(
         1.0,
         spacing,
-        refractive_index=constant_or_default(refractive_index, 1),
+        refractive_index=validation_scalar(refractive_index, 1),
         internal_angle_rad=internal_angle_rad,
-        reflectivity=constant_or_default(reflectivity, 0.8),
-        coating_phase_rad=constant_or_default(coating_phase_rad, 0),
+        reflectivity=validation_scalar(reflectivity, 0.8),
+        coating_phase_rad=validation_scalar(coating_phase_rad, 0),
         peak=peak,
-        order_transmission=constant_or_default(order_transmission, 1),
+        order_transmission=validation_scalar(order_transmission, 1),
     )
 
     def law(exposure: int, x: float, y: float, wave: NDArray[np.float64]) -> NDArray[np.float64]:

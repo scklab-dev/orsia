@@ -117,6 +117,12 @@ assert find_spec('orsia_instruments') is None
 assert find_spec('satkit') is None
 from orsia_geometry import LocalCartesianFrame, PointLattice, RectangularCells, LayeredCells
 from orsia_dispersion import GaussianPuffs, GaussianPuffField, pixel_layer_moments
+from orsia_dispersion.transport import validate_tensors
+assert find_spec('orsia_dispersion.forcing') is None
+assert validate_tensors.__module__ == 'orsia_dispersion.transport'
+from orsia_dispersion.puffs import population
+assert not hasattr(population, 'puff_eigenvectors')
+assert callable(population.puff_principal_axes)
 from orsia_scene import gas_layer_columns
 import numpy as np
 from orsia_radiative import (
@@ -149,6 +155,9 @@ state = GaussianPuffs(
     0., np.zeros(1), np.array([3.]), np.array([[0.,0.,2.]]),
     np.array([np.diag([4.,9.,1.])]),
 )
+variances, axes = population.puff_principal_axes(state, 'reflecting')
+np.testing.assert_array_equal(variances, [[4.,9.,1.]])
+np.testing.assert_array_equal(axes, np.eye(3)[None])
 mass = pixel_layer_moments(GaussianPuffField(state, "reflecting"), cells)
 gas = gas_layer_columns(mass, species="CH4", molar_mass_kg_mol=0.016)
 assert gas.support is mass.support is cells
@@ -292,6 +301,7 @@ filter_namespace = {{}}
 for code in {filter_blocks!r}:
     exec(code, filter_namespace)
 namespace = runpy.run_path({str(example)!r})
+assert 'make_callbacks' not in namespace
 for mode in ('independent_column', 'heterogeneous_direct_solar'):
     value, tangent = namespace['detector_prediction'](
         mode=mode, inputs=namespace['synthetic_inputs'](), angular_order=3, spectral_count=9)

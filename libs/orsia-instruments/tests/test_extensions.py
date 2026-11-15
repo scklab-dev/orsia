@@ -14,19 +14,19 @@ from orsia_instruments import (
     combine_source_paths,
     digitize,
     electron_covariance,
+    electron_error_statistics,
     electron_moments,
     expected_electrons,
-    monte_carlo_dn,
-    monte_carlo_native,
     native_sensitivities,
     native_tolerance_budget,
     pixel_acceptance,
     pixel_quantum_efficiency,
     read_schedule,
     sample_readout,
+    sample_uncertain_readout,
     tabulated_transmission,
 )
-from orsia_uncertainty import validate_covariance
+from orsia_uncertainty import factor_covariance, sample_gaussian, validate_covariance
 from scipy.integrate import quad
 from test_instruments import acquisition, field, unity  # pyrefly: ignore[missing-import]
 
@@ -276,7 +276,7 @@ def test_tolerance_linear_analytic_monte_carlo_and_identity_rejection():
     np.testing.assert_allclose(budget.signed_bias, [-0.4, -0.9], atol=1e-11)
     np.testing.assert_allclose(budget.instrument_covariance, j @ covariance @ j.T)
     assert budget.jacobian.flags.writeable
-    mc_bias, mc_cov = monte_carlo_native(
+    mc_bias, mc_cov = electron_error_statistics(
         evaluate, {"band": 0.0, "pointing": 0.0}, bias, covariance, np.random.default_rng(99), 12000
     )
     np.testing.assert_allclose(mc_bias, budget.signed_bias, atol=0.015)
@@ -293,7 +293,7 @@ def test_tolerance_linear_analytic_monte_carlo_and_identity_rejection():
         analogue_dn_budget(budget, nominal, DetectorElectronics(full_well_electrons=100))
     with pytest.raises(ValueError, match="nonlinear"):
         analogue_dn_budget(budget, nominal, replace(points(), nonlinearity=np.array([0.1, 0.0])))
-    draws = monte_carlo_dn(
+    draws = sample_uncertain_readout(
         evaluate,
         {"band": 0.0, "pointing": 0.0},
         bias,
@@ -346,12 +346,12 @@ def test_nonlinear_linearisation_limit_and_dn_sampling_saturation():
         covariance,
         electron_covariance(nominal, DetectorElectronics()),
     )
-    mean, mc_cov = monte_carlo_native(
+    mean, mc_cov = electron_error_statistics(
         nonlinear, {"offset": 1.0}, bias, covariance, np.random.default_rng(71), 3000
     )
     assert mean[0] > 1.0  # positive quadratic mean shift absent from the Jacobian
     assert mc_cov[0, 0] > budget.instrument_covariance[0, 0]
-    readings = monte_carlo_dn(
+    readings = sample_uncertain_readout(
         nonlinear,
         {"offset": 1.0},
         bias,
@@ -412,11 +412,11 @@ def test_array_parameter_laws_reject_invalid_bias_and_covariance_shapes():
         (np.full(1, np.nan), np.ones(1)),
     ):
         with pytest.raises(ValueError, match="parameter dimensions"):
-            monte_carlo_native(
+            electron_error_statistics(
                 evaluate, {"offset": 0.0}, bias, covariance, np.random.default_rng(1), 2
             )
         with pytest.raises(ValueError, match="parameter dimensions"):
-            monte_carlo_dn(
+            sample_uncertain_readout(
                 evaluate,
                 {"offset": 0.0},
                 bias,
@@ -425,3 +425,69 @@ def test_array_parameter_laws_reject_invalid_bias_and_covariance_shapes():
                 np.random.default_rng(1),
                 2,
             )
+
+
+@pytest.mark.parametrize("count", [1, 2, 7])
+@pytest.mark.parametrize("dense", [False, True])
+def test_parameter_sampling_preserves_order_and_rng_consumption(count, dense):
+    reads = read_schedule(two_reads())
+    parameters = {"pointing": 0.4, "band": -0.2}
+    bias = np.array([0.03, -0.01])
+    covariance = np.array([[0.02, 0.005], [0.005, 0.01]]) if dense else np.array([0.02, 0.01])
+    electronics = DetectorElectronics(full_well_electrons=150, bias_dn=4, read_noise_electrons=2)
+    calls = []
+
+    def evaluate(values):
+        calls.append(dict(values))
+        return ExpectedElectrons(
+            reads,
+            {
+                "scene": np.array(
+                    [
+                        100 + 2 * values["pointing"] + values["band"],
+                        200 - values["pointing"] + 3 * values["band"],
+                    ]
+                )
+            },
+        )
+
+    reference_rng = np.random.default_rng(712)
+    nominal = evaluate(parameters)
+    offsets = (
+        sample_gaussian(factor_covariance(covariance, method="eigh"), reference_rng, count) + bias
+    )
+    states = [
+        dict(zip(parameters, np.array(list(parameters.values())) + offset, strict=True))
+        for offset in offsets
+    ]
+    outputs = [sample_readout(evaluate(state), electronics, reference_rng) for state in states]
+    calls.clear()
+    rng = np.random.default_rng(712)
+    actual = sample_uncertain_readout(
+        evaluate, parameters, bias, covariance, electronics, rng, count
+    )
+    assert calls == [parameters, *states]
+    assert rng.bit_generator.state == reference_rng.bit_generator.state
+    for name in ("dn", "full_well_saturated", "adc_clipped"):
+        np.testing.assert_array_equal(
+            getattr(actual, name), np.concatenate([getattr(x, name) for x in outputs])
+        )
+
+    rng = np.random.default_rng(712)
+    calls.clear()
+    if count == 1:
+        before = rng.bit_generator.state
+        with pytest.raises(ValueError, match=">=2"):
+            electron_error_statistics(evaluate, parameters, bias, covariance, rng, count)
+        assert not calls
+        assert rng.bit_generator.state == before
+    else:
+        reference_rng = np.random.default_rng(712)
+        sample_gaussian(factor_covariance(covariance, method="eigh"), reference_rng, count)
+        errors = np.array([evaluate(state).total - nominal.total for state in states])
+        calls.clear()
+        mean, cov = electron_error_statistics(evaluate, parameters, bias, covariance, rng, count)
+        assert calls == [parameters, *states]
+        assert rng.bit_generator.state == reference_rng.bit_generator.state
+        np.testing.assert_array_equal(mean, errors.mean(axis=0))
+        np.testing.assert_array_equal(cov, np.atleast_2d(np.cov(errors, rowvar=False)))

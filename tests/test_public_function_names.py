@@ -4,11 +4,17 @@ import importlib
 
 import orsia_dispersion
 import orsia_instruments
+import orsia_inverse
 import orsia_radiative
 import orsia_uncertainty
 import pytest
 
 FUNCTIONS = (
+    (orsia_instruments, "channels", "refine_channels", False),
+    (orsia_instruments, "response.spatial", "form_detector_images", False),
+    (orsia_instruments, "response.spatial", "form_detector_images_with_tangents", False),
+    (orsia_inverse, "diagnostics", "linear_target_uncertainty", False),
+    (orsia_dispersion, "transport", "validate_tensors", False),
     (orsia_dispersion, "sampling", "sample_fields", True),
     (orsia_dispersion, "evaluation", "concentration", True),
     (orsia_dispersion, "evaluation", "layer_columns", True),
@@ -52,3 +58,63 @@ def test_function_is_owned_by_its_module_and_root_exports_match(root, module, na
         assert name in root.__all__
     else:
         assert name not in root.__all__
+
+
+@pytest.mark.parametrize(
+    "module,old,new",
+    [
+        ("orsia_instruments.tolerances", "monte_carlo_native", "electron_error_statistics"),
+        ("orsia_instruments.tolerances", "monte_carlo_dn", "sample_uncertain_readout"),
+        ("orsia_instruments.channels", "exchange_channels", "refine_channels"),
+        ("orsia_instruments.response.spatial", "sample_fourier_exposures", "form_detector_images"),
+        (
+            "orsia_instruments.response.spatial",
+            "sample_fourier_exposure_tangents",
+            "form_detector_images_with_tangents",
+        ),
+        (
+            "orsia_radiative.atmosphere.levels",
+            "integrate_log_linear_columns",
+            "integrate_atmospheric_columns",
+        ),
+        ("orsia_dispersion.puffs.population", "puff_eigenvectors", "puff_principal_axes"),
+        ("orsia_instruments.optics.response", "constant_or_default", "validation_scalar"),
+        (
+            "notebooks.support.notebook_ground_pixel",
+            "physical_kernel",
+            "scene_to_electron_response",
+        ),
+    ],
+)
+def test_role_based_names_replace_old_declarations_without_aliases(module, old, new):
+    owner = importlib.import_module(module)
+    assert not hasattr(owner, old)
+    assert getattr(owner, new).__name__ == new
+    assert getattr(owner, new).__module__ == module
+    root = importlib.import_module(module.split(".")[0])
+    assert not hasattr(root, old)
+
+
+def test_scene_notebook_exposes_model_without_callback_factory():
+    support = importlib.import_module("notebooks.support.spatial_scene")
+    assert not hasattr(support, "make_callbacks")
+    assert callable(support.SyntheticRadianceModel)
+
+
+@pytest.mark.parametrize(
+    "module",
+    ["orsia_instruments.response.fourier", "orsia_inverse.design", "orsia_dispersion.forcing"],
+)
+def test_superseded_modules_are_absent(module):
+    assert importlib.util.find_spec(module) is None
+
+
+@pytest.mark.parametrize(
+    "module,name",
+    [
+        ("orsia_instruments.channels", "ChannelSearchResult"),
+        ("orsia_inverse.diagnostics", "LinearTargetUncertainty"),
+    ],
+)
+def test_moved_return_types_have_the_same_owner_as_their_operations(module, name):
+    assert getattr(importlib.import_module(module), name).__module__ == module

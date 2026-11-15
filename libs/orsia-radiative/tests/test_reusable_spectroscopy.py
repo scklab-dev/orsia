@@ -12,7 +12,9 @@ from orsia_radiative import (
     LineSpectroscopy,
     PartitionFunctionTable,
     SpectralLineTable,
+    convert_spectral_grid,
     evaluate_line_absorption,
+    evaluate_line_cross_sections,
     hydrostatic_atmosphere,
     interpolate_cross_section_measurements,
     line_absorption,
@@ -255,3 +257,39 @@ def test_measurement_invalid_records():
 def invalid_replace(record: Any, **changes: Any):
     """Exercise constructor validation with intentionally invalid dynamic fields."""
     return replace(record, **changes)
+
+
+@pytest.mark.parametrize("profile", ["voigt", "lorentz"])
+def test_direct_cross_sections_match_depth_and_allow_zero_abundance(profile):
+    ref, atm = reference(), atmosphere()
+    grid = wavenumber_grid(np.array([999.0, 1000.0, 1001.0]))
+    options = dict(
+        profile=profile,
+        pressure_range_pa=(100.0, 105000.0),
+        wing_cutoff_cm1=25.0,
+        subtract_lorentz_pedestal=False,
+    )
+    table = evaluate_line_cross_sections(atm, grid, ref, **options)
+    depth = evaluate_line_absorption(atm, grid, ref, **options).optical_depth
+    np.testing.assert_allclose(
+        table.cross_sections_m2_per_molecule * np.array([1e22, 2e22])[:, None], depth, rtol=2e-15
+    )
+    wave = evaluate_line_cross_sections(atm, convert_spectral_grid(grid), ref, **options)
+    np.testing.assert_allclose(
+        wave.cross_sections_m2_per_molecule[:, ::-1],
+        table.cross_sections_m2_per_molecule,
+        rtol=1e-10,
+    )
+    zero = replace(
+        atm,
+        absorbers=tuple(
+            replace(g, columns_molecules_m2=np.zeros(2)) if g.species == "CO2" else g
+            for g in atm.absorbers
+        ),
+    )
+    absent = evaluate_line_cross_sections(zero, grid, ref, **options)
+    assert np.all(absent.cross_sections_m2_per_molecule > 0)
+    np.testing.assert_array_equal(
+        evaluate_line_absorption(zero, grid, ref, **options).optical_depth, 0
+    )
+    assert not absent.cross_sections_m2_per_molecule.flags.writeable

@@ -170,7 +170,7 @@ def imaging_optics(
     return ImagingOptics(focal_length, area, response, settings, throughput, port)
 
 
-def constant_or_default(value: SpectralParameter, default: float) -> float:
+def validation_scalar(value: SpectralParameter, default: float) -> float:
     """Provide a scalar for eager validation while deferring spectral callbacks.
 
     Args:

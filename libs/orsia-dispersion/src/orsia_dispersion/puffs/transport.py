@@ -5,8 +5,8 @@ from collections.abc import Callable
 import numpy as np
 from scipy.linalg import expm
 
-from orsia_dispersion.forcing import Boundary, Diffusivity, FloatArray, Wind, validate_tensors
-from orsia_dispersion.puffs.population import GaussianPuffs, puff_eigenvectors, validate_boundary
+from orsia_dispersion.puffs.population import GaussianPuffs, puff_principal_axes, validate_boundary
+from orsia_dispersion.transport import Boundary, Diffusivity, FloatArray, Wind, validate_tensors
 
 
 class SpatialResolutionError(RuntimeError):
@@ -293,7 +293,7 @@ def sample_forcing(
     if not np.isfinite(envelope_sigma) or envelope_sigma <= 0:
         raise ValueError("envelope_sigma must be finite and positive")
     p = len(state.masses_kg)
-    values, vectors = puff_eigenvectors(state, boundary)
+    values, vectors = puff_principal_axes(state, boundary)
     offsets = (vectors * (envelope_sigma * np.sqrt(values))[:, None, :]).swapaxes(1, 2)
     points = np.concatenate(
         (

@@ -18,7 +18,7 @@ from IPython import get_ipython
 from IPython.display import Markdown, display
 from orsia_radiative import Radiance, wavenumber_grid
 
-from .notebook_ground_pixel import direct_scene_read, physical_kernel
+from .notebook_ground_pixel import direct_scene_read, scene_to_electron_response
 
 
 def configure_display():
@@ -277,8 +277,10 @@ def check_acquisition(
             ports=tuple(layout.ports[index] for index in indices),
         )
         base = value.kernel[indices]
-        angular_fine = physical_kernel(probe, radiance, settings, angular_order=14, time_order=5)
-        pixel_fine = physical_kernel(probe, radiance, settings, pixel_order=16)
+        angular_fine = scene_to_electron_response(
+            probe, radiance, settings, angular_order=14, time_order=5
+        )
+        pixel_fine = scene_to_electron_response(probe, radiance, settings, pixel_order=16)
         # Bounded independent direct-acquisition checks use 41 source nodes across the full band.
         sparse_points = points[::20]
         sparse = Radiance(
@@ -286,7 +288,7 @@ def check_acquisition(
             np.interp(sparse_points, points, radiance.values),
             radiance.geometry,
         )
-        sparse_kernel = physical_kernel(probe, sparse, settings)
+        sparse_kernel = scene_to_electron_response(probe, sparse, settings)
         centre_tile = np.einsum("cij,ck->ijk", maps[:, 49:54, 49:54], source_spectra[:, ::20])
         errors = []
         for read in range(len(indices)):
@@ -298,7 +300,7 @@ def check_acquisition(
             np.interp(fine_points, points, radiance.values),
             radiance.geometry,
         )
-        fine_kernel = physical_kernel(probe, fine_radiance, settings)
+        fine_kernel = scene_to_electron_response(probe, fine_radiance, settings)
         angular_change = relative(base, angular_fine)
         pixel_change = relative(base, pixel_fine)
         spectral_change = relative(

@@ -157,3 +157,18 @@ def test_pointing_and_chronological_correlations() -> None:
         pointing_covariance_parameters([0.1, 1.0], [1, 1])
     with pytest.raises(ValueError):
         smooth_pointing_state_space(0, angular, 0.1)
+
+
+def test_general_matrix_covariance_retains_cross_band_mixing():
+    shape = (1, 2, 2)
+    matrix = np.array(
+        [[1.0, 0.2, 0.0, 0.0], [0.0, 1.0, -0.3, 0.0], [0.1, 0.0, 1.0, 0.4], [0.0, -0.2, 0.0, 1.0]]
+    )
+    variance = np.array([1.0, 2.0, 3.0, 4.0]).reshape(shape)
+    gain = np.array([0.5, -1.0, 2.0, 0.3]).reshape(shape)
+    mask = np.ones((1, 2), dtype=bool)
+    actual, indices = project_detector_covariance(csr_matrix(matrix), variance, gain, mask)
+    projection = np.array([[0.5, -1.0, 0.0, 0.0], [0.0, 0.0, 2.0, 0.3]]) @ matrix
+    expected = (projection * variance.ravel()) @ projection.T
+    assert_array_equal(indices, [0, 1])
+    assert_allclose(actual.toarray(), expected, rtol=2e-15, atol=1e-15)

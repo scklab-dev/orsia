@@ -22,7 +22,6 @@ from notebooks.support.spatial_scene import (
     chart_rotation,
     detector_prediction,
     make_acquisition,
-    make_callbacks,
     plume_excluded_mass_bound,
     synthetic_cross_section,
     synthetic_inputs,
@@ -43,9 +42,11 @@ def test_direct_simulation_is_independent_of_tangent_computation(monkeypatch, mo
 
     inputs = synthetic_inputs()
     camera, grid, coverage = make_acquisition(inputs, angular_order=2)
-    radiance, evaluate = make_callbacks(
+    model = SyntheticRadianceModel(
         mode=mode, inputs=inputs, plume_amplitude=1, reflectance_offset=0
     )
+    radiance = model.radiance
+    evaluate = model.radiance_tangent
     spectral = spectral_grid()
     args = (
         grid.xy_m.reshape(-1, 2),
@@ -68,7 +69,10 @@ def test_direct_simulation_is_independent_of_tangent_computation(monkeypatch, mo
     monkeypatch.setattr(spatial_scene, "surface_radiance_tangent", forbidden)
     monkeypatch.setattr(composition, "direct_surface_radiance_tangent", forbidden)
     monkeypatch.setattr(composition, "integrate_path_optical_depth_tangent", forbidden)
-    direct, _ = make_callbacks(mode=mode, inputs=inputs, plume_amplitude=1, reflectance_offset=0)
+    model = SyntheticRadianceModel(
+        mode=mode, inputs=inputs, plume_amplitude=1, reflectance_offset=0
+    )
+    direct = model.radiance
     np.testing.assert_array_equal(direct(*args), old_value)
     result = simulate_frames(camera, grid, spectral, direct, coverage)
     assert (result.images.photoelectrons > 0).all()
@@ -95,9 +99,10 @@ def test_direct_simulation_is_independent_of_tangent_computation(monkeypatch, mo
 @pytest.mark.parametrize("tangent", [False, True])
 def test_flat_physical_query_validation(index, kind, tangent):
     inputs = synthetic_inputs()
-    callbacks = make_callbacks(
+    model = SyntheticRadianceModel(
         mode="heterogeneous_direct_solar", inputs=inputs, plume_amplitude=1, reflectance_offset=0
     )
+    callbacks = (model.radiance, model.radiance_tangent)
     args: list[Any] = [
         np.zeros((2, 2)),
         np.tile([0.0, 0.0, 1.0], (2, 1)),
@@ -253,9 +258,10 @@ def test_zero_plume_homogeneous_column_path_and_uniform_acquisition():
     assert_allclose(empty, path, rtol=1e-14)
     camera, grid, coverage = make_acquisition(inputs, angular_order=3)
     spectral = spectral_grid()
-    radiance, _ = make_callbacks(
+    model = SyntheticRadianceModel(
         mode="heterogeneous_direct_solar", inputs=inputs, plume_amplitude=0, reflectance_offset=0
     )
+    radiance = model.radiance
 
     # Independent homogeneous plane-parallel expression at actual ray zeniths.
     def homogeneous(xy, directions, times, query_spectral):
@@ -276,9 +282,10 @@ def test_query_permutation_frame_and_direction_dependence():
     xy = np.array([[100.0, 0.0], [0.0, 10.0], [150.0, -20.0]])
     times = np.array([0.0, 0.1, 0.2])
     local = np.array([[-0.5, 0.0, np.sqrt(0.75)]] * 3)
-    _, evaluate = make_callbacks(
+    model = SyntheticRadianceModel(
         mode="heterogeneous_direct_solar", inputs=inputs, plume_amplitude=1, reflectance_offset=0
     )
+    evaluate = model.radiance_tangent
     points = spectral_grid()
     values, tangent = evaluate(xy, local, times, points)
     order = [2, 0, 1]
@@ -369,10 +376,16 @@ def test_projection_slope_and_unsupported_modes_queries():
     assert (image > 0).all()
     for mode in ("independent_column", "heterogeneous_scattering", "thermal"):
         with pytest.raises(ValueError):
-            make_callbacks(mode=mode, inputs=inputs, plume_amplitude=1, reflectance_offset=0)
-    _, evaluate = make_callbacks(
+            SyntheticRadianceModel(
+                mode=mode,  # pyrefly: ignore[bad-argument-type] - invalid mode rejection
+                inputs=inputs,
+                plume_amplitude=1,
+                reflectance_offset=0,
+            )
+    model = SyntheticRadianceModel(
         mode="heterogeneous_direct_solar", inputs=inputs, plume_amplitude=1, reflectance_offset=0
     )
+    evaluate = model.radiance_tangent
     args: list[Any] = [
         grid.xy_m[:1].reshape(-1, 2),
         grid.view_local[:1].reshape(-1, 3),
@@ -395,9 +408,10 @@ def test_signed_response_uses_joint_weights_and_refinements():
     inputs = synthetic_inputs()
     camera, grid, coverage = make_acquisition(inputs, angular_order=3)
     spectral = spectral_grid()
-    _, evaluate = make_callbacks(
+    model = SyntheticRadianceModel(
         mode="heterogeneous_direct_solar", inputs=inputs, plume_amplitude=1, reflectance_offset=0
     )
+    evaluate = model.radiance_tangent
     _, derivative = evaluate(
         grid.xy_m.reshape(-1, 2),
         grid.view_local.reshape(-1, 3),
@@ -474,9 +488,11 @@ def test_nonseparable_physical_response_signed_electron_finite_difference():
         return np.zeros(len(current.read_bands), dtype=bool)
 
     spectral = spectral_grid()
-    radiance, evaluate = make_callbacks(
+    model = SyntheticRadianceModel(
         mode="heterogeneous_direct_solar", inputs=inputs, plume_amplitude=1, reflectance_offset=0
     )
+    radiance = model.radiance
+    evaluate = model.radiance_tangent
     derivative = evaluate(
         grid.xy_m.reshape(-1, 2),
         grid.view_local.reshape(-1, 3),
@@ -498,12 +514,13 @@ def test_nonseparable_physical_response_signed_electron_finite_difference():
     for k in range(2):
         values = []
         for sign in (1, -1):
-            source, _ = make_callbacks(
+            model = SyntheticRadianceModel(
                 mode="heterogeneous_direct_solar",
                 inputs=inputs,
                 plume_amplitude=1 + (sign * 1e-3 if k == 0 else 0),
                 reflectance_offset=sign * 1e-3 if k == 1 else 0,
             )
+            source = model.radiance
             values.append(
                 simulate_frames(camera, grid, spectral, source, coverage).images.photoelectrons
             )
@@ -539,12 +556,14 @@ def test_radiance_model_keeps_one_parameter_binding_and_mapping_snapshot():
     expected = model.radiance(*args)
     inputs["reflectance_contrast"] = 0.0
     assert_allclose(model.radiance(*args), expected, rtol=0, atol=0)
-    direct, tangent = make_callbacks(
+    model = SyntheticRadianceModel(
         mode=model.mode,
         inputs=model.inputs,
         plume_amplitude=1.0,
         reflectance_offset=0.0,
     )
+    direct = model.radiance
+    tangent = model.radiance_tangent
     assert_allclose(direct(*args), expected, rtol=0, atol=0)
     value, derivative = tangent(*args)
     assert_allclose(value, expected, rtol=2e-15)

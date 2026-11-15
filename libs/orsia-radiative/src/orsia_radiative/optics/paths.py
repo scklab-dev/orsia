@@ -53,7 +53,7 @@ def integrate_path_optical_depth(
         ):
             raise ValueError("scattering depth must be finite nonnegative (segments,spectral)")
         depth += segment_scattering_optical_depth
-    return _reduce(depth, path_offsets)
+    return _sum_segments(depth, path_offsets)
 
 
 def integrate_path_optical_depth_tangent(
@@ -106,7 +106,7 @@ def integrate_path_optical_depth_tangent(
                 columns_tangent_molecules_m2[:, gas],
             )
             tangent += derivative
-    return primal, _reduce(tangent, path_offsets)
+    return primal, _sum_segments(tangent, path_offsets)
 
 
 def _validate(columns, sections, offsets) -> None:
@@ -133,7 +133,7 @@ def _validate(columns, sections, offsets) -> None:
         raise ValueError("path offsets must partition all segments in order")
 
 
-def _reduce(values, offsets):
+def _sum_segments(values, offsets):
     result = np.zeros((len(offsets) - 1, *values.shape[1:]))
     for path, (start, stop) in enumerate(zip(offsets[:-1], offsets[1:], strict=True)):
         result[path] = values[start:stop].sum(axis=0)

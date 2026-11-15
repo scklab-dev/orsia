@@ -4,13 +4,13 @@ import numpy as np
 from scipy.linalg import solve_triangular
 from scipy.special import log_ndtr, logsumexp
 
-from orsia_dispersion.forcing import Boundary, FloatArray
 from orsia_dispersion.puffs.kernels import (
     clip_kernel_interval,
     compact_kernel_parameters,
     puff_kernels,
 )
 from orsia_dispersion.puffs.population import GaussianPuffs, validate_boundary
+from orsia_dispersion.transport import Boundary, FloatArray
 
 _INTERVAL_NODES, _INTERVAL_WEIGHTS = np.polynomial.legendre.leggauss(8)
 _INTERVAL_NODES.setflags(write=False)

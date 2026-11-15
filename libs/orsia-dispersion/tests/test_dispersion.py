@@ -191,7 +191,7 @@ def test_constant_transport_diffusion(boundary):
 
 @pytest.mark.parametrize("scale", [1e-200, 1.0, 1e200])
 def test_diffusion_accepts_rank_one_psd_at_each_tensor_scale(scale):
-    from orsia_dispersion.forcing import validate_tensors
+    from orsia_dispersion.transport import validate_tensors
 
     tensor = scale * np.outer([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
     tensors = np.stack((tensor, np.zeros((3, 3))))
@@ -625,6 +625,23 @@ def test_discontinuity_and_same_time_release():
     assert results[0][1].released_mass_kg == 2
     assert_allclose(results[-1][0].centres_m, result.centres_m)
     assert results[-1][1].max_integration_error_ratio < 1
+
+
+def test_interleaved_simulations_keep_independent_evolution_state():
+    histories = [release(), release(state(mass=7.0), times=[0.5])]
+    options = [{}, {"boundary": "reflecting", "kernel_cutoff_radius": 3.0}]
+    times = [0.0, 0.5, 1.0, 2.0]
+    expected = [list(simulate(r, times, **kw)) for r, kw in zip(histories, options, strict=True)]
+    iterators = [simulate(r, times, **kw) for r, kw in zip(histories, options, strict=True)]
+    for index in range(len(times)):
+        for case in (1, 0):
+            actual, diagnostics = next(iterators[case])
+            reference, reference_diagnostics = expected[case][index]
+            assert actual.time_s == reference.time_s
+            assert diagnostics == reference_diagnostics
+            for name in ("release_times_s", "masses_kg", "centres_m", "covariances_m2"):
+                np.testing.assert_array_equal(getattr(actual, name), getattr(reference, name))
+            actual.masses_kg[:] = 999.0
 
 
 def test_adaptive_nonlinear_splitting_and_midpoint_check():

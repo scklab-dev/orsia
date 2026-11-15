@@ -124,7 +124,7 @@ The package root exports the common interface and the specialized puff and parti
 | Module | Responsibility |
 |---|---|
 | [`emissions.py`](src/orsia_dispersion/emissions.py) | Integrate emission rates into release times and masses |
-| [`forcing.py`](src/orsia_dispersion/forcing.py) | Shared flow callbacks, boundary choices and physical tensor validation |
+| [`transport.py`](src/orsia_dispersion/transport.py) | Shared flow callbacks, boundary choices and physical tensor validation |
 | [`stationary.py`](src/orsia_dispersion/stationary.py) | Stationary Gaussian plume declaration and physical profile |
 | [`particles.py`](src/orsia_dispersion/particles.py) | Particle emissions, states, model and transport |
 | [`sampling.py`](src/orsia_dispersion/sampling.py) | Common model/field unions and time sampling |
@@ -136,7 +136,7 @@ The package root exports the common interface and the specialized puff and parti
 | [`puffs/evaluation.py`](src/orsia_dispersion/puffs/evaluation.py) | Specialized puff concentrations and layer/path integrals |
 | [`__init__.py`](src/orsia_dispersion/__init__.py) | Public root exports |
 
-The current finite-cell API requires a complete `LayeredCells` support. Root imports expose the common operations; direct imports follow the responsibility layout below. Direct submodule imports use the paths above. `fields.py` is split between `stationary.py`, `puffs/simulation.py` and `sampling.py`. The former common `integration.py` becomes `evaluation.py`; puff evaluation moves to `puffs/evaluation.py`. The former `puffs.py` and `splitting.py` are combined in `puffs/population.py`. Puff kernels, transport and simulation move under `puffs/`. Forcing probes move from `forcing.py` to `puffs/transport.py`; shared tensor validation moves from `puffs.py` to `forcing.py`. The old paths have no compatibility aliases. Moving class definitions also changes their qualified module names; persisted Python pickles that reference old paths require explicit migration.
+The current finite-cell API requires a complete `LayeredCells` support. Root imports expose the common operations; direct submodule imports use the responsibility paths above. `fields.py` is split between `stationary.py`, `puffs/simulation.py` and `sampling.py`. The former common `integration.py` becomes `evaluation.py`; puff evaluation moves to `puffs/evaluation.py`. The former `puffs.py` and `splitting.py` are combined in `puffs/population.py`. Puff kernels, transport and simulation move under `puffs/`. Forcing probes move from `forcing.py` to `puffs/transport.py`; shared callback contracts and tensor validation now live in `transport.py`, replacing the shared `forcing.py` module. The old paths have no compatibility aliases. Moving class definitions also changes their qualified module names; persisted Python pickles that reference old paths require explicit migration.
 
 ## Breaking migration and further use
 

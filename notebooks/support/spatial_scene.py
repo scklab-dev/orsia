@@ -263,16 +263,6 @@ class SyntheticRadianceModel:
         )
 
 
-def make_callbacks(*, mode, inputs, plume_amplitude, reflectance_offset):
-    """Return bound radiance methods for callers using the original tuple interface.
-
-    The shared SyntheticRadianceModel owns preparation and parameter consistency.
-    Scenario arrays remain borrowed and stable, as with the model constructor.
-    """
-    model = SyntheticRadianceModel(mode, inputs, plume_amplitude, reflectance_offset)
-    return model.radiance, model.radiance_tangent
-
-
 def synthetic_cross_section(points):
     """Return fixed illustrative CH4-labelled cross sections, m2/molecule."""
     return 2e-25 * (0.2 + np.exp(-(((points - 4050) / 18) ** 2)))

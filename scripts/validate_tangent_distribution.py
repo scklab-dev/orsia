@@ -209,6 +209,55 @@ from orsia_numerics.operators import linear_operator, materialize_operator
 from orsia_inverse import solve_map
 from orsia_uncertainty import factor_covariance
 import orsia_instruments, orsia_inverse
+from importlib import import_module
+from importlib.util import find_spec
+assert find_spec('orsia_inverse.design') is None
+assert find_spec('orsia_instruments.response.fourier') is None
+from orsia_inverse.diagnostics import linear_target_uncertainty, LinearTargetUncertainty
+from orsia_instruments.channels import ChannelSearchResult, refine_channels
+assert LinearTargetUncertainty.__module__ == 'orsia_inverse.diagnostics'
+assert ChannelSearchResult.__module__ == 'orsia_instruments.channels'
+target = linear_target_uncertainty(
+    np.eye(2), factor_covariance(np.ones(2), method='cholesky'), np.array([1., 0.]),
+)
+assert target['target_sigma'] == 1.
+search = refine_channels(
+    [np.arange(3.)], [0.], [np.array([0.])],
+    lambda selection: (1. + float((selection[0][0] - 1.)**2), selection),
+)
+np.testing.assert_array_equal(search['optimized'][0], [1.])
+for module, old, new in (
+    ('orsia_instruments.tolerances', 'monte_carlo_native', 'electron_error_statistics'),
+    ('orsia_instruments.tolerances', 'monte_carlo_dn', 'sample_uncertain_readout'),
+    ('orsia_instruments.channels', 'exchange_channels', 'refine_channels'),
+    ('orsia_instruments.response.spatial', 'sample_fourier_exposures', 'form_detector_images'),
+    ('orsia_instruments.response.spatial', 'sample_fourier_exposure_tangents',
+     'form_detector_images_with_tangents'),
+    ('orsia_radiative.atmosphere.levels', 'integrate_log_linear_columns',
+     'integrate_atmospheric_columns'),
+    ('orsia_instruments.optics.response', 'constant_or_default', 'validation_scalar'),
+):
+    owner = import_module(module)
+    assert not hasattr(owner, old)
+    assert getattr(owner, new).__name__ == new
+    assert 'site-packages' in owner.__file__
+from orsia_geometry import LocalCartesianFrame, PointLattice
+from orsia_instruments.response.spatial import (
+    form_detector_images, form_detector_images_with_tangents,
+)
+frame = LocalCartesianFrame('installed Fourier', 'synthetic')
+source = PointLattice.regular((16,16), (1.,1.), (0.,0.), frame)
+target = PointLattice.regular((2,2), (1.,1.), (7.,7.), frame)
+values = np.ones((16,16,1))
+arguments = (np.ones((16,16), dtype=bool), source, target, [np.zeros((2,1,2))])
+controls = dict(detector_pitch_xy_m=(1.,1.), pixel_size_xy_m=None, optical_mtf=1.)
+images, masks = form_detector_images(values, *arguments, negative_policy='preserve', **controls)
+mean, tangent, support = form_detector_images_with_tangents(
+    values, -values[...,None], *arguments, **controls,
+)
+np.testing.assert_array_equal(mean[0], images[0])
+np.testing.assert_array_equal(tangent[0][...,0], -images[0])
+np.testing.assert_array_equal(support[0], masks[0])
 assert "site-packages" in orsia_instruments.__file__
 assert "site-packages" in orsia_inverse.__file__
 op = linear_operator((2,2), lambda v: 2*v, lambda w: 2*w)

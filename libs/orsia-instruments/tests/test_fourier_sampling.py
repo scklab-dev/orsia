@@ -9,8 +9,12 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose, assert_array_equal
 from orsia_geometry import LocalCartesianFrame, PointLattice, resample_point_field
-from orsia_instruments.response.fourier import sample_fourier_exposures
-from orsia_instruments.response.spatial import gaussian_pixel_transfer, gaussian_sigma_from_mtf
+from orsia_instruments.response.spatial import (
+    form_detector_images,
+    form_detector_images_with_tangents,
+    gaussian_pixel_transfer,
+    gaussian_sigma_from_mtf,
+)
 
 FRAME = LocalCartesianFrame("Fourier test", "synthetic surface")
 
@@ -26,7 +30,7 @@ def sample(values, source, target, displacement=None, **changes):
     options: dict[str, Any] = dict(
         detector_pitch_xy_m=(1.0, 1.0), pixel_size_xy_m=(1.0, 1.0), negative_policy="preserve"
     )
-    return sample_fourier_exposures(
+    return form_detector_images(
         values, np.ones(source.shape, dtype=bool), source, target, offsets, **(options | changes)
     )
 
@@ -98,7 +102,7 @@ def test_mask_and_finite_boundary_rule():
     values = np.ones((*source.shape, 1))
     valid = np.ones(source.shape, dtype=bool)
     valid[15, 16] = False
-    _, mask = sample_fourier_exposures(
+    _, mask = form_detector_images(
         values,
         valid,
         source,
@@ -166,7 +170,7 @@ def test_invalid_fields_grids_and_displacements():
     with pytest.raises(ValueError, match="too small"):
         sample(values, source, target, detector_pitch_xy_m=(100.0, 100.0))
     with pytest.raises(ValueError, match="source/support"):
-        sample_fourier_exposures(
+        form_detector_images(
             values,
             cast(Any, np.ones(source.shape)),
             source,
@@ -209,6 +213,23 @@ def test_optional_backend_plumbing_without_claiming_native_qualification(monkeyp
     assert len(calls) == 1
     assert_allclose(actual[0], expected[0], rtol=1e-11, atol=1e-12)
     assert_array_equal(actual_mask[0], mask[0])
+    tangents = np.stack((-values, 2 * values), axis=-1)
+    actual, derivative, tangent_mask = form_detector_images_with_tangents(
+        values,
+        tangents,
+        np.ones(source.shape, dtype=bool),
+        source,
+        target,
+        [np.zeros((target.shape[0], 2, 2))],
+        detector_pitch_xy_m=(1.0, 1.0),
+        pixel_size_xy_m=(1.0, 1.0),
+        fourier_backend="nufft",
+    )
+    assert len(calls) == 2  # A fresh plan per call, shared by the mean and both directions.
+    assert_allclose(actual[0], expected[0], rtol=1e-11, atol=1e-12)
+    assert_allclose(derivative[0][..., 0], -expected[0], rtol=1e-11, atol=1e-12)
+    assert_allclose(derivative[0][..., 1], 2 * expected[0], rtol=1e-11, atol=1e-12)
+    assert_array_equal(tangent_mask[0], mask[0])
     monkeypatch.setitem(sys.modules, "finufft", None)
     with pytest.raises(ImportError):
         sample(values, source, target, fourier_backend="nufft")
@@ -245,3 +266,37 @@ def test_shared_transfer_domains():
             pitch_ratio_yx=(1.0, 1.0),
             pixel_width_yx_samples=(0.0, 1.0),
         )
+
+
+@pytest.mark.parametrize("directions", [0, 1, 3])
+def test_image_tangents_preserve_multichannel_support_and_signed_fields(directions):
+    source, target = grids()
+    rng = np.random.default_rng(814)
+    values = rng.normal(size=(*source.shape, 2))
+    tangents = rng.normal(size=(*values.shape, directions))
+    support = np.ones(source.shape, dtype=bool)
+    support[10, 11] = False
+    offsets = [rng.uniform(-1, 1, size=(target.shape[0], count, 2)) for count in (1, 3)]
+    options = dict(detector_pitch_xy_m=(1.0, 1.0), pixel_size_xy_m=None)
+    actual, derivative, masks = form_detector_images_with_tangents(
+        values, tangents, support, source, target, offsets, **options
+    )
+    expected, expected_masks = form_detector_images(
+        values, support, source, target, offsets, negative_policy="preserve", **options
+    )
+    for channel in range(2):
+        assert_array_equal(actual[channel], expected[channel])
+        assert_array_equal(masks[channel], expected_masks[channel])
+        assert derivative[channel].shape == (*actual[channel].shape, directions)
+    for direction in range(directions):
+        reference, _ = form_detector_images(
+            tangents[..., direction],
+            support,
+            source,
+            target,
+            offsets,
+            negative_policy="preserve",
+            **options,
+        )
+        for channel in range(2):
+            assert_array_equal(derivative[channel][..., direction], reference[channel])

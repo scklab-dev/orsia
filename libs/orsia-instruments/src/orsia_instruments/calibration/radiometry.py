@@ -220,6 +220,106 @@ def calibrate_readings(
     )
 
 
+def coadd_readings(
+    charge: NDArray[np.float64],
+    *,
+    sensitivity: NDArray[np.float64],
+    read_variance: NDArray[np.float64],
+    read_valid: NDArray[np.bool_],
+    weights: NDArray[np.float64] | None = None,
+    parameters: RadiometricParameterMaps | None = None,
+    parameter_covariance: NDArray[np.float64] | None = None,
+    read_parameter_cross_covariance: Literal["zero"] | None = None,
+    read_bias: NDArray[np.float64] | None = None,
+    parameter_bias: NDArray[np.float64] | None = None,
+) -> RadiometricObservations:
+    """Form sensitivity-normalized disjoint groups with compact independent errors.
+
+    Args:
+        charge: Corrected electron charge (...,read). Leading axes identify disjoint
+            groups, flattened in C order in the result. Supported charge is finite.
+        sensitivity: Nonnegative electrons per unit radiance, broadcastable to charge.
+        read_variance: Independent electron variances with the charge shape. Shared
+            calibration contributions must be excluded from these variances.
+        read_valid: Boolean charge-shaped support fixed independently of noise.
+        weights: Optional nonnegative charge-shaped fixed participation weights.
+            Defaults to one; zero sensitivity, zero weight or false support excludes a read.
+        parameters: Optional (charge.size,parameter) maps in C order. Gain is the
+            derivative of a unit multiplicative charge calibration, offset is an
+            electron pedestal derivative, and normalization is the derivative of
+            the actual supplied sensitivity in electrons per unit radiance.
+        parameter_covariance: One common parameter covariance, retained as one source.
+        read_parameter_cross_covariance: Explicit 'zero' for uncertain parameters.
+            Correlated read noise, overlapping groups and nonzero cross terms require
+            the general projected calibration path instead of diagonal compression.
+        read_bias: Optional charge-shaped signed electron bias.
+        parameter_bias: Optional signed bias in the named parameter coordinates.
+
+    Returns:
+        Owned radiances sum(a*Q)/sum(a*s), support and first-order errors. The first
+        covariance source is output-scale independent variance; the second, when
+        present, is the common parameter source. No read-sized projections persist.
+        Assemble parameter derivative rows against one source when joining blocks.
+        The quotient derivative includes both summed charge and sensitivity changes.
+
+    Raises:
+        ValueError: Physical domains, shapes, covariance, cross declaration or support fail.
+    """
+    if charge.ndim < 1 or charge.dtype != np.float64 or not charge.size:
+        raise ValueError("nonempty float64 charge with a final read axis required")
+    shape = charge.shape
+    if read_valid.shape != shape or read_valid.dtype != np.bool_:
+        raise ValueError("Boolean charge-shaped read validity required")
+    _finite_array(read_variance, shape, "independent electron variance")
+    if np.any(read_variance < 0):
+        raise ValueError("independent variance must be nonnegative")
+    norm = np.broadcast_to(sensitivity, shape)
+    _finite_array(norm, shape, "sensitivity")
+    a = np.ones(shape) if weights is None else weights
+    _finite_array(a, shape, "participation weights")
+    if np.any(norm < 0) or np.any(a < 0):
+        raise ValueError("sensitivity and participation weights must be nonnegative")
+    valid = read_valid & (norm > 0) & (a > 0)
+    if not np.isfinite(charge[valid]).all():
+        raise ValueError("supported charge must be finite")
+    a = np.where(valid, a, 0.0)
+    q = np.where(valid, charge, 0.0)
+    numerator = np.sum(a * q, axis=-1).reshape(-1)
+    denominator = np.sum(a * norm, axis=-1).reshape(-1)
+    variance = np.sum(a**2 * read_variance, axis=-1).reshape(-1)
+    maps = None
+    if parameters is not None:
+        p = len(parameters.names)
+        for array in (parameters.gain, parameters.offset, parameters.normalization):
+            _finite_array(array, (charge.size, p), "calibration derivative")
+        dq = q[..., None] * parameters.gain.reshape((*shape, p))
+        dq -= parameters.offset.reshape((*shape, p))
+        ds = parameters.normalization.reshape((*shape, p))
+        maps = RadiometricParameterMaps(
+            parameters.names,
+            parameters.units,
+            np.zeros((numerator.size, p)),
+            -np.sum(a[..., None] * dq, axis=-2).reshape((numerator.size, p)),
+            np.sum(a[..., None] * ds, axis=-2).reshape((numerator.size, p)),
+        )
+    bias = None
+    if read_bias is not None:
+        _finite_array(read_bias, shape, "read bias")
+        bias = np.sum(a * read_bias, axis=-1).reshape(-1)
+    if read_parameter_cross_covariance not in (None, "zero"):
+        raise ValueError("compact coaddition requires independent reads and parameters")
+    return calibrate_readings(
+        numerator,
+        sensitivity=denominator,
+        read_covariance=variance,
+        parameters=maps,
+        parameter_covariance=parameter_covariance,
+        read_parameter_cross_covariance=read_parameter_cross_covariance,
+        read_bias=bias,
+        parameter_bias=parameter_bias,
+    )
+
+
 def accumulate_observations(
     observations: RadiometricObservations,
     weights: csr_array,

@@ -24,10 +24,14 @@ def test_common_dispersion_contract_removes_historical_reconstruction():
 
 
 def test_dispersion_specialized_puff_operations_use_the_puffs_package():
-    for module in ("fields", "integration", "kernels", "simulation", "splitting", "transport"):
+    for module in ("fields", "integration", "kernels", "simulation", "splitting", "forcing"):
         assert importlib.util.find_spec(f"orsia_dispersion.{module}") is None
     puffs = importlib.import_module("orsia_dispersion.puffs")
     assert puffs.__path__
+    shared = importlib.import_module("orsia_dispersion.transport")
+    assert callable(shared.validate_tensors)
+    assert not hasattr(shared, "advance_puffs")
+    assert not hasattr(shared, "sample_forcing")
 
 
 @pytest.mark.parametrize(

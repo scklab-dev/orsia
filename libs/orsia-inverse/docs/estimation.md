@@ -9,7 +9,7 @@ This reference specifies fitted coordinates, fixed covariance weighting and the 
 | `nonlinear/estimation.py` | Shared model adaptation, `GaussianEstimate`, `FitTermination`, `TrialDomainError` | Immutable terminal state and explicit numerical termination. |
 | `nonlinear/map.py`, `nonlinear/damped.py` | Distinct nonlinear algorithms | Common half-squared objective, fixed weighting and optional prior. |
 | `priors.py` | `QuadraticPrior` and covariance/precision constructors | Explicit mean and rectangular precision root. |
-| `diagnostics.py` | `retrieval_diagnostics` and `RetrievalDiagnostics` | Local undamped Gauss-Newton information; no second fit or constrained posterior. |
+| `diagnostics.py` | `retrieval_diagnostics`, `local_gaussian_information` and `linear_target_uncertainty` | Shared undamped Gauss-Newton information, rank policy and explicit linear targets. |
 | Orsia Uncertainty | Prepare covariance factors, whiten, solve and sample | Consumers import these capabilities directly from their owner. |
 | NumPy and SciPy | Arrays, Jacobian SVD and least squares | Physical models and file handling stay with callers. |
 
@@ -104,7 +104,7 @@ SVD of `[We K; Rp]` yields the undamped posterior `(K.T Se^-1 K + Rp.T Rp)^-1`. 
 
 Failed numerical termination, active bounds or deficient augmented rank leave posterior/gain/kernel unavailable with an explicit reason. Ranks remain available. No truncated inverse or damping replacement is supplied. The direct information function assumes the caller has established applicability of an unconstrained model. `max_bytes` checks a conservative estimate of dense array storage before whitening and SVD; native factorization scratch remains additional storage. An exceeded budget raises `MemoryError`.
 
-`linear_target_uncertainty(design, observation_factor, target, prior=..., ...)` uses this shared information calculation. It returns `LinearTargetUncertainty` with posterior covariance, `target.T @ gain` and `sqrt(target.T @ posterior @ target)`. Supply a unit basis vector for a coordinate or explicit coefficients for a derived linear quantity. Rank failure raises `numpy.linalg.LinAlgError`; discrete channel search can reject such candidates explicitly.
+`orsia_inverse.diagnostics.linear_target_uncertainty(design, observation_factor, target, prior=..., ...)` uses this shared information calculation. It returns `LinearTargetUncertainty` with posterior covariance, `target.T @ gain` and `sqrt(target.T @ posterior @ target)`. Supply a unit basis vector for a coordinate or explicit coefficients for a derived linear quantity. Rank failure raises `numpy.linalg.LinAlgError`; [`orsia_instruments.channels.refine_channels`](../../orsia-instruments/src/orsia_instruments/channels.py) can reject such candidates when an application uses this calculation in its evaluation callback.
 
 The assumed posterior differs from actual-source sampling covariance. Given local gain `G`, propagate actual error with `G @ C_actual @ G.T` and signed bias with `G @ bias`. Preserve cross terms between correlated sources. A prior-mean error propagates locally with `I-A`. Neither numerical success nor a local Gaussian approximation establishes nonlinear coverage, physical validity or constrained posterior uncertainty.
 

@@ -188,11 +188,11 @@ from orsia_instruments.simulation import simulate_images as simulate_images
 from orsia_instruments.tolerances import NativeSignalBudget as NativeSignalBudget
 from orsia_instruments.tolerances import analogue_dn_budget as analogue_dn_budget
 from orsia_instruments.tolerances import central_difference as central_difference
-from orsia_instruments.tolerances import monte_carlo_dn as monte_carlo_dn
-from orsia_instruments.tolerances import monte_carlo_native as monte_carlo_native
+from orsia_instruments.tolerances import electron_error_statistics as electron_error_statistics
 from orsia_instruments.tolerances import native_difference as native_difference
 from orsia_instruments.tolerances import native_sensitivities as native_sensitivities
 from orsia_instruments.tolerances import native_tolerance_budget as native_tolerance_budget
+from orsia_instruments.tolerances import sample_uncertain_readout as sample_uncertain_readout
 
 __all__ = [
     "RadiometricObservations",
@@ -321,8 +321,8 @@ __all__ = [
     "lorentzian_filter",
     "lvf_centre",
     "lvf_imager",
-    "monte_carlo_dn",
-    "monte_carlo_native",
+    "sample_uncertain_readout",
+    "electron_error_statistics",
     "native_difference",
     "native_sensitivities",
     "native_tolerance_budget",

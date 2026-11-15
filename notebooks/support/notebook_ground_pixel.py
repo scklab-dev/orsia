@@ -251,7 +251,7 @@ def scan_geometry(
     )
 
 
-def physical_kernel(
+def scene_to_electron_response(
     layout: DetectorLayout,
     radiance: Radiance,
     settings: ScanParameters,

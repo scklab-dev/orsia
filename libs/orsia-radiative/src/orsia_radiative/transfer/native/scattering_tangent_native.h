@@ -99,7 +99,7 @@ static void apply_transport_tangent(
         const double *ht, const double *dht, const double *hw, const double *dhw,
         double *field, double *df, double *exits, double *de,
         double bottom, double dbottom, std::ptrdiff_t cells, std::ptrdiff_t directions) {
-    // This is the derivative companion of apply_kernel. Compute the incoming
+    // This is the derivative companion of propagate. Compute the incoming
     // value and tangent together so zero primal terms still carry derivatives.
     for (std::ptrdiff_t d = 0; d < directions; ++d) {
         double incoming = mu[d] > 0 ? bottom : 0.0;
@@ -254,7 +254,7 @@ static py::tuple scattering_orders_tangent(
                 output[p*k+seed] = direct_reflected_value(gain,total,air)*drho -
                     direct_reflected_value(amplitude,total,air)*air*dtotal;
                 if (!max_order) continue;
-                prepare_kernel(depth.data(),mu.data(),t.data(),ht.data(),w.data(),hw.data(),sw.data(),shw.data(),
+                prepare_transfer(depth.data(),mu.data(),t.data(),ht.data(),w.data(),hw.data(),sw.data(),shw.data(),
                     nullptr,true,mu0,cells,directions);
                 prepare_transport_tangent(depth.data(),dd.data(),mu.data(),t.data(),ht.data(),dt.data(),dht.data(),
                     dw.data(),dhw.data(),dsw.data(),dshw.data(),mu0,cells,directions);
